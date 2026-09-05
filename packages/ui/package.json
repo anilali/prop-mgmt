@@ -11,7 +11,13 @@
     "./label": "./src/label.tsx",
     "./separator": "./src/separator.tsx",
     "./theme": "./src/theme.tsx",
-    "./toast": "./src/toast.tsx"
+    "./toast": "./src/toast.tsx",
+    "./dialog": "./src/dialog.tsx",
+    "./alert-dialog": "./src/alert-dialog.tsx",
+    "./table": "./src/table.tsx",
+    "./badge": "./src/badge.tsx",
+    "./textarea": "./src/textarea.tsx",
+    "./select": "./src/select.tsx"
   },
   "license": "MIT",
   "scripts": {

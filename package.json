@@ -1,5 +1,5 @@
 {
-  "name": "create-t3-turbo",
+  "name": "prop-mgmt",
   "private": true,
   "engines": {
     "node": "^24.18.0",
@@ -10,17 +10,21 @@
     "build": "turbo run build",
     "clean": "git clean -xdf node_modules",
     "clean:workspaces": "turbo run clean",
-    "auth:generate": "pnpm -F @moonship/auth generate",
-    "db:push": "turbo -F @moonship/db push",
+    "db:up": "PATH=\"/opt/podman/bin:$PATH\" podman compose up -d",
+    "db:down": "PATH=\"/opt/podman/bin:$PATH\" podman compose down",
+    "db:migrate": "turbo -F @moonship/db db:migrate",
     "db:studio": "turbo -F @moonship/db studio",
     "dev": "turbo watch dev --continue",
-    "dev:next": "turbo watch dev -F @moonship/nextjs...",
+    "dev:operator": "turbo watch dev -F @moonship/operator-portal...",
+    "dev:tenant": "turbo watch dev -F @moonship/tenant-portal...",
     "format": "turbo run format --continue -- --cache --cache-location .cache/.prettiercache",
     "format:fix": "turbo run format --continue -- --write --cache --cache-location .cache/.prettiercache",
     "lint": "turbo run lint --continue -- --cache --cache-location .cache/.eslintcache",
     "lint:fix": "turbo run lint --continue -- --fix --cache --cache-location .cache/.eslintcache",
     "lint:ws": "pnpm dlx sherif@latest",
     "postinstall": "pnpm lint:ws",
+    "test": "turbo run test",
+    "test:integration": "pnpm -F @moonship/db test:integration",
     "typecheck": "turbo run typecheck",
     "ui-add": "turbo run ui-add"
   },
@@ -30,7 +34,8 @@
     "dotenv-cli": "^10.0.0",
     "prettier": "catalog:",
     "turbo": "^2.5.8",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "prettier": "@moonship/prettier-config"
 }

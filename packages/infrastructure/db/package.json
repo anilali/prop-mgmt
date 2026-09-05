@@ -1,0 +1,82 @@
+{
+  "name": "@moonship/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./src/client.ts"
+    },
+    "./schemas/auth-operator": {
+      "types": "./dist/schemas/auth-operator/schema.d.ts",
+      "default": "./src/schemas/auth-operator/schema.ts"
+    },
+    "./schemas/auth-tenant": {
+      "types": "./dist/schemas/auth-tenant/schema.d.ts",
+      "default": "./src/schemas/auth-tenant/schema.ts"
+    },
+    "./schemas/property": {
+      "types": "./dist/schemas/property/schema.d.ts",
+      "default": "./src/schemas/property/schema.ts"
+    },
+    "./schemas/lease-mgmt": {
+      "types": "./dist/schemas/lease-mgmt/schema.d.ts",
+      "default": "./src/schemas/lease-mgmt/schema.ts"
+    },
+    "./schemas/tenant-mgmt": {
+      "types": "./dist/schemas/tenant-mgmt/schema.d.ts",
+      "default": "./src/schemas/tenant-mgmt/schema.ts"
+    },
+    "./schemas/maintenance": {
+      "types": "./dist/schemas/maintenance/schema.d.ts",
+      "default": "./src/schemas/maintenance/schema.ts"
+    },
+    "./schemas/billing": {
+      "types": "./dist/schemas/billing/schema.d.ts",
+      "default": "./src/schemas/billing/schema.ts"
+    }
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "clean": "git clean -xdf .cache .turbo dist node_modules",
+    "dev": "tsc",
+    "format": "prettier --check . --ignore-path ../../../.gitignore",
+    "lint": "eslint --flag unstable_native_nodejs_ts_config",
+    "studio": "pnpm with-env drizzle-kit studio",
+    "db:migrate": "pnpm run db:migrate:generate && pnpm run db:migrate:execute",
+    "db:migrate:generate": "pnpm with-env drizzle-kit generate",
+    "db:migrate:execute": "pnpm with-env drizzle-kit migrate",
+    "test": "vitest run",
+    "test:integration": "pnpm with-env vitest run -c vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit --emitDeclarationOnly false",
+    "with-env": "dotenv -e ../../../.env --"
+  },
+  "dependencies": {
+    "@moonship/events": "workspace:*",
+    "@moonship/lease-mgmt": "workspace:*",
+    "@moonship/property": "workspace:*",
+    "@moonship/shared": "workspace:*",
+    "@moonship/tenant-mgmt": "workspace:*",
+    "drizzle-orm": "^0.44.7",
+    "postgres": "catalog:"
+  },
+
+  "devDependencies": {
+    "@moonship/eslint-config": "workspace:*",
+    "@moonship/prettier-config": "workspace:*",
+    "@moonship/tsconfig": "workspace:*",
+    "@types/node": "catalog:",
+    "dotenv-cli": "^10.0.0",
+    "drizzle-kit": "^0.31.5",
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "prettier": "@moonship/prettier-config"
+}

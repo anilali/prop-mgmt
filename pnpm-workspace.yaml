@@ -1,11 +1,15 @@
 packages:
   - apps/*
-  - packages/*
+  - packages/api/*
+  - packages/contexts/*
+  - packages/infrastructure/*
+  - packages/shared
+  - packages/ui
   - tooling/*
 
 allowBuilds:
-  '@prisma/client': set this to true or false
-  '@prisma/engines': set this to true or false
+  "@prisma/client": set this to true or false
+  "@prisma/engines": set this to true or false
   better-sqlite3: set this to true or false
   bufferutil: set this to true or false
   core-js-pure: set this to true or false
@@ -29,10 +33,12 @@ catalog:
   better-auth: 1.4.0-beta.9
   eslint: ^9.38.0
   prettier: ^3.6.2
+  postgres: ^3.4.7
   tailwindcss: ^4.1.16
   typescript: ^5.9.3
-  zod: ^4.1.12
   vite: 7.1.12
+  vitest: ^3.2.1
+  zod: ^4.1.12
 
 catalogs:
   react19:
