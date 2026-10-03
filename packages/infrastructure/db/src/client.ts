@@ -7,7 +7,7 @@ export type DatabaseClient = PostgresJsDatabase & {
 };
 
 export function createDb(connectionString: string): DatabaseClient {
-  const client = postgres(connectionString);
+  const client = postgres(connectionString, { prepare: false });
   const db = drizzle(client) as DatabaseClient;
   db.$client = client;
   return db;

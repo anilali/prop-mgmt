@@ -27,6 +27,7 @@ export class S3BlobStorage implements BlobStorage {
       region: config.region,
       endpoint: config.endpoint,
       forcePathStyle: config.forcePathStyle ?? true,
+      requestChecksumCalculation: "WHEN_REQUIRED",
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,

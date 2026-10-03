@@ -10,8 +10,6 @@
     "build": "turbo run build",
     "clean": "git clean -xdf node_modules",
     "clean:workspaces": "turbo run clean",
-    "db:up": "PATH=\"/opt/podman/bin:$PATH\" podman compose up -d",
-    "db:down": "PATH=\"/opt/podman/bin:$PATH\" podman compose down",
     "db:migrate": "turbo -F @moonship/db db:migrate",
     "db:studio": "turbo -F @moonship/db studio",
     "dev": "turbo watch dev --continue",
@@ -30,6 +28,8 @@
   },
   "devDependencies": {
     "@moonship/prettier-config": "workspace:*",
+    "@neon/config": "^1.8.3",
+    "@neon/env": "^1.4.8",
     "@turbo/gen": "^2.5.8",
     "dotenv-cli": "^10.0.0",
     "prettier": "catalog:",

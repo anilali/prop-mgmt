@@ -1,14 +1,17 @@
 import type { Config } from "drizzle-kit";
 
-if (!process.env.POSTGRES_URL) {
-  throw new Error("Missing POSTGRES_URL");
+const databaseUrl =
+  process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+
+if (!databaseUrl) {
+  throw new Error("Missing POSTGRES_URL_NON_POOLING or POSTGRES_URL");
 }
 
 export default {
   schema: "./src/schemas/*/schema.ts",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.POSTGRES_URL,
+    url: databaseUrl,
   },
   casing: "snake_case",
   out: "./migrations",

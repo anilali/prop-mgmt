@@ -16,15 +16,11 @@ export const env = createEnv({
     OPERATOR_GOOGLE_CLIENT_ID: z.string().min(1),
     OPERATOR_GOOGLE_CLIENT_SECRET: z.string().min(1),
     OPERATOR_BETTER_AUTH_URL: z.url(),
-    S3_ENDPOINT: z.string().url(),
-    S3_ACCESS_KEY: z.string().min(1),
-    S3_SECRET_KEY: z.string().min(1),
+    AWS_ENDPOINT_URL_S3: z.string().url(),
+    AWS_ACCESS_KEY_ID: z.string().min(1),
+    AWS_SECRET_ACCESS_KEY: z.string().min(1),
+    AWS_REGION: z.string().min(1),
     S3_BUCKET: z.string().min(1),
-    S3_REGION: z.string().min(1),
-    S3_FORCE_PATH_STYLE: z
-      .enum(["true", "false"])
-      .default("true")
-      .transform((v) => v === "true"),
   },
   client: {},
   experimental__runtimeEnv: {

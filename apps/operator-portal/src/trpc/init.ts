@@ -5,11 +5,11 @@ import { env } from "~/env";
 export const { appRouter, createTRPCContext } = createOperatorAPI({
   databaseUrl: env.POSTGRES_URL,
   s3: {
-    endpoint: env.S3_ENDPOINT,
-    region: env.S3_REGION,
-    accessKeyId: env.S3_ACCESS_KEY,
-    secretAccessKey: env.S3_SECRET_KEY,
+    endpoint: env.AWS_ENDPOINT_URL_S3,
+    region: env.AWS_REGION,
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
     bucket: env.S3_BUCKET,
-    forcePathStyle: env.S3_FORCE_PATH_STYLE,
+    forcePathStyle: true,
   },
 });
