@@ -16,7 +16,7 @@ export const metadata: Metadata = {
       ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
       : "http://localhost:3001",
   ),
-  title: "Tenant portal",
+  title: "Tenant Portal",
   description: "Resident tenant portal",
 };
 

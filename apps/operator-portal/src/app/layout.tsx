@@ -16,7 +16,7 @@ export const metadata: Metadata = {
       ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
       : "http://localhost:3000",
   ),
-  title: "Operator portal",
+  title: "Operator Portal",
   description: "Property operator portal",
 };
 
