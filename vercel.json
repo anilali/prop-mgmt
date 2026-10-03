@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "operator-portal": {
+      "root": "apps/operator-portal",
+      "framework": "nextjs"
+    },
+    "tenant-portal": {
+      "root": "apps/tenant-portal",
+      "framework": "nextjs"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": { "pre": "operator." } }],
+      "destination": { "service": "operator-portal" }
+    },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": { "pre": "tenant." } }],
+      "destination": { "service": "tenant-portal" }
+    },
+    {
+      "source": "/(.*)",
+      "destination": { "service": "operator-portal" }
+    }
+  ]
+}
