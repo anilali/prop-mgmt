@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { Property } from "@moonship/property";
 import { InMemoryEventDispatcher } from "@moonship/events";
+import { Property } from "@moonship/property";
 
 import { createDb } from "../../client";
-import { PGPropertyRepository } from "./property-repository";
 import { PGPropertyQueries } from "../../queries/property/property-queries";
+import { PGPropertyRepository } from "./property-repository";
 
 const databaseUrl = process.env.POSTGRES_URL;
 
 describe.skipIf(!databaseUrl)("PGPropertyRepository", () => {
-  const db = createDb(databaseUrl!);
+  if (!databaseUrl) throw new Error("POSTGRES_URL is required for this suite");
+  const db = createDb(databaseUrl);
   const events = new InMemoryEventDispatcher();
   const repo = new PGPropertyRepository(db, events);
   const queries = new PGPropertyQueries(db);
@@ -20,16 +21,10 @@ describe.skipIf(!databaseUrl)("PGPropertyRepository", () => {
     await db.$client.end({ timeout: 5 });
   });
 
-  it("saves and loads the singleton property", async () => {
-    const existing = await repo.findSingleton();
-    if (existing) {
-      const view = await queries.get();
-      expect(view?.id).toBe(existing.id);
-      return;
-    }
-
+  it("saves and loads a property by id", async () => {
+    const id = randomUUID();
     const property = Property.create({
-      id: randomUUID(),
+      id,
       name: "Integration Test Property",
       address: {
         street1: "1 Test St",
@@ -42,8 +37,11 @@ describe.skipIf(!databaseUrl)("PGPropertyRepository", () => {
 
     await repo.save(property);
 
-    const loaded = await repo.findSingleton();
+    const loaded = await repo.findById(id);
     expect(loaded?.name).toBe("Integration Test Property");
     expect(loaded?.address.city).toBe("Testville");
+
+    const view = await queries.getById(id);
+    expect(view?.id).toBe(id);
   });
 });

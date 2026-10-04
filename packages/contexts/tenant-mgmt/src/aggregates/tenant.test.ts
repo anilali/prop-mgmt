@@ -11,6 +11,7 @@ import { Tenant } from "./tenant";
 function buildTenantProps(overrides: Partial<TenantProps> = {}): TenantProps {
   return {
     id: "tenant-1",
+    propertyId: "property-1",
     fullName: "Jane Doe",
     email: "jane@example.com",
     phone: "555-0100",
@@ -26,6 +27,7 @@ describe("Tenant", () => {
       const tenant = Tenant.create(buildTenantProps());
 
       expect(tenant.id).toBe("tenant-1");
+      expect(tenant.propertyId).toBe("property-1");
       expect(tenant.fullName).toBe("Jane Doe");
       expect(tenant.email).toBe("jane@example.com");
       expect(tenant.phone).toBe("555-0100");
@@ -36,7 +38,10 @@ describe("Tenant", () => {
       expect(events).toHaveLength(1);
       const created = events[0] as TenantCreated;
       expect(created.eventType).toBe("TenantCreated");
-      expect(created.payload).toEqual({ fullName: "Jane Doe" });
+      expect(created.payload).toEqual({
+        propertyId: "property-1",
+        fullName: "Jane Doe",
+      });
     });
   });
 

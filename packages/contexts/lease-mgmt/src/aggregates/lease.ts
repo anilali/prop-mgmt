@@ -19,6 +19,7 @@ export interface LeaseDocument {
 
 export interface LeaseProps {
   id: string;
+  propertyId: string;
   unitId: string;
   tenantId: string;
   startDate: Date;
@@ -73,6 +74,7 @@ export class Lease {
       occurredAt: new Date(),
       aggregateId: props.id,
       payload: {
+        propertyId: props.propertyId,
         unitId: props.unitId,
         tenantId: props.tenantId,
         status,
@@ -88,6 +90,10 @@ export class Lease {
 
   get id(): string {
     return this.props.id;
+  }
+
+  get propertyId(): string {
+    return this.props.propertyId;
   }
 
   get unitId(): string {
@@ -137,9 +143,11 @@ export class Lease {
     const rentCents = updates.rentCents ?? this.props.rentCents;
     assertInvariants({ startDate, endDate, rentCents });
 
-    if (updates.startDate !== undefined) this.props.startDate = updates.startDate;
+    if (updates.startDate !== undefined)
+      this.props.startDate = updates.startDate;
     if (updates.endDate !== undefined) this.props.endDate = updates.endDate;
-    if (updates.rentCents !== undefined) this.props.rentCents = updates.rentCents;
+    if (updates.rentCents !== undefined)
+      this.props.rentCents = updates.rentCents;
     if (updates.depositCents !== undefined)
       this.props.depositCents = updates.depositCents ?? undefined;
 

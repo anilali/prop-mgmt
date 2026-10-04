@@ -8,8 +8,11 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { FileText } from "lucide-react";
+
 import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
+import { EmptyState } from "@moonship/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from "@moonship/ui/table";
+import { PageHeader } from "@moonship/ui/page-header";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -110,11 +114,23 @@ export function LeasesPageContent() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button type="button" onClick={() => setOpen(true)}>
-          New lease term
-        </Button>
-      </div>
+      <PageHeader
+        title="Leases"
+        description="One document per lease term. Renewals are new terms."
+        action={
+          <Button type="button" onClick={() => setOpen(true)}>
+            New lease term
+          </Button>
+        }
+      />
+      {leases.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="size-5" />}
+          headline="No leases"
+          description="Create your first lease term to get started."
+          className="rounded-lg border border-dashed py-16"
+        />
+      ) : (
       <Table>
         <TableHeader>
           <TableRow>
@@ -198,6 +214,7 @@ export function LeasesPageContent() {
           ))}
         </TableBody>
       </Table>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

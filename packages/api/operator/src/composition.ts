@@ -1,14 +1,15 @@
 import type { BlobStorage } from "@moonship/blob-storage";
+import type { DatabaseClient } from "@moonship/db";
 import type { EventDispatcher } from "@moonship/events";
 import { S3BlobStorage } from "@moonship/blob-storage";
 import {
-  createDb,
+  PGAccessQueries,
   PGLeaseQueries,
   PGLeaseRepository,
+  PGPlatformAdminRepository,
+  PGPropertyAccessRepository,
   PGPropertyQueries,
   PGPropertyRepository,
-  PGStaffMemberQueries,
-  PGStaffMemberRepository,
   PGTenantQueries,
   PGTenantRepository,
   PGUnitQueries,
@@ -16,10 +17,12 @@ import {
 } from "@moonship/db";
 import { InMemoryEventDispatcher } from "@moonship/events";
 
+import type { Operator } from "./operator";
+import { loadRequestAccess } from "./operator-context";
 import { createTRPCRouter } from "./root";
 
 export interface OperatorAPIConfig {
-  databaseUrl: string;
+  db: DatabaseClient;
   eventDispatcher?: EventDispatcher;
   blobStorage?: BlobStorage;
   s3?: {
@@ -33,7 +36,7 @@ export interface OperatorAPIConfig {
 }
 
 export function createOperatorAPI(config: OperatorAPIConfig) {
-  const db = createDb(config.databaseUrl);
+  const db = config.db;
   const eventDispatcher =
     config.eventDispatcher ?? new InMemoryEventDispatcher();
 
@@ -51,11 +54,12 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
   const propertyQueries = new PGPropertyQueries(db);
   const unitRepository = new PGUnitRepository(db, eventDispatcher);
   const unitQueries = new PGUnitQueries(db);
-  const staffMemberRepository = new PGStaffMemberRepository(
+  const propertyAccessRepository = new PGPropertyAccessRepository(
     db,
     eventDispatcher,
   );
-  const staffMemberQueries = new PGStaffMemberQueries(db);
+  const platformAdminRepository = new PGPlatformAdminRepository(db);
+  const accessQueries = new PGAccessQueries(db);
   const tenantRepository = new PGTenantRepository(db, eventDispatcher);
   const tenantQueries = new PGTenantQueries(db);
   const leaseRepository = new PGLeaseRepository(db, eventDispatcher);
@@ -67,8 +71,8 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
       propertyQueries,
       unitRepository,
       unitQueries,
-      staffMemberRepository,
-      staffMemberQueries,
+      propertyAccessRepository,
+      accessQueries,
       tenantRepository,
       tenantQueries,
       leaseRepository,
@@ -80,5 +84,18 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
     appRouter,
     createTRPCContext,
     createCallerFactory,
+    loadRequestAccess: (input: {
+      operator: Operator;
+      cookieValue: string | null | undefined;
+    }) =>
+      loadRequestAccess(
+        { accessQueries, platformAdminRepository, propertyQueries },
+        input,
+      ),
+    claimAccessDeps: {
+      propertyAccessRepository,
+      platformAdminRepository,
+      accessQueries,
+    },
   };
 }

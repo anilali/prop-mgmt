@@ -1,9 +1,9 @@
 import { HydrateClient, prefetch, trpc } from "~/trpc/server";
-import { requireActiveStaff } from "../_lib/require-active-staff";
+import { requirePropertyContext } from "../_lib/require-operator-context";
 import { LeasesPageContent } from "./_components/leases-page-content";
 
 export default async function LeasesPage() {
-  await requireActiveStaff();
+  await requirePropertyContext();
   prefetch(trpc.lease.list.queryOptions());
   prefetch(trpc.unit.list.queryOptions());
   prefetch(trpc.tenant.list.queryOptions());
@@ -11,12 +11,6 @@ export default async function LeasesPage() {
   return (
     <HydrateClient>
       <div className="flex flex-col gap-6 p-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Leases</h1>
-          <p className="text-muted-foreground text-sm">
-            One document per lease term. Renewals are new terms.
-          </p>
-        </div>
         <LeasesPageContent />
       </div>
     </HydrateClient>

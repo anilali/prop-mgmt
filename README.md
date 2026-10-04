@@ -27,7 +27,7 @@ pnpm db:migrate
 pnpm dev:operator   # or pnpm dev:tenant / pnpm dev
 ```
 
-Operator dashboard (after Google sign-in + staff/bootstrap):
+Operator dashboard (Google sign-in, then a `property.staff_members` row for that auth user id):
 
 - `/property` - address, units (sqft, optional address override, utility share graph)
 - `/tenants` - operator CRM tenants

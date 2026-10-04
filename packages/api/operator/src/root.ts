@@ -1,20 +1,18 @@
+import type { AccessQueries, PropertyAccessRepository } from "@moonship/access";
+import type { BlobStorage } from "@moonship/blob-storage";
+import type { LeaseQueries, LeaseRepository } from "@moonship/lease-mgmt";
 import type {
   PropertyQueries,
   PropertyRepository,
-  StaffMemberQueries,
-  StaffMemberRepository,
   UnitQueries,
   UnitRepository,
 } from "@moonship/property";
 import type { TenantQueries, TenantRepository } from "@moonship/tenant-mgmt";
-import type { LeaseQueries, LeaseRepository } from "@moonship/lease-mgmt";
-import type { BlobStorage } from "@moonship/blob-storage";
 
-import type { OperatorSession } from "./trpc";
-import { authRouter } from "./routers/auth";
+import type { RequestAccess } from "./operator-context";
+import { accessRouter } from "./routers/access";
 import { leaseRouter } from "./routers/lease";
 import { propertyRouter } from "./routers/property";
-import { staffRouter } from "./routers/staff";
 import { tenantRouter } from "./routers/tenant";
 import { unitRouter } from "./routers/unit";
 import { createCallerFactory, router } from "./trpc";
@@ -24,8 +22,8 @@ export interface OperatorRouterDeps {
   propertyQueries: PropertyQueries;
   unitRepository: UnitRepository;
   unitQueries: UnitQueries;
-  staffMemberRepository: StaffMemberRepository;
-  staffMemberQueries: StaffMemberQueries;
+  propertyAccessRepository: PropertyAccessRepository;
+  accessQueries: AccessQueries;
   tenantRepository: TenantRepository;
   tenantQueries: TenantQueries;
   leaseRepository: LeaseRepository;
@@ -35,22 +33,18 @@ export interface OperatorRouterDeps {
 
 export function createTRPCRouter(deps: OperatorRouterDeps) {
   const appRouter = router({
-    auth: authRouter(),
     property: propertyRouter({
       propertyRepository: deps.propertyRepository,
       propertyQueries: deps.propertyQueries,
-      staffMemberQueries: deps.staffMemberQueries,
-      staffMemberRepository: deps.staffMemberRepository,
     }),
     unit: unitRouter({
       unitRepository: deps.unitRepository,
       unitQueries: deps.unitQueries,
-      propertyRepository: deps.propertyRepository,
       leaseQueries: deps.leaseQueries,
     }),
-    staff: staffRouter({
-      staffMemberRepository: deps.staffMemberRepository,
-      staffMemberQueries: deps.staffMemberQueries,
+    access: accessRouter({
+      propertyAccessRepository: deps.propertyAccessRepository,
+      accessQueries: deps.accessQueries,
     }),
     tenant: tenantRouter({
       tenantRepository: deps.tenantRepository,
@@ -67,10 +61,10 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
 
   const createTRPCContext = (opts: {
     headers: Headers;
-    session: OperatorSession | null;
+    access: RequestAccess | null;
   }) => {
     return {
-      session: opts.session,
+      access: opts.access,
     };
   };
 

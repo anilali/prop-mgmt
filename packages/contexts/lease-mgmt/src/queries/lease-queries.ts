@@ -2,6 +2,7 @@ import type { LeaseDocument, LeaseStatus } from "../aggregates/lease";
 
 export interface LeaseView {
   id: string;
+  propertyId: string;
   unitId: string;
   tenantId: string;
   startDate: Date;
@@ -18,7 +19,7 @@ export interface LeaseListFilters {
 }
 
 export interface LeaseQueries {
-  list(filters?: LeaseListFilters): Promise<LeaseView[]>;
-  getById(id: string): Promise<LeaseView | null>;
-  listActiveByUnitId(unitId: string): Promise<LeaseView[]>;
+  list(propertyId: string, filters?: LeaseListFilters): Promise<LeaseView[]>;
+  getById(propertyId: string, id: string): Promise<LeaseView | null>;
+  listActiveByUnitId(propertyId: string, unitId: string): Promise<LeaseView[]>;
 }

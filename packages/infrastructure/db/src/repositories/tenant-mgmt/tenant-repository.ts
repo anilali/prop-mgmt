@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { EventDispatcher } from "@moonship/events";
 import type { TenantRepository, TenantStatus } from "@moonship/tenant-mgmt";
@@ -13,16 +13,17 @@ export class PGTenantRepository implements TenantRepository {
     private eventDispatcher?: EventDispatcher,
   ) {}
 
-  async findById(id: string): Promise<Tenant | null> {
+  async findById(propertyId: string, id: string): Promise<Tenant | null> {
     const row = await this.db
       .select()
       .from(tenants)
-      .where(eq(tenants.id, id))
+      .where(and(eq(tenants.id, id), eq(tenants.propertyId, propertyId)))
       .limit(1)
       .then((rows) => rows[0]);
     if (!row) return null;
     return Tenant.reconstitute({
       id: row.id,
+      propertyId: row.propertyId,
       fullName: row.fullName,
       email: row.email ?? undefined,
       phone: row.phone ?? undefined,
@@ -37,6 +38,7 @@ export class PGTenantRepository implements TenantRepository {
       .insert(tenants)
       .values({
         id: tenant.id,
+        propertyId: tenant.propertyId,
         fullName: tenant.fullName,
         email: tenant.email ?? null,
         phone: tenant.phone ?? null,

@@ -17,7 +17,10 @@
     "./table": "./src/table.tsx",
     "./badge": "./src/badge.tsx",
     "./textarea": "./src/textarea.tsx",
-    "./select": "./src/select.tsx"
+    "./select": "./src/select.tsx",
+    "./page-header": "./src/page-header.tsx",
+    "./empty-state": "./src/empty-state.tsx",
+    "./toolbar": "./src/toolbar.tsx"
   },
   "license": "MIT",
   "scripts": {

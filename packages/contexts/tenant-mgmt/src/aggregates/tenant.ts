@@ -10,6 +10,7 @@ export type TenantStatus = "active" | "archived";
 
 export interface TenantProps {
   id: string;
+  propertyId: string;
   fullName: string;
   email?: string;
   phone?: string;
@@ -38,6 +39,7 @@ export class Tenant {
       occurredAt: new Date(),
       aggregateId: props.id,
       payload: {
+        propertyId: props.propertyId,
         fullName: props.fullName,
       },
     };
@@ -51,6 +53,10 @@ export class Tenant {
 
   get id(): string {
     return this.props.id;
+  }
+
+  get propertyId(): string {
+    return this.props.propertyId;
   }
 
   get fullName(): string {

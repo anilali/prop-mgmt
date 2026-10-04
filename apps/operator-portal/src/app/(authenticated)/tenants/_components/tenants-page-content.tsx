@@ -8,8 +8,11 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { Users } from "lucide-react";
+
 import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
+import { EmptyState } from "@moonship/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@moonship/ui/table";
+import { PageHeader } from "@moonship/ui/page-header";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -72,11 +76,23 @@ export function TenantsPageContent() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button type="button" onClick={() => setOpen(true)}>
-          Add tenant
-        </Button>
-      </div>
+      <PageHeader
+        title="Tenants"
+        description="Operator CRM records (portal invite later)."
+        action={
+          <Button type="button" onClick={() => setOpen(true)}>
+            Add tenant
+          </Button>
+        }
+      />
+      {tenants.length === 0 ? (
+        <EmptyState
+          icon={<Users className="size-5" />}
+          headline="No tenants"
+          description="Add your first tenant to get started."
+          className="rounded-lg border border-dashed py-16"
+        />
+      ) : (
       <Table>
         <TableHeader>
           <TableRow>
@@ -118,6 +134,7 @@ export function TenantsPageContent() {
           ))}
         </TableBody>
       </Table>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

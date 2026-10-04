@@ -24,28 +24,12 @@ import type { RouterOutputs } from "@moonship/api-operator";
 
 import { useTRPC } from "~/trpc/react";
 import { UnitDialog } from "./unit-dialog";
-import { BootstrapPropertyForm } from "./bootstrap-property-form";
-import { PendingStaffAccess } from "./pending-staff-access";
 
 type PropertyView = NonNullable<RouterOutputs["property"]["get"]>;
 
-export function PropertyPageContent({
-  isActiveStaff,
-  canClaimAdmin,
-}: {
-  isActiveStaff: boolean;
-  canClaimAdmin: boolean;
-}) {
+export function PropertyPageContent() {
   const trpc = useTRPC();
   const { data: property } = useSuspenseQuery(trpc.property.get.queryOptions());
-
-  if (!property) {
-    return <BootstrapPropertyForm />;
-  }
-
-  if (!isActiveStaff) {
-    return <PendingStaffAccess canClaimAdmin={canClaimAdmin} />;
-  }
 
   return (
     <Suspense fallback={<p className="text-muted-foreground text-sm">Loading units…</p>}>

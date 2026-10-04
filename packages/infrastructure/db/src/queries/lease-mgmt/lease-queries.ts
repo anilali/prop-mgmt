@@ -13,11 +13,11 @@ import { leases } from "../../schemas/lease-mgmt/schema";
 export class PGLeaseQueries implements LeaseQueries {
   constructor(private db: DatabaseClient) {}
 
-  async getById(id: string): Promise<LeaseView | null> {
+  async getById(propertyId: string, id: string): Promise<LeaseView | null> {
     const row = await this.db
       .select()
       .from(leases)
-      .where(eq(leases.id, id))
+      .where(and(eq(leases.id, id), eq(leases.propertyId, propertyId)))
       .limit(1)
       .then((rows) => rows[0]);
 
@@ -25,8 +25,11 @@ export class PGLeaseQueries implements LeaseQueries {
     return this.toView(row);
   }
 
-  async list(filters?: LeaseListFilters): Promise<LeaseView[]> {
-    const conditions = [];
+  async list(
+    propertyId: string,
+    filters?: LeaseListFilters,
+  ): Promise<LeaseView[]> {
+    const conditions = [eq(leases.propertyId, propertyId)];
     if (filters?.unitId !== undefined) {
       conditions.push(eq(leases.unitId, filters.unitId));
     }
@@ -34,22 +37,28 @@ export class PGLeaseQueries implements LeaseQueries {
       conditions.push(eq(leases.status, filters.status));
     }
 
-    const rows =
-      conditions.length === 0
-        ? await this.db.select().from(leases)
-        : await this.db
-            .select()
-            .from(leases)
-            .where(and(...conditions));
+    const rows = await this.db
+      .select()
+      .from(leases)
+      .where(and(...conditions));
 
     return rows.map((row) => this.toView(row));
   }
 
-  async listActiveByUnitId(unitId: string): Promise<LeaseView[]> {
+  async listActiveByUnitId(
+    propertyId: string,
+    unitId: string,
+  ): Promise<LeaseView[]> {
     const rows = await this.db
       .select()
       .from(leases)
-      .where(and(eq(leases.unitId, unitId), eq(leases.status, "active")));
+      .where(
+        and(
+          eq(leases.unitId, unitId),
+          eq(leases.propertyId, propertyId),
+          eq(leases.status, "active"),
+        ),
+      );
 
     return rows.map((row) => this.toView(row));
   }
@@ -57,6 +66,7 @@ export class PGLeaseQueries implements LeaseQueries {
   private toView(row: typeof leases.$inferSelect): LeaseView {
     return {
       id: row.id,
+      propertyId: row.propertyId,
       unitId: row.unitId,
       tenantId: row.tenantId,
       startDate: row.startDate,

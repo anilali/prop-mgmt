@@ -6,7 +6,7 @@ import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 
 import type { AppRouter } from "@moonship/api-operator";
 
-import { getEnrichedSession } from "~/auth/server";
+import { getRequestAccess } from "~/request-access";
 import { appRouter, createTRPCContext } from "./init";
 import { createQueryClient } from "./query-client";
 
@@ -14,11 +14,11 @@ const createContext = cache(async () => {
   const heads = new Headers(await headers());
   heads.set("x-trpc-source", "rsc");
 
-  const session = await getEnrichedSession();
+  const access = await getRequestAccess();
 
   return createTRPCContext({
     headers: heads,
-    session,
+    access,
   });
 });
 

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type {
   TenantQueries,
@@ -12,16 +12,19 @@ import { tenants } from "../../schemas/tenant-mgmt/schema";
 export class PGTenantQueries implements TenantQueries {
   constructor(private db: DatabaseClient) {}
 
-  async list(): Promise<TenantView[]> {
-    const rows = await this.db.select().from(tenants);
+  async list(propertyId: string): Promise<TenantView[]> {
+    const rows = await this.db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.propertyId, propertyId));
     return rows.map((row) => this.toView(row));
   }
 
-  async getById(id: string): Promise<TenantView | null> {
+  async getById(propertyId: string, id: string): Promise<TenantView | null> {
     const row = await this.db
       .select()
       .from(tenants)
-      .where(eq(tenants.id, id))
+      .where(and(eq(tenants.id, id), eq(tenants.propertyId, propertyId)))
       .limit(1)
       .then((rows) => rows[0]);
     if (!row) return null;
@@ -31,6 +34,7 @@ export class PGTenantQueries implements TenantQueries {
   private toView(row: typeof tenants.$inferSelect): TenantView {
     return {
       id: row.id,
+      propertyId: row.propertyId,
       fullName: row.fullName,
       email: row.email ?? undefined,
       phone: row.phone ?? undefined,

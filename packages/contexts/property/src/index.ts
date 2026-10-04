@@ -10,9 +10,6 @@ export type {
   UtilityType,
 } from "./aggregates/unit";
 
-export { StaffMember } from "./aggregates/staff-member";
-export type { StaffMemberProps, StaffRole } from "./aggregates/staff-member";
-
 // Events
 export type {
   PropertyEvent,
@@ -27,28 +24,13 @@ export type {
   UnitStatusChanged,
 } from "./events/unit-events";
 
-export type {
-  StaffMemberEvent,
-  StaffMemberProvisioned,
-  RoleChanged,
-  StaffMemberDeactivated,
-} from "./events/staff-member-events";
-
 // Repository interfaces
 export type { PropertyRepository } from "./repositories/property-repository";
 export type { UnitRepository } from "./repositories/unit-repository";
-export type { StaffMemberRepository } from "./repositories/staff-member-repository";
 
 // Query interfaces
-export type {
-  PropertyView,
-  PropertyQueries,
-} from "./queries/property-queries";
+export type { PropertyView, PropertyQueries } from "./queries/property-queries";
 export type { UnitView, UnitQueries } from "./queries/unit-queries";
-export type {
-  StaffMemberView,
-  StaffMemberQueries,
-} from "./queries/staff-member-queries";
 
 // Value objects
 export type { Address } from "./value-objects/address";

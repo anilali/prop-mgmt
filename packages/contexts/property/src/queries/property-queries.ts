@@ -7,5 +7,7 @@ export interface PropertyView {
 }
 
 export interface PropertyQueries {
-  get(): Promise<PropertyView | null>;
+  getById(id: string): Promise<PropertyView | null>;
+  listByIds(ids: string[]): Promise<PropertyView[]>;
+  list(): Promise<PropertyView[]>;
 }

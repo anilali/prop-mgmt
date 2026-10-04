@@ -2,22 +2,20 @@ import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import type { LeaseQueries } from "@moonship/lease-mgmt";
 import type {
-  PropertyRepository,
   UnitQueries,
   UnitRepository,
   UnitStatus,
   UtilityAssignment,
 } from "@moonship/property";
 import { Unit, validateUtilityAssignments } from "@moonship/property";
-import type { LeaseQueries } from "@moonship/lease-mgmt";
 
-import { operatorStaffProcedure, router } from "../trpc";
+import { propertyProcedure, router } from "../trpc";
 
 export interface UnitRouterDeps {
   unitRepository: UnitRepository;
   unitQueries: UnitQueries;
-  propertyRepository: PropertyRepository;
   leaseQueries: LeaseQueries;
 }
 
@@ -48,11 +46,19 @@ const addressSchema = z.object({
 
 export function unitRouter(deps: UnitRouterDeps) {
   return router({
-    list: operatorStaffProcedure.query(async () => {
-      return deps.unitQueries.list();
+    list: propertyProcedure.query(async ({ ctx }) => {
+      return deps.unitQueries.list(ctx.propertyId);
     }),
 
-    create: operatorStaffProcedure
+    get: propertyProcedure
+      .input(z.object({ id: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        const unit = await deps.unitQueries.getById(ctx.propertyId, input.id);
+        if (!unit) throw new TRPCError({ code: "NOT_FOUND" });
+        return unit;
+      }),
+
+    create: propertyProcedure
       .input(
         z.object({
           label: z.string().min(1),
@@ -64,16 +70,8 @@ export function unitRouter(deps: UnitRouterDeps) {
           status: unitStatusSchema.optional(),
         }),
       )
-      .mutation(async ({ input }) => {
-        const property = await deps.propertyRepository.findSingleton();
-        if (!property) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Property must be bootstrapped before creating units",
-          });
-        }
-
-        const existing = await deps.unitQueries.list();
+      .mutation(async ({ ctx, input }) => {
+        const existing = await deps.unitQueries.list(ctx.propertyId);
         const existingIds = new Set(existing.map((u) => u.id));
         const id = randomUUID();
         const utilities = (input.utilities ?? []) as UtilityAssignment[];
@@ -88,7 +86,7 @@ export function unitRouter(deps: UnitRouterDeps) {
 
         const unit = Unit.create({
           id,
-          propertyId: property.id,
+          propertyId: ctx.propertyId,
           label: input.label,
           sqft: input.sqft,
           bedrooms: input.bedrooms,
@@ -98,10 +96,10 @@ export function unitRouter(deps: UnitRouterDeps) {
           status: (input.status ?? "vacant") as UnitStatus,
         });
         await deps.unitRepository.save(unit);
-        return deps.unitQueries.getById(unit.id);
+        return deps.unitQueries.getById(ctx.propertyId, unit.id);
       }),
 
-    update: operatorStaffProcedure
+    update: propertyProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -114,14 +112,17 @@ export function unitRouter(deps: UnitRouterDeps) {
           status: unitStatusSchema.optional(),
         }),
       )
-      .mutation(async ({ input }) => {
-        const unit = await deps.unitRepository.findById(input.id);
+      .mutation(async ({ ctx, input }) => {
+        const unit = await deps.unitRepository.findById(
+          ctx.propertyId,
+          input.id,
+        );
         if (!unit) {
           throw new TRPCError({ code: "NOT_FOUND" });
         }
 
         if (input.utilities !== undefined) {
-          const existing = await deps.unitQueries.list();
+          const existing = await deps.unitQueries.list(ctx.propertyId);
           const existingIds = new Set(
             existing.map((u) => u.id).filter((id) => id !== input.id),
           );
@@ -153,24 +154,30 @@ export function unitRouter(deps: UnitRouterDeps) {
         }
 
         await deps.unitRepository.save(unit);
-        return deps.unitQueries.getById(unit.id);
+        return deps.unitQueries.getById(ctx.propertyId, unit.id);
       }),
 
-    remove: operatorStaffProcedure
+    remove: propertyProcedure
       .input(z.object({ id: z.string().uuid() }))
-      .mutation(async ({ input }) => {
-        const active = await deps.leaseQueries.listActiveByUnitId(input.id);
+      .mutation(async ({ ctx, input }) => {
+        const active = await deps.leaseQueries.listActiveByUnitId(
+          ctx.propertyId,
+          input.id,
+        );
         if (active.length > 0) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "Cannot remove a unit with an active lease",
           });
         }
-        const unit = await deps.unitRepository.findById(input.id);
+        const unit = await deps.unitRepository.findById(
+          ctx.propertyId,
+          input.id,
+        );
         if (!unit) {
           throw new TRPCError({ code: "NOT_FOUND" });
         }
-        await deps.unitRepository.delete(input.id);
+        await deps.unitRepository.delete(ctx.propertyId, input.id);
         return { ok: true as const };
       }),
   });

@@ -1,8 +1,14 @@
 import type { NextRequest } from "next/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 
-import { getEnrichedSession } from "~/auth/server";
+import {
+  mapSessionToOperator,
+  OPERATOR_CONTEXT_COOKIE,
+} from "@moonship/api-operator/server";
+
+import { auth } from "~/auth/server";
 import { appRouter, createTRPCContext } from "~/trpc/init";
+import { operatorApi } from "~/server/operator-api";
 
 const setCorsHeaders = (res: Response) => {
   res.headers.set("Access-Control-Allow-Origin", "*");
@@ -20,7 +26,22 @@ export const OPTIONS = () => {
 };
 
 const handler = async (req: NextRequest) => {
-  const session = await getEnrichedSession();
+  const session = await auth.api.getSession({ headers: req.headers });
+  const operator = session
+    ? mapSessionToOperator({
+        user: {
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+        },
+      })
+    : null;
+  const access = operator
+    ? await operatorApi.loadRequestAccess({
+        operator,
+        cookieValue: req.cookies.get(OPERATOR_CONTEXT_COOKIE)?.value,
+      })
+    : null;
 
   const response = await fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -29,7 +50,7 @@ const handler = async (req: NextRequest) => {
     createContext: () =>
       createTRPCContext({
         headers: req.headers,
-        session,
+        access,
       }),
     onError({ error, path }) {
       console.error(`>>> tRPC Error on '${path}'`, error);

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { EventDispatcher } from "@moonship/events";
 import type {
@@ -17,11 +17,11 @@ export class PGUnitRepository implements UnitRepository {
     private eventDispatcher?: EventDispatcher,
   ) {}
 
-  async findById(id: string): Promise<Unit | null> {
+  async findById(propertyId: string, id: string): Promise<Unit | null> {
     const row = await this.db
       .select()
       .from(units)
-      .where(eq(units.id, id))
+      .where(and(eq(units.id, id), eq(units.propertyId, propertyId)))
       .limit(1)
       .then((rows) => rows[0]);
 
@@ -64,8 +64,10 @@ export class PGUnitRepository implements UnitRepository {
     }
   }
 
-  async delete(id: string): Promise<void> {
-    await this.db.delete(units).where(eq(units.id, id));
+  async delete(propertyId: string, id: string): Promise<void> {
+    await this.db
+      .delete(units)
+      .where(and(eq(units.propertyId, propertyId), eq(units.id, id)));
   }
 
   private toAggregate(row: typeof units.$inferSelect): Unit {
@@ -77,7 +79,7 @@ export class PGUnitRepository implements UnitRepository {
       bathrooms: row.bathrooms ?? undefined,
       sqft: row.sqft,
       addressOverride: row.addressOverride ?? null,
-      utilities: (row.utilities ?? []) as UtilityAssignment[],
+      utilities: row.utilities as UtilityAssignment[],
       status: row.status as UnitStatus,
     });
   }

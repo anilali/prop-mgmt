@@ -25,17 +25,6 @@ export class PGPropertyRepository implements PropertyRepository {
     return this.toAggregate(row);
   }
 
-  async findSingleton(): Promise<Property | null> {
-    const row = await this.db
-      .select()
-      .from(properties)
-      .limit(1)
-      .then((rows) => rows[0]);
-
-    if (!row) return null;
-    return this.toAggregate(row);
-  }
-
   async save(property: Property): Promise<void> {
     const events = property.pullEvents();
 

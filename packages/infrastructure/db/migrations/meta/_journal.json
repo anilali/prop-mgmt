@@ -15,6 +15,20 @@
       "when": 1784528442659,
       "tag": "1784528442_plain_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791134414917,
+      "tag": "1791134414_clear_tenants_and_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791134451988,
+      "tag": "1791134451_operator_access",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import type { Tenant } from "../aggregates/tenant";
 
 export interface TenantRepository {
-  findById(id: string): Promise<Tenant | null>;
+  findById(propertyId: string, id: string): Promise<Tenant | null>;
   save(tenant: Tenant): Promise<void>;
 }

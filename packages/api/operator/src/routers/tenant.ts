@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { TenantQueries, TenantRepository } from "@moonship/tenant-mgmt";
 import { Tenant } from "@moonship/tenant-mgmt";
 
-import { operatorStaffProcedure, router } from "../trpc";
+import { propertyProcedure, router } from "../trpc";
 
 export interface TenantRouterDeps {
   tenantRepository: TenantRepository;
@@ -14,9 +14,22 @@ export interface TenantRouterDeps {
 
 export function tenantRouter(deps: TenantRouterDeps) {
   return router({
-    list: operatorStaffProcedure.query(async () => deps.tenantQueries.list()),
+    list: propertyProcedure.query(async ({ ctx }) => {
+      return deps.tenantQueries.list(ctx.propertyId);
+    }),
 
-    create: operatorStaffProcedure
+    get: propertyProcedure
+      .input(z.object({ id: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        const tenant = await deps.tenantQueries.getById(
+          ctx.propertyId,
+          input.id,
+        );
+        if (!tenant) throw new TRPCError({ code: "NOT_FOUND" });
+        return tenant;
+      }),
+
+    create: propertyProcedure
       .input(
         z.object({
           fullName: z.string().min(1),
@@ -25,19 +38,20 @@ export function tenantRouter(deps: TenantRouterDeps) {
           notes: z.string().optional(),
         }),
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const tenant = Tenant.create({
           id: randomUUID(),
+          propertyId: ctx.propertyId,
           fullName: input.fullName,
           email: input.email,
           phone: input.phone,
           notes: input.notes,
         });
         await deps.tenantRepository.save(tenant);
-        return deps.tenantQueries.getById(tenant.id);
+        return deps.tenantQueries.getById(ctx.propertyId, tenant.id);
       }),
 
-    update: operatorStaffProcedure
+    update: propertyProcedure
       .input(
         z.object({
           id: z.string().uuid(),
@@ -47,8 +61,11 @@ export function tenantRouter(deps: TenantRouterDeps) {
           notes: z.string().nullable().optional(),
         }),
       )
-      .mutation(async ({ input }) => {
-        const tenant = await deps.tenantRepository.findById(input.id);
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await deps.tenantRepository.findById(
+          ctx.propertyId,
+          input.id,
+        );
         if (!tenant) throw new TRPCError({ code: "NOT_FOUND" });
         try {
           tenant.update({
@@ -64,17 +81,20 @@ export function tenantRouter(deps: TenantRouterDeps) {
           });
         }
         await deps.tenantRepository.save(tenant);
-        return deps.tenantQueries.getById(tenant.id);
+        return deps.tenantQueries.getById(ctx.propertyId, tenant.id);
       }),
 
-    archive: operatorStaffProcedure
+    archive: propertyProcedure
       .input(z.object({ id: z.string().uuid() }))
-      .mutation(async ({ input }) => {
-        const tenant = await deps.tenantRepository.findById(input.id);
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await deps.tenantRepository.findById(
+          ctx.propertyId,
+          input.id,
+        );
         if (!tenant) throw new TRPCError({ code: "NOT_FOUND" });
         tenant.archive();
         await deps.tenantRepository.save(tenant);
-        return deps.tenantQueries.getById(tenant.id);
+        return deps.tenantQueries.getById(ctx.propertyId, tenant.id);
       }),
   });
 }

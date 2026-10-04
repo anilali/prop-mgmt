@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
+    "@moonship/access": "workspace:*",
     "@moonship/blob-storage": "workspace:*",
     "@moonship/db": "workspace:*",
     "@moonship/events": "workspace:*",

@@ -23,6 +23,10 @@
       "types": "./dist/schemas/property/schema.d.ts",
       "default": "./src/schemas/property/schema.ts"
     },
+    "./schemas/access": {
+      "types": "./dist/schemas/access/schema.d.ts",
+      "default": "./src/schemas/access/schema.ts"
+    },
     "./schemas/lease-mgmt": {
       "types": "./dist/schemas/lease-mgmt/schema.d.ts",
       "default": "./src/schemas/lease-mgmt/schema.ts"
@@ -57,6 +61,7 @@
     "with-env": "dotenv -e ../../../.env -e ../../../.env.local --"
   },
   "dependencies": {
+    "@moonship/access": "workspace:*",
     "@moonship/events": "workspace:*",
     "@moonship/lease-mgmt": "workspace:*",
     "@moonship/property": "workspace:*",

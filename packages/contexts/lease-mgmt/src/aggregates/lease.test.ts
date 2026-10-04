@@ -10,11 +10,10 @@ import type {
 import type { LeaseDocument, LeaseProps } from "./lease";
 import { Lease } from "./lease";
 
-function buildLeaseProps(
-  overrides: Partial<LeaseProps> = {},
-): LeaseProps {
+function buildLeaseProps(overrides: Partial<LeaseProps> = {}): LeaseProps {
   return {
     id: "lease-1",
+    propertyId: "property-1",
     unitId: "unit-1",
     tenantId: "tenant-1",
     startDate: new Date("2026-01-01"),
@@ -30,11 +29,15 @@ function buildLeaseProps(
 describe("Lease", () => {
   describe("create", () => {
     it("creates a draft lease by default and emits LeaseCreated", () => {
-      const { status: _status, document: _document, ...createProps } =
-        buildLeaseProps();
+      const {
+        status: _status,
+        document: _document,
+        ...createProps
+      } = buildLeaseProps();
       const lease = Lease.create(createProps);
 
       expect(lease.id).toBe("lease-1");
+      expect(lease.propertyId).toBe("property-1");
       expect(lease.unitId).toBe("unit-1");
       expect(lease.tenantId).toBe("tenant-1");
       expect(lease.rentCents).toBe(150_000);
@@ -47,6 +50,7 @@ describe("Lease", () => {
       const created = events[0] as LeaseCreated;
       expect(created.eventType).toBe("LeaseCreated");
       expect(created.payload).toEqual({
+        propertyId: "property-1",
         unitId: "unit-1",
         tenantId: "tenant-1",
         status: "draft",
@@ -54,8 +58,11 @@ describe("Lease", () => {
     });
 
     it("creates an active lease when status is provided", () => {
-      const { status: _status, document: _document, ...createProps } =
-        buildLeaseProps();
+      const {
+        status: _status,
+        document: _document,
+        ...createProps
+      } = buildLeaseProps();
       const lease = Lease.create({ ...createProps, status: "active" });
 
       expect(lease.status).toBe("active");
@@ -64,19 +71,25 @@ describe("Lease", () => {
     });
 
     it("rejects endDate before startDate", () => {
-      const { status: _status, document: _document, ...createProps } =
-        buildLeaseProps({
-          startDate: new Date("2026-06-01"),
-          endDate: new Date("2026-01-01"),
-        });
+      const {
+        status: _status,
+        document: _document,
+        ...createProps
+      } = buildLeaseProps({
+        startDate: new Date("2026-06-01"),
+        endDate: new Date("2026-01-01"),
+      });
       expect(() => Lease.create(createProps)).toThrow(
         "endDate must be on or after startDate",
       );
     });
 
     it("rejects negative rentCents", () => {
-      const { status: _status, document: _document, ...createProps } =
-        buildLeaseProps({ rentCents: -1 });
+      const {
+        status: _status,
+        document: _document,
+        ...createProps
+      } = buildLeaseProps({ rentCents: -1 });
       expect(() => Lease.create(createProps)).toThrow("rentCents must be >= 0");
     });
   });

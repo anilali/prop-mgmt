@@ -12,6 +12,7 @@ export const leaseMgmtSchema = pgSchema("lease_mgmt");
 
 export const leases = leaseMgmtSchema.table("leases", {
   id: uuid("id").primaryKey().defaultRandom(),
+  propertyId: uuid("property_id").notNull(),
   unitId: uuid("unit_id").notNull(),
   tenantId: uuid("tenant_id").notNull(),
   startDate: date("start_date", { mode: "date" }).notNull(),

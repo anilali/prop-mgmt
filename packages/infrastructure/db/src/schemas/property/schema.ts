@@ -3,7 +3,6 @@ import {
   integer,
   json,
   pgSchema,
-  text,
   timestamp,
   uuid,
   varchar,
@@ -20,12 +19,7 @@ export type AddressJson = {
   country: string;
 };
 
-export type UtilityTypeJson =
-  | "electric"
-  | "gas"
-  | "water"
-  | "sewer"
-  | "trash";
+export type UtilityTypeJson = "electric" | "gas" | "water" | "sewer" | "trash";
 
 export type UtilityAssignmentJson =
   | { type: UtilityTypeJson; kind: "individual" }
@@ -57,18 +51,6 @@ export const units = propertySchema.table("units", {
     .notNull()
     .default([]),
   status: varchar("status", { length: 32 }).notNull().default("vacant"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at")
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
-
-export const staffMembers = propertySchema.table("staff_members", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  authUserId: text("auth_user_id").notNull().unique(),
-  role: varchar("role", { length: 32 }).notNull(),
-  status: varchar("status", { length: 32 }).notNull().default("active"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()

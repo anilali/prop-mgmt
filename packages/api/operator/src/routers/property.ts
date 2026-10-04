@@ -2,25 +2,14 @@ import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import type {
-  PropertyQueries,
-  PropertyRepository,
-  StaffMemberQueries,
-  StaffMemberRepository,
-} from "@moonship/property";
-import { Property, StaffMember } from "@moonship/property";
+import type { PropertyQueries, PropertyRepository } from "@moonship/property";
+import { Property } from "@moonship/property";
 
-import {
-  operatorStaffProcedure,
-  protectedProcedure,
-  router,
-} from "../trpc";
+import { platformAdminProcedure, propertyProcedure, router } from "../trpc";
 
 export interface PropertyRouterDeps {
   propertyRepository: PropertyRepository;
   propertyQueries: PropertyQueries;
-  staffMemberQueries: StaffMemberQueries;
-  staffMemberRepository: StaffMemberRepository;
 }
 
 const addressSchema = z.object({
@@ -32,43 +21,41 @@ const addressSchema = z.object({
   country: z.string().min(1),
 });
 
-async function assertAdminOrFirstStaff(
-  deps: PropertyRouterDeps,
-  sessionStaff: { role: "admin" | "staff"; status: string } | null | undefined,
-) {
-  const staff = await deps.staffMemberQueries.list();
-  const activeStaff = staff.filter((s) => s.status !== "deactivated");
-  if (activeStaff.length === 0) return;
-  if (sessionStaff?.role === "admin" && sessionStaff.status !== "deactivated") {
-    return;
-  }
-  throw new TRPCError({ code: "FORBIDDEN" });
-}
-
 export function propertyRouter(deps: PropertyRouterDeps) {
   return router({
-    get: protectedProcedure.query(async () => {
-      return deps.propertyQueries.get();
+    list: platformAdminProcedure.query(async () => {
+      const properties = await deps.propertyQueries.list();
+      return [...properties].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
     }),
 
-    bootstrap: protectedProcedure
+    getForPlatform: platformAdminProcedure
+      .input(z.object({ propertyId: z.string().uuid() }))
+      .query(async ({ input }) => {
+        const property = await deps.propertyQueries.getById(input.propertyId);
+        if (!property) {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        return property;
+      }),
+
+    get: propertyProcedure.query(async ({ ctx }) => {
+      const property = await deps.propertyQueries.getById(ctx.propertyId);
+      if (!property) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+      return property;
+    }),
+
+    register: platformAdminProcedure
       .input(
         z.object({
           name: z.string().min(1),
           address: addressSchema,
         }),
       )
-      .mutation(async ({ ctx, input }) => {
-        await assertAdminOrFirstStaff(deps, ctx.session.staff);
-
-        const existing = await deps.propertyRepository.findSingleton();
-        if (existing) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Property already exists",
-          });
-        }
-
+      .mutation(async ({ input }) => {
         const property = Property.create({
           id: randomUUID(),
           name: input.name,
@@ -76,76 +63,22 @@ export function propertyRouter(deps: PropertyRouterDeps) {
         });
         await deps.propertyRepository.save(property);
 
-        const existingStaff = await deps.staffMemberQueries.getByAuthUserId(
-          ctx.session.user.id,
-        );
-        if (!existingStaff) {
-          const member = StaffMember.create({
-            id: randomUUID(),
-            authUserId: ctx.session.user.id,
-            role: "admin",
-            status: "active",
-          });
-          await deps.staffMemberRepository.save(member);
+        const created = await deps.propertyQueries.getById(property.id);
+        if (!created) {
+          throw new TRPCError({ code: "NOT_FOUND" });
         }
-
-        return deps.propertyQueries.get();
+        return created;
       }),
 
-    claimAdmin: protectedProcedure.mutation(async ({ ctx }) => {
-      const property = await deps.propertyRepository.findSingleton();
-      if (!property) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Property is not configured",
-        });
-      }
-
-      const existingStaff = await deps.staffMemberQueries.getByAuthUserId(
-        ctx.session.user.id,
-      );
-      if (existingStaff && existingStaff.status !== "deactivated") {
-        return {
-          id: existingStaff.id,
-          role: existingStaff.role,
-          status: existingStaff.status,
-        };
-      }
-
-      const activeStaff = (await deps.staffMemberQueries.list()).filter(
-        (member) => member.status !== "deactivated",
-      );
-      if (activeStaff.length > 0) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Staff is already provisioned for this property",
-        });
-      }
-
-      const member = StaffMember.create({
-        id: randomUUID(),
-        authUserId: ctx.session.user.id,
-        role: "admin",
-        status: "active",
-      });
-      await deps.staffMemberRepository.save(member);
-
-      return {
-        id: member.id,
-        role: member.role,
-        status: member.status,
-      };
-    }),
-
-    update: operatorStaffProcedure
+    update: propertyProcedure
       .input(
         z.object({
           name: z.string().min(1).optional(),
           address: addressSchema.optional(),
         }),
       )
-      .mutation(async ({ input }) => {
-        const property = await deps.propertyRepository.findSingleton();
+      .mutation(async ({ ctx, input }) => {
+        const property = await deps.propertyRepository.findById(ctx.propertyId);
         if (!property) {
           throw new TRPCError({ code: "NOT_FOUND" });
         }
@@ -155,7 +88,7 @@ export function propertyRouter(deps: PropertyRouterDeps) {
           address: input.address,
         });
         await deps.propertyRepository.save(property);
-        return deps.propertyQueries.get();
+        return deps.propertyQueries.getById(property.id);
       }),
   });
 }

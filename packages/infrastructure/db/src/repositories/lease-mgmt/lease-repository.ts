@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { EventDispatcher } from "@moonship/events";
 import type { LeaseRepository, LeaseStatus } from "@moonship/lease-mgmt";
@@ -13,11 +13,11 @@ export class PGLeaseRepository implements LeaseRepository {
     private eventDispatcher?: EventDispatcher,
   ) {}
 
-  async findById(id: string): Promise<Lease | null> {
+  async findById(propertyId: string, id: string): Promise<Lease | null> {
     const row = await this.db
       .select()
       .from(leases)
-      .where(eq(leases.id, id))
+      .where(and(eq(leases.id, id), eq(leases.propertyId, propertyId)))
       .limit(1)
       .then((rows) => rows[0]);
     if (!row) return null;
@@ -31,6 +31,7 @@ export class PGLeaseRepository implements LeaseRepository {
       .insert(leases)
       .values({
         id: lease.id,
+        propertyId: lease.propertyId,
         unitId: lease.unitId,
         tenantId: lease.tenantId,
         startDate: lease.startDate,
@@ -46,6 +47,7 @@ export class PGLeaseRepository implements LeaseRepository {
       .onConflictDoUpdate({
         target: leases.id,
         set: {
+          propertyId: lease.propertyId,
           unitId: lease.unitId,
           tenantId: lease.tenantId,
           startDate: lease.startDate,
@@ -68,6 +70,7 @@ export class PGLeaseRepository implements LeaseRepository {
   private toAggregate(row: typeof leases.$inferSelect): Lease {
     return Lease.reconstitute({
       id: row.id,
+      propertyId: row.propertyId,
       unitId: row.unitId,
       tenantId: row.tenantId,
       startDate: row.startDate,

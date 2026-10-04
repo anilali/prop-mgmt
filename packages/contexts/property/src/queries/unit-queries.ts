@@ -1,7 +1,4 @@
-import type {
-  UnitStatus,
-  UtilityAssignment,
-} from "../aggregates/unit";
+import type { UnitStatus, UtilityAssignment } from "../aggregates/unit";
 import type { Address } from "../value-objects/address";
 
 export interface UnitView {
@@ -17,6 +14,6 @@ export interface UnitView {
 }
 
 export interface UnitQueries {
-  list(): Promise<UnitView[]>;
-  getById(id: string): Promise<UnitView | null>;
+  list(propertyId: string): Promise<UnitView[]>;
+  getById(propertyId: string, id: string): Promise<UnitView | null>;
 }

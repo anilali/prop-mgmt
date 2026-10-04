@@ -5,6 +5,7 @@ import type { LeaseStatus } from "../aggregates/lease";
 export interface LeaseCreated extends DomainEvent {
   readonly eventType: "LeaseCreated";
   readonly payload: {
+    readonly propertyId: string;
     readonly unitId: string;
     readonly tenantId: string;
     readonly status: LeaseStatus;

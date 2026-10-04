@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type {
   UnitQueries,
@@ -13,16 +13,19 @@ import { units } from "../../schemas/property/schema";
 export class PGUnitQueries implements UnitQueries {
   constructor(private db: DatabaseClient) {}
 
-  async list(): Promise<UnitView[]> {
-    const rows = await this.db.select().from(units);
+  async list(propertyId: string): Promise<UnitView[]> {
+    const rows = await this.db
+      .select()
+      .from(units)
+      .where(eq(units.propertyId, propertyId));
     return rows.map((row) => this.toView(row));
   }
 
-  async getById(id: string): Promise<UnitView | null> {
+  async getById(propertyId: string, id: string): Promise<UnitView | null> {
     const row = await this.db
       .select()
       .from(units)
-      .where(eq(units.id, id))
+      .where(and(eq(units.id, id), eq(units.propertyId, propertyId)))
       .limit(1)
       .then((rows) => rows[0]);
 
@@ -39,7 +42,7 @@ export class PGUnitQueries implements UnitQueries {
       bedrooms: row.bedrooms ?? undefined,
       bathrooms: row.bathrooms ?? undefined,
       addressOverride: row.addressOverride ?? null,
-      utilities: (row.utilities ?? []) as UtilityAssignment[],
+      utilities: row.utilities as UtilityAssignment[],
       status: row.status as UnitStatus,
     };
   }
