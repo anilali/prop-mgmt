@@ -25,14 +25,19 @@ import type {
 } from "@moonship/billing";
 import type {
   BlobStorage,
+  ObjectInfo,
   PutObjectInput,
   SignedDownloadOptions,
+  SignedUpload,
+  SignedUploadOptions,
 } from "@moonship/blob-storage";
 import type {
   AccountProps,
   AccountQueries,
   AccountRepository,
   AccountView,
+  LeaseDocument,
+  LeaseDocumentStore,
 } from "@moonship/lease-mgmt";
 import type { IsoDate } from "@moonship/shared";
 import {
@@ -709,6 +714,9 @@ export class FakeBlobStorage implements BlobStorage {
   objects = new Map<string, { body: Uint8Array; contentType: string }>();
   puts: string[] = [];
   signed: { key: string; options: SignedDownloadOptions | undefined }[] = [];
+  uploads: { key: string; options: SignedUploadOptions }[] = [];
+  deleted: string[] = [];
+  available = true;
 
   putObject(input: PutObjectInput): Promise<{ key: string }> {
     this.puts.push(input.key);
@@ -727,9 +735,85 @@ export class FakeBlobStorage implements BlobStorage {
     return Promise.resolve(`https://blob/${key}`);
   }
 
+  getSignedUploadUrl(
+    key: string,
+    options: SignedUploadOptions,
+  ): Promise<SignedUpload> {
+    this.uploads.push({ key, options });
+    return Promise.resolve({
+      url: `https://blob/${key}?upload`,
+      headers: { "Content-Type": options.contentType },
+    });
+  }
+
+  headObject(key: string): Promise<ObjectInfo | null> {
+    if (!this.available) {
+      return Promise.reject(new Error("NoSuchBucket"));
+    }
+    const object = this.objects.get(key);
+    return Promise.resolve(
+      object
+        ? { sizeBytes: object.body.byteLength, contentType: object.contentType }
+        : null,
+    );
+  }
+
+  isAvailable(): Promise<boolean> {
+    return Promise.resolve(this.available);
+  }
+
   deleteObject(key: string): Promise<void> {
+    if (!this.available) {
+      return Promise.reject(new Error("NoSuchBucket"));
+    }
+    this.deleted.push(key);
     this.objects.delete(key);
     return Promise.resolve();
+  }
+}
+
+export class InMemoryLeaseDocumentStore implements LeaseDocumentStore {
+  documents = new Map<string, LeaseDocument>();
+
+  listForAccount(
+    propertyId: string,
+    accountId: string,
+  ): Promise<LeaseDocument[]> {
+    return Promise.resolve(
+      [...this.documents.values()]
+        .filter((d) => d.propertyId === propertyId && d.accountId === accountId)
+        .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime())
+        .map((d) => structuredClone(d)),
+    );
+  }
+
+  getById(propertyId: string, id: string): Promise<LeaseDocument | null> {
+    const document = this.documents.get(id);
+    if (document?.propertyId !== propertyId) return Promise.resolve(null);
+    return Promise.resolve(structuredClone(document));
+  }
+
+  insert(document: LeaseDocument): Promise<void> {
+    if (this.documents.has(document.id)) {
+      return Promise.reject(new Error(`Document ${document.id} exists`));
+    }
+    this.documents.set(document.id, structuredClone(document));
+    return Promise.resolve();
+  }
+
+  delete(propertyId: string, id: string): Promise<void> {
+    if (this.documents.get(id)?.propertyId === propertyId) {
+      this.documents.delete(id);
+    }
+    return Promise.resolve();
+  }
+
+  accountHasDocuments(propertyId: string, accountId: string): Promise<boolean> {
+    return Promise.resolve(
+      [...this.documents.values()].some(
+        (d) => d.propertyId === propertyId && d.accountId === accountId,
+      ),
+    );
   }
 }
 

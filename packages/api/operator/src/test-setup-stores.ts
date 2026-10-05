@@ -33,6 +33,7 @@ import {
   FakeStatementRenderer,
   InMemoryAccountStore,
   InMemoryBillingStore,
+  InMemoryLeaseDocumentStore,
   InMemoryUnitOfWork,
 } from "./test-billing-store";
 import { createCallerFactory } from "./trpc";
@@ -273,6 +274,7 @@ export function createTestApp(
     billing.categories.set(category.id, category);
   }
   const blob = new FakeBlobStorage();
+  const documents = new InMemoryLeaseDocumentStore();
   const unitOfWork = new InMemoryUnitOfWork(
     {
       billing,
@@ -299,6 +301,7 @@ export function createTestApp(
     tenantQueries: tenants,
     accountRepository: accounts,
     accountQueries: accounts,
+    leaseDocuments: documents,
     billingStore: billing,
     billingQueries: billing,
     unitOfWork,
@@ -337,6 +340,7 @@ export function createTestApp(
     billing,
     renderer,
     blob,
+    documents,
     unitOfWork,
     appRouter,
     accessFor,

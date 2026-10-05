@@ -9,6 +9,7 @@ import {
   PGAccountRepository,
   PGBillingQueries,
   PGBillingStore,
+  PGLeaseDocumentStore,
   PGPlatformAdminRepository,
   PGPropertyAccessRepository,
   PGPropertyQueries,
@@ -68,6 +69,7 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
   const tenantQueries = new PGTenantQueries(db);
   const accountRepository = new PGAccountRepository(db, eventDispatcher);
   const accountQueries = new PGAccountQueries(db);
+  const leaseDocuments = new PGLeaseDocumentStore(db);
   const billingStore = new PGBillingStore(db);
   const billingQueries = new PGBillingQueries(db);
   const unitOfWork = createPGUnitOfWork(db);
@@ -84,6 +86,7 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
       tenantQueries,
       accountRepository,
       accountQueries,
+      leaseDocuments,
       billingStore,
       billingQueries,
       unitOfWork,

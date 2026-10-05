@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import type { AccountRepository } from "@moonship/lease-mgmt";
+import type {
+  AccountRepository,
+  LeaseDocumentStore,
+} from "@moonship/lease-mgmt";
 import { Account } from "@moonship/lease-mgmt";
 
 import type { AccountDeps } from "../accounts";
@@ -24,6 +27,7 @@ import { propertyProcedure, router } from "../trpc";
 
 export interface AccountRouterDeps extends AccountDeps {
   accountRepository: AccountRepository;
+  leaseDocuments: LeaseDocumentStore;
 }
 
 export function accountRouter(deps: AccountRouterDeps) {
@@ -127,6 +131,16 @@ export function accountRouter(deps: AccountRouterDeps) {
         ) {
           throw conflict(
             "This account has payments, balance entries, or statements and cannot be deleted",
+          );
+        }
+        if (
+          await deps.leaseDocuments.accountHasDocuments(
+            ctx.propertyId,
+            input.id,
+          )
+        ) {
+          throw conflict(
+            "This account has documents. Remove them before deleting the account.",
           );
         }
         await deps.accountRepository.delete(ctx.propertyId, input.id);

@@ -19,3 +19,14 @@ export function badRequest(message: string): TRPCError {
 export function notFound(message?: string): TRPCError {
   return new TRPCError({ code: "NOT_FOUND", message });
 }
+
+export const STORAGE_UNAVAILABLE_MESSAGE =
+  "File storage isn't set up yet or can't be reached. Try again later.";
+
+export function storageUnavailable(cause?: unknown): TRPCError {
+  return new TRPCError({
+    code: "SERVICE_UNAVAILABLE",
+    message: STORAGE_UNAVAILABLE_MESSAGE,
+    cause,
+  });
+}

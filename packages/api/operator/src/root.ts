@@ -5,7 +5,11 @@ import type {
   StatementRenderer,
 } from "@moonship/billing";
 import type { BlobStorage } from "@moonship/blob-storage";
-import type { AccountQueries, AccountRepository } from "@moonship/lease-mgmt";
+import type {
+  AccountQueries,
+  AccountRepository,
+  LeaseDocumentStore,
+} from "@moonship/lease-mgmt";
 import type {
   PropertyQueries,
   PropertyRepository,
@@ -20,6 +24,7 @@ import { accessRouter } from "./routers/access";
 import { accountRouter } from "./routers/account";
 import { bankImportRouter } from "./routers/bank-import";
 import { categoryRouter } from "./routers/category";
+import { documentRouter } from "./routers/document";
 import { homeRouter } from "./routers/home";
 import { leaseRouter } from "./routers/lease";
 import { poolRouter } from "./routers/pool";
@@ -42,6 +47,7 @@ export interface OperatorRouterDeps {
   tenantQueries: TenantQueries;
   accountRepository: AccountRepository;
   accountQueries: AccountQueries;
+  leaseDocuments: LeaseDocumentStore;
   billingStore: BillingStore;
   billingQueries: BillingQueries;
   unitOfWork: UnitOfWork;
@@ -95,8 +101,16 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
       tenantRepository: deps.tenantRepository,
       tenantQueries: deps.tenantQueries,
     }),
-    account: accountRouter(accountDeps),
+    account: accountRouter({
+      ...accountDeps,
+      leaseDocuments: deps.leaseDocuments,
+    }),
     lease: leaseRouter(accountDeps),
+    document: documentRouter({
+      accountQueries: deps.accountQueries,
+      leaseDocuments: deps.leaseDocuments,
+      blobStorage: deps.blobStorage,
+    }),
     home: homeRouter({
       billingQueries: deps.billingQueries,
       accountQueries: deps.accountQueries,
