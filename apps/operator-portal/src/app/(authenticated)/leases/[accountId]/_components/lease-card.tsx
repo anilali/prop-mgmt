@@ -117,7 +117,7 @@ export function LeaseCard({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">Base rent</h3>
           <Table>

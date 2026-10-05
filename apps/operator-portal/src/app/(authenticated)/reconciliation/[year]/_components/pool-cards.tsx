@@ -43,7 +43,7 @@ export function PoolCards({
           No pools yet. Add them in Setup.
         </p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {pools.map((pool) => (
             <PoolCard
               key={pool.poolId}

@@ -4,7 +4,7 @@ import { Building2, PanelLeft } from "lucide-react";
 
 import { Button } from "@moonship/ui/button";
 
-export function SidebarBrand() {
+export function SidebarBrand({ onCollapse }: { onCollapse?: () => void }) {
   return (
     <div className="flex items-center gap-2">
       <span className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-lg">
@@ -17,6 +17,7 @@ export function SidebarBrand() {
         size="icon"
         aria-label="Collapse sidebar"
         className="ml-auto size-7"
+        onClick={onCollapse}
       >
         <PanelLeft className="size-4" />
       </Button>
