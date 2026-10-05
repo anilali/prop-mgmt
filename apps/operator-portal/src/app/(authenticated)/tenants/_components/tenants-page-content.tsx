@@ -6,23 +6,13 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
-
 import { Users } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
 import { EmptyState } from "@moonship/ui/empty-state";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@moonship/ui/dialog";
-import { Input } from "@moonship/ui/input";
-import { Label } from "@moonship/ui/label";
-import { Textarea } from "@moonship/ui/textarea";
+import { PageHeader } from "@moonship/ui/page-header";
 import {
   Table,
   TableBody,
@@ -31,61 +21,49 @@ import {
   TableHeader,
   TableRow,
 } from "@moonship/ui/table";
-import { PageHeader } from "@moonship/ui/page-header";
 
+import type { TenantView } from "./tenant-dialog";
 import { useTRPC } from "~/trpc/react";
+import { TenantDialog } from "./tenant-dialog";
 
 export function TenantsPageContent() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: tenants } = useSuspenseQuery(trpc.tenant.list.queryOptions());
   const [open, setOpen] = useState(false);
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
+  const [editing, setEditing] = useState<TenantView | null>(null);
 
-  const invalidate = async () => {
-    await queryClient.invalidateQueries(trpc.tenant.list.queryFilter());
-  };
-
-  const create = useMutation(
-    trpc.tenant.create.mutationOptions({
-      onSuccess: async () => {
-        await invalidate();
-        toast.success("Tenant created");
-        setOpen(false);
-        setFullName("");
-        setEmail("");
-        setPhone("");
-        setNotes("");
-      },
-      onError: (err) => toast.error(err.message),
-    }),
+  const sorted = [...tenants].sort((a, b) =>
+    a.businessName.localeCompare(b.businessName),
   );
 
   const archive = useMutation(
     trpc.tenant.archive.mutationOptions({
       onSuccess: async () => {
-        await invalidate();
+        await queryClient.invalidateQueries(trpc.tenant.list.queryFilter());
         toast.success("Tenant archived");
       },
       onError: (err) => toast.error(err.message),
     }),
   );
 
+  const openDialog = (tenant: TenantView | null) => {
+    setEditing(tenant);
+    setOpen(true);
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="Tenants"
-        description="Operator CRM records (portal invite later)."
+        description="The businesses that rent units. Letters go to the mailing address."
         action={
-          <Button type="button" onClick={() => setOpen(true)}>
+          <Button type="button" onClick={() => openDialog(null)}>
             Add tenant
           </Button>
         }
       />
-      {tenants.length === 0 ? (
+      {sorted.length === 0 ? (
         <EmptyState
           icon={<Users className="size-5" />}
           headline="No tenants"
@@ -93,101 +71,65 @@ export function TenantsPageContent() {
           className="rounded-lg border border-dashed py-16"
         />
       ) : (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tenants.map((tenant) => (
-            <TableRow key={tenant.id}>
-              <TableCell className="font-medium">{tenant.fullName}</TableCell>
-              <TableCell>{tenant.email ?? "—"}</TableCell>
-              <TableCell>{tenant.phone ?? "—"}</TableCell>
-              <TableCell>
-                <Badge
-                  variant={
-                    tenant.status === "active" ? "secondary" : "outline"
-                  }
-                >
-                  {tenant.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                {tenant.status === "active" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => archive.mutate({ id: tenant.id })}
-                  >
-                    Archive
-                  </Button>
-                ) : null}
-              </TableCell>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Business</TableHead>
+              <TableHead>Contact</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead />
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((tenant) => (
+              <TableRow key={tenant.id}>
+                <TableCell className="font-medium">
+                  {tenant.businessName}
+                </TableCell>
+                <TableCell>{tenant.contactName ?? "-"}</TableCell>
+                <TableCell>{tenant.email ?? "-"}</TableCell>
+                <TableCell>{tenant.phone ?? "-"}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      tenant.status === "active" ? "secondary" : "outline"
+                    }
+                  >
+                    {tenant.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openDialog(tenant)}
+                    >
+                      Edit
+                    </Button>
+                    {tenant.status === "active" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={archive.isPending}
+                        onClick={() => archive.mutate({ id: tenant.id })}
+                      >
+                        Archive
+                      </Button>
+                    ) : null}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add tenant</DialogTitle>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              create.mutate({
-                fullName,
-                email: email || undefined,
-                phone: phone || undefined,
-                notes: notes || undefined,
-              });
-            }}
-          >
-            <div className="space-y-1">
-              <Label>Full name</Label>
-              <Input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Phone</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>Notes</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button type="submit" disabled={create.isPending}>
-                Create
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <TenantDialog open={open} onOpenChange={setOpen} tenant={editing} />
     </div>
   );
 }
