@@ -30,11 +30,7 @@ Let a lease hold many documents instead of one PDF: the signed lease, amendments
 
 ## Users and permissions
 
-| Action | Staff | Admin |
-|---|---|---|
-| View, preview, and download documents | yes | yes |
-| Upload documents and edit their details | yes | yes |
-| Archive and unarchive | yes | yes |
+Staff and admins can do everything in this PRD (see Permissions in the README).
 
 There is no hard delete for anyone. A wrongly uploaded file is archived. If a file must be purged (for example, it contains someone else's private data), that's a manual operation by a platform admin outside the app.
 
@@ -87,7 +83,7 @@ A document belongs to one tenant. It links to one or more of that tenant's lease
    - "Replaces". For insurance certificates, defaults to the lease's current certificate, if any.
    - For extension and amendment rows on a lease with a renewal marked "Document missing" (02): "This is the document for the renewal on {date}", checked by default when there's exactly one such renewal.
 4. **Save.** Confirms all rows at once. Rows with missing required fields block the save and are highlighted. A file that didn't finish uploading, or whose type doesn't match what was dropped, is rejected.
-5. **Follow-up for amendments and extensions.** After saving, each amendment or extension not attached to a renewal gets "Update lease terms from this document". Admins go to the lease's Terms tab with the document preselected as the source for their changes (02). For staff, the document is saved and admins see a dashboard item, "Amendment uploaded, terms not updated", until an admin updates terms with it as the source or dismisses the item. Lease PDFs carried over from the old single-document slot never show this item.
+5. **Follow-up for amendments and extensions.** After saving, each amendment or extension not attached to a renewal gets "Update lease terms from this document". Choosing it opens the lease's Terms tab with the document preselected as the source for the changes (02). Skipping it saves the document and adds a dashboard item, "Amendment uploaded, terms not updated", until someone updates terms with it as the source or dismisses the item.
 
 Allowed types: PDF, PNG, JPEG, WebP. Size limit: 25 MB per file.
 
@@ -149,15 +145,11 @@ Downloads use the file's original name.
 
 "Insurance certificates": count of active leases whose status is missing, expired, or expiring. Links to the Compliance tab.
 
-## Existing lease PDFs
-
-Each lease's existing PDF becomes a signed lease document linked to that lease, with its original upload date and the same file.
-
 ## Edge cases
 
 - **Files uploaded but never saved** (tab closed). The files are removed after 24 hours.
 - **Archiving a document used as a term source or renewal document.** Allowed. The terms history still links to it, labeled "Archived". The renewal doesn't go back to "Document missing".
-- **Wrong document attached to a renewal.** An admin picks a different document from the renewal row in the terms history. The change is kept in the lease's history.
+- **Wrong document attached to a renewal.** An operator picks a different document from the renewal row in the terms history. The change is kept in the lease's history.
 - **A file didn't finish uploading but the operator saves.** Save rejects that row with "Upload didn't finish" and the operator retries.
 - **Same file uploaded twice.** Allowed. The portal doesn't dedupe by content.
 - **COI covers two leases and one ends.** The document stays linked to both. Compliance only checks active leases.
@@ -173,9 +165,9 @@ Entering terms from a long lease by hand is the slowest part of onboarding a pro
 
 Rules that keep this safe, and that this PRD's design already supports:
 
-- **Proposals only.** Every proposed value lands in the normal form, marked as suggested, with the page and passage it came from. Nothing saves without an admin confirming it.
+- **Proposals only.** Every proposed value lands in the normal form, marked as suggested, with the page and passage it came from. Nothing saves without an operator confirming it.
 - **The terms stay the source of truth for billing.** The document stays the legal record. Each term records the document it came from (02), set to the document the proposal came from.
-- **Extracted text isn't stored as rules.** Extraction fills the existing lease term fields. Clauses with no matching field (exclusions, caps) are shown as notes for the admin.
+- **Extracted text isn't stored as rules.** Extraction fills the existing lease term fields. Clauses with no matching field (exclusions, caps) are shown as notes for the operator.
 
 What 03 provides for it today: typed documents linked to leases, a review step after upload, and an inline preview for showing the source passage beside a proposed value.
 
@@ -189,10 +181,9 @@ What 03 provides for it today: typed documents linked to leases, a review step a
 6. One certificate linked to two leases counts for both in Compliance.
 7. Preview renders PDFs and images inline without downloading.
 8. Archived documents are hidden by default, shown with a filter, and can be unarchived. Nothing in the app deletes a file.
-9. Existing lease PDFs appear as lease documents, using the same stored file.
-10. Files uploaded but not saved within 24 hours are removed.
-11. Uploading an extension to a lease with one renewal marked "Document missing" attaches it to that renewal by default and clears the flag.
-12. An amendment uploaded by staff and not used as a term source shows on the admin dashboard until an admin updates terms with it or dismisses it.
+9. Files uploaded but not saved within 24 hours are removed.
+10. Uploading an extension to a lease with one renewal marked "Document missing" attaches it to that renewal by default and clears the flag.
+11. An amendment not used as a term source shows on the dashboard until someone updates terms with it or dismisses it.
 
 ## Open questions
 

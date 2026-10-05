@@ -4,7 +4,7 @@ Depends on: 01, 02. Grows with 03 to 06, since each one adds actions the assista
 
 ## Summary
 
-Add an assistant panel to the operator portal. An admin or staff member describes what happened in their own words, like "Acme renewed for five more years at $3,500 with 3% bumps". The assistant looks up the property's data, asks follow-up questions until it's sure what changed, and states back what it understood. Then it produces a change plan. That's an ordered list of steps. Each step opens the right form with the values filled in, and the person reviews and saves it there.
+Add an assistant panel to the operator portal. An operator describes what happened in their own words, like "Acme renewed for five more years at $3,500 with 3% bumps". The assistant looks up the property's data, asks follow-up questions until it's sure what changed, and states back what it understood. Then it produces a change plan. That's an ordered list of steps. Each step opens the right form with the values filled in, and the person reviews and saves it there.
 
 The assistant never writes data. Every change still goes through the normal form, with its usual permission checks, validation, and catch-up prompts.
 
@@ -21,7 +21,6 @@ The assistant never writes data. Every change still goes through the normal form
 - The assistant asks before guessing. It never proposes a plan while a choice that changes the plan is still open.
 - Every value in a plan is either something the operator said, something read from the property's data, or something the system calculated. The assistant doesn't do arithmetic on money itself.
 - Following a plan takes no more clicks than doing the changes by hand, and usually fewer, because the forms come pre-filled.
-- Staff can prepare a plan that includes admin-only steps and hand it to an admin.
 
 ## Non-goals
 
@@ -33,42 +32,33 @@ The assistant never writes data. Every change still goes through the normal form
 
 ## Users and permissions
 
-| Action | Staff | Admin |
-|---|---|---|
-| Ask questions and get plans | yes | yes |
-| Open and complete steps they're allowed to do | yes | yes |
-| See and complete admin-only steps | sees, can't complete | yes |
-| Send a plan to an admin | yes | not needed |
-| See plans sent to admins | own only | all on the property |
+Staff and admins can do everything in this PRD (see Permissions in the README).
 
-The assistant reads with the asking person's permissions and property scope. It can't see anything that person couldn't open themselves.
+The assistant reads with the asking person's property scope. It can't see anything that person couldn't open themselves.
 
-Each person sees only their own conversations on the property. An admin can also read the conversation behind a plan sent to admins.
+Each person sees only their own conversations on the property.
 
 ## Glossary
 
 - **Conversation.** One thread between a person and the assistant on one property.
 - **Understanding.** The assistant's restatement of what happened, as a short list of facts. The person confirms or corrects it before any plan appears.
-- **Change plan.** An ordered list of steps that carries out the understanding. Saved, so it can be resumed, shared, or handed off.
+- **Change plan.** An ordered list of steps that carries out the understanding. Saved, so it can be resumed.
 - **Step.** One action from the action catalog, with a target (a lease, a tenant), proposed input, and a status.
 - **Action catalog.** The list of changes the assistant may propose. Each entry matches one existing form.
 
 ## User stories
 
-- As an admin, I type "Acme is renewing" and the assistant asks whether they're using an option, what the new rent is, and whether the extension is signed, then gives me a plan I can click through.
-- As an admin, I say "Bella Nail Spa is moving from 104 to 110 in March" and the assistant explains that this is a new lease, not a renewal, and plans the end, the new lease, and the balance transfer.
-- As a staff member, I describe a CAM increase the owner agreed to. The plan has admin-only steps, so I send it to an admin with a note.
-- As an admin, I open the dashboard, see a plan a staff member sent me, and work through it.
+- As an operator, I type "Acme is renewing" and the assistant asks whether they're using an option, what the new rent is, and whether the extension is signed, then gives me a plan I can click through.
+- As an operator, I say "Bella Nail Spa is moving from 104 to 110 in March" and the assistant explains that this is a new lease, not a renewal, and plans the end, the new lease, and the balance transfer.
 - As an operator, I ask "how do I record a refund of a security deposit?" and get the steps with a link, without a plan.
 - As an operator, I close the panel halfway through a plan and pick it up the next day where I left off.
 
 ## Where it lives
 
-- An "Ask" button in the portal header opens a side panel on any page. The keyboard shortcut is Cmd+J (Ctrl+J on Windows).
+- 07 adds a page header to the portal. Its "Ask" button opens a side panel on any page. The keyboard shortcut is Cmd+J (Ctrl+J on Windows).
 - The panel knows the current page. Opened from a lease, it starts with "About Acme Hardware, Suite 104?" so the person doesn't have to name the lease.
 - The panel has two tabs. Chat holds the current conversation. History lists past conversations and open plans.
 - There's no sidebar item. The assistant helps with every screen, so it belongs in the header rather than in LEASING or FINANCE.
-- The dashboard (01) gets a card, "Plans waiting for an admin", visible to admins.
 
 ## Conversation flow
 
@@ -136,23 +126,23 @@ The plan is a card in the chat, saved to the History tab.
 ```text
 Plan: Acme Hardware renewal                         0 of 4 done
 
-1. Renew lease (option)                 Admin       [ Open ]
+1. Renew lease (option)                             [ Open ]
    End date Dec 31, 2025 -> Dec 31, 2030. 5 rent steps from $3,500.
 
-2. Change CAM estimate                  Admin       [ Open ]
+2. Change CAM estimate                              [ Open ]
    $268.61 -> $300.00 from Jan 1, 2026. Jan 2026 not charged yet,
    so no catch-up.
 
-3. Upload signed extension              Staff ok    [ Open ]
+3. Upload signed extension                          [ Open ]
    Mark it as the document for this renewal. Until then the lease
    shows "Document missing".
 
-4. Set options after renewal            Admin       [ Open ]
+4. Set options after renewal                        [ Open ]
    1 of 2 options used. Nothing to change unless the deal added options.
    [ Skip ]
 ```
 
-- Each step names the action, who can do it, the proposed values, and anything the person should know before saving, like a catch-up amount or a flag the step will set.
+- Each step names the action, the proposed values, and anything the person should know before saving, like a catch-up amount or a flag the step will set.
 - Values on the card come from the system, not the assistant. The system checks the step and calculates previews like catch-up totals and rent steps from "Fill from pattern" the same way the forms do. The assistant's chat text can explain, but the card holds the numbers.
 - Steps have an order. A step that depends on an earlier one, like a catch-up that needs the renewal saved first, shows "After step 1" until that's done.
 - Any step can be skipped, with an optional reason.
@@ -191,7 +181,6 @@ Each step's "Open" button goes to that action's form, with the step's values fil
 The catalog is the list of things the assistant can put in a plan. Each action matches one existing form.
 
 - A step's values follow the same rules as the form. A plan step can't hold values the form wouldn't accept.
-- Each action is marked admin-only or staff ok, matching who can save that form.
 - Before a step goes on a plan, the system checks it the way the form would check it on save, without saving anything. When the check fails, the assistant fixes the values or asks the person a question.
 - Some actions also show calculated facts on the plan card, like the catch-up table or the new monthly total.
 - Each action lists the decision points from the table above, so the assistant knows what to check before using it.
@@ -203,7 +192,7 @@ v1 actions come from 01 to 03.
 |---|---|
 | Edit a unit, edit a cost pool, create a category | 01 |
 | Create a tenant, edit a tenant, add a tenant contact | 02 |
-| Create a lease, edit lease basics, add rent steps, change an estimate, change a flat charge, set options, renew a lease, attach a renewal document, end a lease | 02 |
+| Create a lease, edit lease basics, add rent steps, change an estimate, change a flat charge, set options, renew a lease, attach a renewal document, end a lease, cancel a lease | 02 |
 | Upload a document, replace a document | 03 |
 
 04, 05, and 06 add their own actions as part of their scope: manual charges and credits, recording payments, matching deposits, refunds, reopening a reconciliation. The README's principles gain a rule that every new way to change data ships with its catalog entry.
@@ -226,14 +215,6 @@ It can look up:
 
 Help articles are short and written for operators. They're kept up to date with the portal. They're not these PRDs.
 
-## Who can do what in a plan
-
-- Every step shows "Admin" or "Staff ok", based on the action.
-- A staff member sees admin steps with their values, but the "Open" button reads "Needs an admin".
-- If a plan has any admin steps, staff get "Send to an admin" with an optional note. The plan shows up on the admin dashboard card and in every admin's History tab under "Sent to admins".
-- An admin who opens a sent plan sees the conversation that produced it, read-only, so they know what was said.
-- Staff can still do the "Staff ok" steps in a sent plan, like uploading the document.
-
 ## Plan lifecycle
 
 ```text
@@ -242,9 +223,9 @@ Help articles are short and written for operators. They're kept up to date with 
                                                     +--(person closes it)--> abandoned
 ```
 
-- A plan with no step done in 30 days shows as stale in History, and the dashboard card drops it. It can still be opened.
+- A plan with no step done in 30 days shows as stale in History. It can still be opened.
 - Before showing an open plan, and before opening a step's form, the system checks the remaining steps again. A step that no longer passes is marked "Out of date", with the reason, like "the lease already ends Dec 31, 2030". This includes a step whose form rules changed after the plan was saved, so the form never fills with values it would reject. The person can ask the assistant to update the plan, which starts a new turn in the same conversation.
-- Each plan keeps the confirmed understanding as it was shown, who sent it to admins and their note, each step's skip reason, and who completed each step and when.
+- Each plan keeps the confirmed understanding as it was shown, each step's skip reason, and who completed each step and when.
 
 ## Limits
 
@@ -263,7 +244,6 @@ Each person has a daily message limit on each property.
 - **Thinking.** Each lookup shows as a quiet line, like "Looking up Acme Hardware's lease". The raw results aren't shown.
 - **Assistant unavailable.** "The assistant isn't available right now." The rest of the portal works as normal, and open plans and pre-filled forms still work.
 - **Daily limit reached.** Says so, and says when it resets.
-- **No permission for any step.** A staff member asking for something entirely admin-only gets the plan plus "Send to an admin" as the only action.
 
 ## Edge cases
 
@@ -272,9 +252,8 @@ Each person has a daily message limit on each property.
 - **Two plans touch the same lease.** Allowed. Steps are checked again when opened, so the second one shows "Out of date" if the first already made its change.
 - **Person edits a form far from the plan's values.** The save goes through, and the step is done. The plan records what was saved, not what was proposed.
 - **Wrong property selected.** The person describes a tenant that isn't on this property. The assistant says it can't find them here and suggests switching property. It doesn't search other properties.
-- **Locked year.** The assistant doesn't plan changes into a reconciled year. It explains 06's options (categorize to a non-recoverable category, carry to next year, or reopen as an admin) and plans whichever one the person picks.
+- **Locked year.** The assistant doesn't plan changes into a reconciled year. It explains 06's options (categorize to a non-recoverable category, carry to next year, or reopen the year) and plans whichever one the person picks.
 - **Long conversation drifts to a new topic.** The assistant offers to start a new conversation so the plan and its understanding stay about one event.
-- **Plan sent to admin, then staff finds a mistake.** Staff can still add to the conversation. A new plan replaces the old one, and the old one is marked abandoned with a link to the new one.
 
 ## Quality checks
 
@@ -291,7 +270,6 @@ v1 keeps a person in every form. If that proves slow for simple plans, a later P
 
 - Step values already follow the form's rules.
 - Each step is already checked the way the form would check it, without saving.
-- Each step already knows whether it needs an admin.
 - Each completed step already links to the change it saved.
 
 "Apply" would save the change the same way the form does, after the person confirms the step's preview on the card. Steps with catch-ups or year locks would likely stay form-only.
@@ -303,10 +281,9 @@ v1 keeps a person in every form. If that proves slow for simple plans, a later P
 3. Every renewal scenario in the table above produces the listed steps in the scenario checks.
 4. Every amount on a plan card matches what the form shows when opened from that step.
 5. Opening a step fills the form and shows the banner. Saving marks the step done. Leaving without saving doesn't.
-6. A staff member can't complete an admin step, can send the plan to an admin, and the plan appears on the admin dashboard card.
-7. A step whose target changed after planning shows "Out of date" or the side-by-side values, and never saves the stale values silently.
-8. The assistant can't read data from another property, even if a tenant name or memo in this property asks it to.
-9. With the assistant unavailable, open plans, pre-filled forms, and the rest of the portal keep working.
+6. A step whose target changed after planning shows "Out of date" or the side-by-side values, and never saves the stale values silently.
+7. The assistant can't read data from another property, even if a tenant name or memo in this property asks it to.
+8. With the assistant unavailable, open plans, pre-filled forms, and the rest of the portal keep working.
 
 ## Open questions
 

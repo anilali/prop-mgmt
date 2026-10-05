@@ -4,7 +4,7 @@ Depends on: 01 (categories, Settings), 02 (tenants, bank aliases), 04 (payments)
 
 ## Summary
 
-A property has one or more bank accounts. Operators import each account's activity from a CSV export, sort spending into categories with help from rules, mark transfers between the property's own accounts, and match deposits to tenant payments. Every transaction belongs to one bank account and, through it, to one property. The categorized spending is what 06 adds up as actual costs.
+A property has one or more bank accounts. Operators import each account's activity from a CSV export, add the rare cash expense by hand, sort spending into categories with help from rules, mark transfers between the property's own accounts, and match deposits to tenant payments. Every transaction belongs to one bank account and, through it, to one property. The categorized spending is what 06 adds up as actual costs.
 
 ## Problem
 
@@ -32,23 +32,16 @@ A property has one or more bank accounts. Operators import each account's activi
 
 ## Users and permissions
 
-| Action | Staff | Admin |
-|---|---|---|
-| View accounts and transactions | yes | yes |
-| Add, edit, and close bank accounts, edit import formats | no | yes |
-| Import CSVs and undo imports | yes | yes |
-| Categorize, split, note, and attach receipts | yes | yes |
-| Create and edit categorization rules | yes | yes |
-| Match and unmatch deposits | yes | yes |
+Staff and admins can do everything in this PRD (see Permissions in the README).
 
-Bank accounts live in Settings (admin). Rules live on the Transactions screen, since staff maintain them while categorizing.
+Bank accounts live in Settings. Rules live on the Transactions screen, since operators maintain them while categorizing.
 
 ## Glossary
 
-- **Bank account.** An account the property uses: checking, savings, or credit card.
+- **Bank account.** An account the property uses: checking, savings, credit card, or cash.
 - **Import format.** How to read one account's CSV: which columns hold what, the date format, and the sign convention.
 - **Import.** One uploaded CSV file and the transactions it added.
-- **Transaction.** One imported line. Positive amount means money into the account, negative means money out.
+- **Transaction.** One imported line, or one added by hand to a cash account. Positive amount means money into the account, negative means money out.
 - **Category line.** A part of a transaction assigned to one category. A transaction has one or more lines summing to its amount.
 - **Rule.** An instruction to categorize matching transactions automatically on import.
 - **Needs review.** A transaction whose category lines don't cover its whole amount.
@@ -58,7 +51,7 @@ Bank accounts live in Settings (admin). Rules live on the Transactions screen, s
 
 ## User stories
 
-- As an admin, I add the property's operating account and its debit card, and the credit card used for supplies.
+- As an operator, I add the property's operating account and its debit card, and the credit card used for supplies.
 - As an operator, I upload the first CSV for an account, map its columns once, and never map them again.
 - As an operator, I re-download the last 90 days and upload them, and only new transactions are added.
 - As an operator, I categorize a Verizon charge as CAM and accept "always categorize VERIZON WIRELESS as CAM".
@@ -67,6 +60,8 @@ Bank accounts live in Settings (admin). Rules live on the Transactions screen, s
 - As an operator, I mark a transfer from checking to savings, and the portal finds the matching row in savings.
 - As an operator, I confirm that a $3,654.82 deposit is Super Lucky's rent, and the payment appears on their ledger.
 - As an operator, I split one deposit across a tenant's two leases.
+- As an operator, I split a deposit of three checks across the three leases they paid, by ticking each lease.
+- As an operator, I add a $300 cash payment to a plumber and categorize it as CAM.
 - As an operator, I see total spending per category for each month of the year.
 
 ## Bank accounts
@@ -76,11 +71,11 @@ Bank accounts live in Settings (admin). Rules live on the Transactions screen, s
 | Field | Notes |
 |---|---|
 | Name | Required. "Operating checking" |
-| Type | Checking, savings, or credit card |
+| Type | Checking, savings, credit card, or cash |
 | Institution | Optional. Bank name |
 | Last 4 digits | Optional. Shown next to the name everywhere |
 | Status | Open or closed |
-| Import format | Set on first import. Editable |
+| Import format | Set on first import. Editable. Cash accounts have none |
 
 Rules:
 
@@ -88,13 +83,14 @@ Rules:
 - An account belongs to one property forever. There's no move action.
 - An account with transactions can be closed but not deleted. Closed accounts reject imports and keep their history. They can be reopened.
 - An account with no transactions can be deleted.
+- A cash account has no CSV imports. Its transactions are added by hand (see "Cash transactions").
 
 ### Import format
 
 | Setting | Options |
 |---|---|
 | Header row | Row number of the header, default 1 |
-| Date column and format | MM/DD/YYYY, M/D/YYYY, YYYY-MM-DD, DD/MM/YYYY. Detected from the first rows and confirmed by the admin or operator |
+| Date column and format | MM/DD/YYYY, M/D/YYYY, YYYY-MM-DD, DD/MM/YYYY. Detected from the first rows and confirmed by the operator |
 | Description column | One column, or several joined with a space |
 | Amount | One signed column, or separate debit and credit columns |
 | Sign convention | For a signed column: "positive is money in" or "positive is money out". Credit card exports often use the second |
@@ -102,13 +98,13 @@ Rules:
 
 Amounts are read leniently: dollar signs, commas, surrounding spaces, and parentheses for negatives are handled. Anything that still can't be read is a skipped row with a reason.
 
-Import formats are edited on the Bank accounts tab in Settings. Staff map the format on an account's first import too, since that happens in the import flow. After that, only admins edit it.
+Import formats are mapped in the import flow on an account's first import. After that, they're edited on the Bank accounts tab in Settings.
 
 ## Import flow
 
 From the Transactions screen, "Import" opens a sheet.
 
-1. **Pick account and file.** Accounts list shows each one's last imported date range. The original file is kept for audit.
+1. **Pick account and file.** Accounts list shows each one's last imported date range. Cash accounts aren't listed. The original file is kept for audit.
 2. **Map** (first import, or when the file's headers don't match the saved format). Shows the first 10 rows as a table with a column-role picker above each column. The parsed result for those rows updates live below.
 3. **Preview.** Every row, parsed, with a status:
    - New: will be added. Shows the category a rule would assign, if any.
@@ -127,7 +123,14 @@ Identical rows in one file are counted. If a file has two identical $5.00 coffee
 
 ### Undo an import
 
-An import can be undone while none of its transactions is matched to a payment, paired as a transfer, or in a reconciled year. Undo deletes those transactions and their category lines and marks the import undone. This is the only way transactions get deleted. It exists because a wrong file or a wrong account is a common mistake right after import.
+An import can be undone while none of its transactions is matched to a payment, paired as a transfer, or in a reconciled year. Undo deletes those transactions and their category lines and marks the import undone. Apart from deleting a cash transaction (below), this is the only way transactions get deleted. It exists because a wrong file or a wrong account is a common mistake right after import.
+
+### Cash transactions
+
+For the rare expense paid in cash. "Add transaction" on the Transactions screen asks for a cash account, date, description, amount, money in or out, and an optional receipt. The transaction lands in the review inbox and is categorized like any other, so a cash CAM repair reaches 06.
+
+- Only cash accounts take hand-added transactions. A bank account's transactions only come from its CSV, so an import can never duplicate a hand-added row.
+- A cash transaction's fields can't be edited, the same as an imported one. To fix a typo, the operator deletes it and adds it again. Deleting follows the same conditions as undoing an import: not matched, not paired, and not in a reconciled year.
 
 ## Categorizing
 
@@ -237,7 +240,7 @@ Opened with `m` or by clicking the suggestion.
 
 - **Confirm a suggestion.** One payment for the full amount on that lease.
 - **Pick a lease.** Search by tenant or unit.
-- **Split.** Several rows of lease and amount, plus an optional "Other income" row. Remaining must reach zero. Used when one tenant pays two leases in one deposit.
+- **Split.** Several rows of lease and amount, plus an optional "Other income" row. Remaining must reach zero. Used when a deposit holds several checks, often from different tenants, or when one tenant pays two leases. Split opens with a list of the property's leases that owe money on the deposit date, each with its balance. Ticking a lease adds a row with its balance as the amount, which the operator can change. Other leases can still be added by search.
 - **Not a tenant payment.** Categorize normally instead (Other Income, Transfer, and so on).
 - **Save alias.** When the confirmed lease's tenant had no alias in the description, a checkbox offers to save a suggested alias (the description's leading words, editable). Saving adds the alias to the tenant (02).
 
@@ -271,11 +274,11 @@ If an operator recorded a check payment by hand in 04 and later imports the depo
 | Transactions, Summary tab | Category by month totals |
 | Transactions, Imports tab | Import history |
 | Rules | Rules |
-| Settings, Bank accounts tab | Accounts and import formats (admin) |
+| Settings, Bank accounts tab | Accounts and import formats |
 
 Screen states:
 
-- **No bank accounts.** The Transactions screen explains that transactions come from bank accounts. Admins get "Add bank account". Staff see "Ask an admin to add a bank account".
+- **No bank accounts.** The Transactions screen explains that transactions come from bank accounts and offers "Add bank account".
 - **Accounts but no imports.** Import call to action with a short note on downloading a CSV from the bank.
 - **Inbox empty.** "All caught up" with the date of the last import per account.
 
@@ -292,11 +295,12 @@ Screen states:
 - **Security deposit received or returned.** Categorized as Security Deposit (01), which is left out of all totals. Deposits aren't ledger entries (04 non-goals), so they aren't matched to a lease.
 - **Abandoned upload** (file uploaded, preview never imported). The upload and its file are removed after 24 hours.
 - **Deposit includes a tenant payment and a utility reimbursement.** Split in the match panel: payment to the lease plus an Other Income line.
+- **Deposit of several checks from different tenants.** The description has no alias and the amount matches no single lease, so there's no suggestion. The operator opens Split, ticks the leases whose checks are in the deposit, and adjusts any amount that differs from the balance.
 - **Tenant pays two months in one deposit.** One payment for the full amount. The lease balance goes negative and the next month's charges use it up.
 - **Rule matches but the transaction already has a manual line.** Rule is skipped.
 - **Archived category on old transactions.** Lines keep it. Pickers hide it.
 - **Account closed mid-year.** Its transactions still count in category totals and reconciliation.
-- **Year is locked by 06.** Already-categorized rows dated in that year are read-only with a lock icon. New rows in that year can be categorized into non-recoverable categories or matched. Recoverable costs go to next year's reconciliation as a pool adjustment, or an admin reopens the year.
+- **Year is locked by 06.** Already-categorized rows dated in that year are read-only with a lock icon. New rows in that year can be categorized into non-recoverable categories or matched. Recoverable costs go to next year's reconciliation as a pool adjustment, or an operator reopens the year.
 
 ## Acceptance criteria
 
@@ -312,6 +316,8 @@ Screen states:
 10. Tenant Payment can't be chosen by hand or by a rule.
 11. The Summary tab totals per category per month equal the sum of the lines behind each cell.
 12. Undo is refused for an import with any matched, paired, or locked transaction.
+13. Split lists the leases that owe money on the deposit date, and ticking one adds a row with its balance as the amount.
+14. Transactions can be added by hand only to cash accounts. They're categorized like imported ones, and can be deleted under the same conditions as undoing an import.
 
 ## Open questions
 

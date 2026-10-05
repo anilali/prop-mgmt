@@ -1,6 +1,6 @@
 # Commercial property operations: PRD set
 
-The platform manages commercial properties only. These PRDs add the money side of running them to the operator portal, plus lease document management. Today the portal has units, tenants, and leases with one rent amount and one PDF. The ideas come from a reconciliation spreadsheet the owner uses now. The flows are designed for an app and do not copy the spreadsheet.
+The platform manages commercial properties only. These PRDs add the money side of running them to the operator portal, plus lease document management. Today the portal has units, tenants, and leases with one rent amount and one PDF. There is no data in it yet, so no PRD converts existing records. The ideas come from a reconciliation spreadsheet the owner uses now. The flows are designed for an app and do not copy the spreadsheet.
 
 The first user is one owner with a few properties. Other operators should be able to use the portal later, so anything that differs between properties (categories, cost pools, bank accounts, import formats) is configuration, not code.
 
@@ -67,7 +67,7 @@ Each PRD adds terms of its own. These are used across all of them.
 2. **Money is exact to the cent.** Amounts never pick up fractions of a cent along the way.
 3. **Shares are computed, not stored.** Pro rata shares are worked out from unit areas each time they're needed. Rounding happens once per final line, to the cent, with halves rounded away from zero.
 4. **Money records are never edited.** Posted charges, payments, and imported transactions stay as they are. Corrections are new linked records. The one exception, unmatching a deposit, is covered in 05 and blocked once a year is reconciled.
-5. **Accounting dates have no time of day.** Charge periods, payment dates, and transaction dates are plain dates. A charge period is the first day of its month.
+5. **Accounting dates have no time of day.** Charge periods, payment dates, and transaction dates are plain dates. A charge period is the first day of its month. "Today" and "this month" use the property's time zone (01).
 6. **Duplicates are impossible, not just discouraged.** Rules like "one charge run per month" always hold, even when two people act at once.
 7. **Every change records who made it.** This history backs the history views (lease terms in 02, who posted or finalized what in 04 and 06). There is no separate activity screen.
 8. **Configuration over code.** Category lists, pool rules, import formats, and categorization rules are settings a property edits.
@@ -75,11 +75,15 @@ Each PRD adds terms of its own. These are used across all of them.
 
 ## Permissions
 
-Each property has two roles. Staff do the daily work: charge runs, payments, imports, categorizing, documents, and draft leases. Staff also update estimates after reconciliation. Admins activate leases and change their other terms, change settings that affect every tenant, and close out a year. Each PRD lists its own actions.
+Each property has two roles. Staff can do everything on the property except manage access. Admins can also manage access on the Access page. No PRD in this set adds an admin-only action.
+
+A platform admin registers properties and manages access on any property. To work on a property, they add themselves as an admin of it, like anyone else.
+
+Every change records who made it (principle 7), which is the safety net instead of approval steps.
 
 ## Out of scope for the whole set
 
-- Live bank feeds such as Plaid. CSV import only.
+- Live bank feeds such as Plaid. CSV import only, plus the rare cash expense added by hand.
 - Tenants paying through the tenant portal.
 - Owner-level items: mortgage, distributions, owner profit and loss.
 - Double-entry bookkeeping and a chart of accounts.

@@ -32,18 +32,7 @@ The calculation has three steps: pool cost, area share by month, and a yearly sh
 
 ## Users and permissions
 
-| Action | Staff | Admin |
-|---|---|---|
-| Open the workspace and see all numbers | yes | yes |
-| Start a reconciliation | yes | yes |
-| Add and remove pool adjustments and lease adjustments | yes | yes |
-| Edit the year's pool settings | no | yes |
-| Finalize | no | yes |
-| Set next year's estimates after finalizing | yes | yes |
-| Download, send, and regenerate statements | yes | yes |
-| Reopen a finalized year | no | yes |
-
-Finalize and reopen bill every tenant and lock or unlock a year, so they're admin only. Year pool settings change every tenant's share, so admin only too.
+Staff and admins can do everything in this PRD (see Permissions in the README).
 
 ## Glossary
 
@@ -62,13 +51,13 @@ Finalize and reopen bill every tenant and lock or unlock a year, so they're admi
 - As an operator, in January I start the 2026 reconciliation and see a checklist of what's still uncategorized or unmatched.
 - As an operator, I expand CAM and see every transaction that makes up its total, and fix one that was miscategorized.
 - As an operator, I add a pool adjustment for a December tax bill that cleared on January 3.
-- As an admin, I see that a unit joined the water meter in July 2026, so its water share starts in July. If the date in Settings was wrong, I fix the months in the year's settings without changing Settings.
+- As an operator, I see that a unit joined the water meter in July 2026, so its water share starts in July. If the date in Settings was wrong, I fix the months in the year's settings without changing Settings.
 - As an operator, I open one lease's statement and see area, share, days occupied, actual, billed, and balance for each pool.
 - As an operator, I add a $40 courtesy credit to one lease's CAM with a note.
-- As an admin, I finalize, and every lease gets its reconciliation charge or credit and a statement PDF.
+- As an operator, I finalize, and every lease gets its reconciliation charge or credit and a statement PDF.
 - As an operator, I accept the suggested 2027 estimates for every lease in one screen, and the next charge run uses them.
 - As an operator, I email each tenant their statement.
-- As an admin, I reopen 2026 because a missed invoice turned up, fix it, and finalize again. The ledger shows the original, its reversal, and the new result.
+- As an operator, I reopen 2026 because a missed invoice turned up, fix it, and finalize again. The ledger shows the original, its reversal, and the new result.
 
 ## Flow
 
@@ -113,7 +102,7 @@ CAM                                                      $12,891.19
 
 ### Year pool settings
 
-An admin-only panel per pool. It shows a grid with one row per unit and one column per month. Each cell shows the unit's area that month, or is blank when the unit isn't in the pool that month.
+A panel per pool. It shows a grid with one row per unit and one column per month. Each cell shows the unit's area that month, or is blank when the unit isn't in the pool that month.
 
 ```text
 Water 2026     Jan    Feb   ...   Jun    Jul    ...   Dec
@@ -123,7 +112,7 @@ Water 2026     Jan    Feb   ...   Jun    Jul    ...   Dec
 Total          3,760  3,760       3,760  4,350        4,350
 ```
 
-- The admin can add or remove a unit for a range of months, and change a unit's area for a range of months.
+- The operator can add or remove a unit for a range of months, and change a unit's area for a range of months.
 - Changes here only affect this year's reconciliation. They never change Settings.
 - "Reset to Settings" builds the grid from Settings again.
 - The panel shows a note when the grid differs from Settings, and highlights the cells that differ.
@@ -154,7 +143,7 @@ An "Owner share and rounding" panel per pool shows the pool cost, the sum of ten
 
 ### Finalize
 
-Admin clicks Finalize. A confirm dialog shows: number of leases, total billed, total credited, statement date (default today, editable), and that the year will be locked.
+The operator clicks Finalize. A confirm dialog shows: number of leases, total billed, total credited, statement date (default today, editable), and that the year will be locked.
 
 Finalizing does the following steps together. If one fails, none of them happen.
 
@@ -163,7 +152,7 @@ Finalizing does the following steps together. If one fails, none of them happen.
 3. Lock the year (below).
 4. Mark the reconciliation finalized, with who finalized it and when.
 
-Once finalized, adjustments and year pool settings can't change until an admin reopens the year.
+Once finalized, adjustments and year pool settings can't change until an operator reopens the year.
 
 After that, the portal makes a statement PDF for each lease and saves it as a statement document (03) on the lease. If a statement fails for any lease, the reconciliation stays finalized and the workspace shows a "Regenerate statements" action. Statements are made from the results. The ledger entries are the record.
 
@@ -197,7 +186,7 @@ From the finalized workspace:
 
 ### Reopen
 
-Admin only, from a finalized year, with a required reason.
+From a finalized year, with a required reason.
 
 Reopening does the following steps together. If one fails, none of them happen.
 
@@ -271,8 +260,9 @@ The calculation records each step for each lease and pool: its kind, input, outp
 - **Vacant unit.** No lease, no result. Its share shows in the owner share panel.
 - **A unit's area changes mid-year.** Months before the change use the old area and months after use the new one. The statement shows one share line for each stretch.
 - **A unit joins a pool mid-year.** It counts toward the pool's total only from the month it joined, so other units' shares drop from that month.
-- **Two suites are combined mid-year.** The old units count until the month they were archived, and the combined unit counts from the month it opened.
-- **Unit not in the pool's year settings for a month its lease's recovery was active.** Fails the checklist. The admin either adds the unit to the year's pool or the operator ends the recovery.
+- **Two suites are combined mid-year.** The old units count through the last month chosen when they were archived, and the combined unit counts from its first month (01).
+- **Pool archived mid-year.** Its category was archived in Settings (01). The pool still shows in that year's reconciliation, and its costs are reconciled as usual.
+- **Unit not in the pool's year settings for a month its lease's recovery was active.** Fails the checklist. The operator either adds the unit to the year's pool or ends the recovery.
 - **Two leases on one unit in the same year** (one ended, the next started). Each gets its own occupancy, so together they cover the unit once.
 - **Pool cost is negative** (refunds exceeded costs). Calculated as usual. Every lease gets a credit.
 - **Billed is zero** (lease had a recovery but no estimate charges). Balance is the full actual. The review table flags it.

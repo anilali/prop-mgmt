@@ -31,15 +31,7 @@ Give every lease a ledger. Each month, the operator previews and posts charges g
 
 ## Users and permissions
 
-| Action | Staff | Admin |
-|---|---|---|
-| View ledgers and rent roll | yes | yes |
-| Preview and post charge runs | yes | yes |
-| Add one-off charges and credits | yes | yes |
-| Record payments and refunds | yes | yes |
-| Reverse an entry | yes | yes |
-| Post opening balances | yes | yes |
-| Reverse a reconciliation entry | no | no, only through reopening in 06 |
+Staff and admins can do everything in this PRD (see Permissions in the README). Nobody reverses a reconciliation entry directly. It's undone only by reopening the year in 06.
 
 ## Glossary
 
@@ -92,7 +84,7 @@ A payment created by matching a bank deposit (05) stays linked to that transacti
 3. A lease has at most one opening balance, and it must be dated before every other entry on the lease.
 4. Estimate and reconciliation entries are tagged with a cost pool. Other kinds aren't, except reversals of those two.
 5. In a year locked by 06, no estimate entry can have a period in that year, including catch-ups and reversals, and no charge run can be posted for its months. Payments, fees, credits, and refunds are still allowed. See "Year lock" in 06.
-6. Charges can't be posted to a draft lease. Ended leases still accept entries: final payments, refunds, and 06's reconciliation entries all land after a lease ends.
+6. Ended leases still accept entries: final payments, refunds, and 06's reconciliation entries all land after a lease ends.
 7. A charge run charges each line at most once per lease and period.
 
 ## Generating charges
@@ -142,7 +134,7 @@ The rent roll and dashboard show "June charges not posted" from the first of the
 
 ### After the run
 
-- **"Post missing charges".** Shown on a posted run when an active lease has no charges from a charge run for that period. Typical cause: a lease activated after the run, or a skipped lease now resolved. It previews and posts that lease's lines into the same run. A lease that was charged in the run is never "missing", even if its terms changed later. Differences from changed terms are only ever posted as catch-ups, so the two paths can't charge the same month twice.
+- **"Post missing charges".** Shown on a posted run when an active lease has no charges from a charge run for that period. Typical cause: a lease created after the run, or a skipped lease now resolved. It previews and posts that lease's lines into the same run. A lease that was charged in the run is never "missing", even if its terms changed later. Differences from changed terms are only ever posted as catch-ups, so the two paths can't charge the same month twice.
 - **Leases that become active for a past month** (a lease backdated to start three months ago) show missing charges on each of those months' runs. The lease's Ledger tab also shows a banner: "3 months not charged" with one action to post all of them.
 
 ### Catch-up
