@@ -86,19 +86,37 @@ describe("ReactPdfStatementRenderer", () => {
       "$651.48",
       "CAM, tax, and insurance",
       "We don't have a copy of your insurance",
-      "2024 EXPENSE RECONCILIATION",
-      "BUILDING AREA: 9,350 Sq. Ft",
+      "2024 Expense Reconciliation",
+      "BUILDING NET RENTABLE AREA:",
+      "9,350",
+      "2024 ACTUAL OPERATING EXPENSE",
+      "CAM:",
+      "$ 12,891.19",
       "$1.38 psf/year",
       "$0.1149 psf/month",
+      "2024 EXPENSE RECONCILIATION",
+      "SQ.FT LEASED",
+      "TENANT'S PRO-RATA SHARE",
+      "ESTIMATES BILLED IN 2024",
+      "BALANCE DUE",
+      "1200 Main St, Suite A",
+      "TAXES",
       "26.74%",
-      "$3,446.84",
+      "3,446.84",
       "-$362.79",
-      "REVISED MONTHLY RENT (Effective January 1, 2025)",
+      "$237.74",
+      "REVISED MONTHLY RENT",
+      "(Effective January 1, 2025)",
+      "Tax",
+      "Total Monthly Rent",
+      "Unpaid Balance",
       "$413.74",
+      "Balance on Account",
     ]) {
       expect(text).toContain(value);
     }
     expect(text).not.toContain("MONTHS");
+    expect(text).not.toContain("Rent Balance");
   });
 
   it("keeps the owner phone on one line", async () => {
@@ -118,7 +136,14 @@ describe("ReactPdfStatementRenderer", () => {
     const { pdf, text } = await render(dataFor(tenantD.accountId));
 
     expect(pdf.toString("latin1").match(/\/Type\s*\/Page\b/g)).toHaveLength(2);
-    for (const value of ["$218.53", "MONTHS", "$1,148.95", "-$10.49"]) {
+    for (const value of [
+      "$218.53",
+      "MONTHS",
+      "1,148.95",
+      "-$10.49",
+      "Unpaid Balance",
+      "Balance on Account",
+    ]) {
       expect(text).toContain(value);
     }
     expect(text).not.toContain("REVISED MONTHLY RENT");
@@ -137,7 +162,9 @@ describe("ReactPdfStatementRenderer", () => {
       "$834.54",
       "CAM, tax, insurance, and water",
       "$4,161.70",
-      "WATER SERVICE AREA: 4,350 Sq. Ft",
+      "WATER SERVICE AREA:",
+      "4,350",
+      "WATER",
       "-$1,006.01",
       "-$1,084.54",
       "($834.54)",

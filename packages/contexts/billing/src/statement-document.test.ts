@@ -221,39 +221,37 @@ describe("letter with zero amounts", () => {
 describe("statement for 6.1", () => {
   const doc = statementDocument(lucky);
 
-  it("has the heading and areas", () => {
-    expect(doc.heading).toEqual([
-      "Lucky Plaza",
-      "2024 EXPENSE RECONCILIATION",
-      "Super Lucky LLC",
-      "1200 Main St, Suite A",
-      "Springfield, IL 62701",
-    ]);
+  it("has the title and building area", () => {
+    expect(doc.title).toBe("2024 Expense Reconciliation");
     expect(doc.areas).toEqual([
-      "BUILDING AREA: 9,350 Sq. Ft",
-      "SQ.FT LEASED: 2,500",
+      {
+        label: "BUILDING NET RENTABLE AREA:",
+        value: "9,350",
+        unit: "Sq. Ft",
+      },
     ]);
   });
 
-  it("has a cost line per pool", () => {
+  it("has a cost line per pool under the actual operating expense heading", () => {
+    expect(doc.actualsHeading).toBe("2024 ACTUAL OPERATING EXPENSE");
     expect(doc.costLines).toEqual([
       {
-        name: "CAM",
-        actual: "$12,891.19",
+        name: "CAM:",
+        actual: "$ 12,891.19",
         perYear: "$1.38 psf/year",
         perMonth: "$0.1149 psf/month",
         billNote: null,
       },
       {
-        name: "Taxes",
-        actual: "$33,542.31",
+        name: "TAXES:",
+        actual: "$ 33,542.31",
         perYear: "$3.59 psf/year",
         perMonth: "$0.2990 psf/month",
         billNote: null,
       },
       {
-        name: "Insurance",
-        actual: "$6,284.00",
+        name: "INSURANCE:",
+        actual: "$ 6,284.00",
         perYear: "$0.67 psf/year",
         perMonth: "$0.0560 psf/month",
         billNote: null,
@@ -261,41 +259,47 @@ describe("statement for 6.1", () => {
     ]);
   });
 
-  it("has the table with the owner's labels and no months column", () => {
+  it("has the table with the owner's labels, the tenant block, and no months column", () => {
+    expect(doc.reconciliationHeading).toBe("2024 EXPENSE RECONCILIATION");
     expect(doc.table.columns).toEqual([
-      "",
       "SQ.FT LEASED",
+      "",
       "2024 ACTUALS",
       "TENANT'S PRO-RATA SHARE",
       "TENANT'S ANNUAL SHARE",
       "ESTIMATES BILLED IN 2024",
       "BALANCE DUE",
     ]);
+    expect(doc.table.tenantLines).toEqual([
+      "Super Lucky LLC",
+      "1200 Main St, Suite A",
+      "Springfield, IL 62701",
+    ]);
     expect(doc.table.rows).toEqual([
       [
-        "CAM",
         "2,500",
+        "CAM",
         "$12,891.19",
         "26.74%",
-        "$3,446.84",
+        "3,446.84",
         "$3,223.32",
         "$223.52",
       ],
       [
-        "Taxes",
-        "2,500",
+        "",
+        "TAXES",
         "$33,542.31",
         "26.74%",
-        "$8,968.53",
+        "8,968.53",
         "$9,331.32",
         "-$362.79",
       ],
       [
-        "Insurance",
-        "2,500",
+        "",
+        "INSURANCE",
         "$6,284.00",
         "26.74%",
-        "$1,680.21",
+        "1,680.21",
         "$1,303.20",
         "$377.01",
       ],
@@ -303,25 +307,48 @@ describe("statement for 6.1", () => {
     expect(doc.table.total).toBe("$237.74");
   });
 
-  it("has the revised monthly rent block", () => {
+  it("has the revised monthly rent block with letter names", () => {
     expect(doc.rentBlock).toEqual({
-      heading: "REVISED MONTHLY RENT (Effective January 1, 2025)",
+      heading: "REVISED MONTHLY RENT",
+      effective: "(Effective January 1, 2025)",
       lines: [
-        { label: "Base Rent", value: "$2,500.00", total: false },
-        { label: "CAM", value: "$287.24", total: false },
-        { label: "Taxes", value: "$747.38", total: false },
-        { label: "Insurance", value: "$140.02", total: false },
-        { label: "Total Monthly Rent", value: "$3,674.64", total: true },
-        { label: "Rent Balance", value: "$413.74", total: false },
-        { label: "Balance on Account", value: "$651.48", total: true },
+        { label: "Base Rent", value: "$2,500.00", style: "line" },
+        { label: "CAM", value: "$287.24", style: "line" },
+        { label: "Tax", value: "$747.38", style: "line" },
+        { label: "Insurance", value: "$140.02", style: "line" },
+        { label: "Total Monthly Rent", value: "$3,674.64", style: "total" },
+        { label: "Unpaid Balance", value: "$413.74", style: "line" },
+        { label: "Balance on Account", value: "$651.48", style: "boxed" },
       ],
     });
   });
 
-  it("labels a dry-run rent balance with its date", () => {
+  it("lists fixed charges after the estimates", () => {
+    const continuing = lucky.continuing;
+    if (!continuing) throw new Error("Super Lucky should be continuing");
+    const withCharges = statementDocument({
+      ...lucky,
+      continuing: {
+        ...continuing,
+        fixedCharges: [
+          { name: "Sign", amountCents: 3_500 },
+          { name: "Trash", amountCents: 5_000 },
+        ],
+        newMonthlyRentCents: continuing.newMonthlyRentCents + 8_500,
+      },
+    });
+    expect(withCharges.rentBlock.lines.slice(3, 7)).toEqual([
+      { label: "Insurance", value: "$140.02", style: "line" },
+      { label: "Sign", value: "$35.00", style: "line" },
+      { label: "Trash", value: "$50.00", style: "line" },
+      { label: "Total Monthly Rent", value: "$3,759.64", style: "total" },
+    ]);
+  });
+
+  it("labels a dry-run unpaid balance with its date", () => {
     const dry = statementDocument({ ...lucky, priorBalanceAsOf: "2024-11-16" });
     expect(dry.rentBlock.lines.at(-2)?.label).toBe(
-      "Rent Balance as of November 16, 2024",
+      "Unpaid Balance as of November 16, 2024",
     );
   });
 
@@ -349,12 +376,12 @@ describe("statement for 6.2 and 6.3", () => {
     const doc = statementDocument(movedOut);
     expect(doc.table.columns).toContain("MONTHS");
     expect(doc.table.rows[0]).toEqual([
-      "CAM",
       "1,250",
+      "CAM",
       "$12,891.19",
       "13.37%",
       "8",
-      "$1,148.95",
+      "1,148.95",
       "$1,040.00",
       "$108.95",
     ]);
@@ -362,9 +389,10 @@ describe("statement for 6.2 and 6.3", () => {
     expect(doc.table.total).toBe("$218.53");
     expect(doc.rentBlock).toEqual({
       heading: null,
+      effective: null,
       lines: [
-        { label: "Rent Balance", value: "$0.00", total: false },
-        { label: "Balance on Account", value: "$218.53", total: true },
+        { label: "Unpaid Balance", value: "$0.00", style: "line" },
+        { label: "Balance on Account", value: "$218.53", style: "boxed" },
       ],
     });
   });
@@ -372,28 +400,55 @@ describe("statement for 6.2 and 6.3", () => {
   it("shows the water area, a negative total, and an accounting credit for the renewal", () => {
     const doc = statementDocument(renewal);
     expect(doc.areas).toEqual([
-      "BUILDING AREA: 9,350 Sq. Ft",
-      "WATER SERVICE AREA: 4,350 Sq. Ft",
-      "SQ.FT LEASED: 2,000",
+      {
+        label: "BUILDING NET RENTABLE AREA:",
+        value: "9,350",
+        unit: "Sq. Ft",
+      },
+      { label: "WATER SERVICE AREA:", value: "4,350", unit: "Sq. Ft" },
+    ]);
+    expect(doc.costLines.map((line) => line.name)).toEqual([
+      "CAM:",
+      "TAXES:",
+      "INSURANCE:",
+      "WATER:",
     ]);
     expect(doc.table.rows[3]).toEqual([
-      "Water",
-      "2,000",
+      "",
+      "WATER",
       "$1,879.17",
       "45.98%",
-      "$863.99",
+      "863.99",
       "$1,870.00",
       "-$1,006.01",
     ]);
     expect(doc.table.total).toBe("-$1,084.54");
     expect(doc.rentBlock.lines.slice(1, 5)).toEqual([
-      { label: "CAM", value: "$229.79", total: false },
-      { label: "Taxes", value: "$597.90", total: false },
-      { label: "Insurance", value: "$112.01", total: false },
-      { label: "Water", value: "$72.00", total: false },
+      { label: "CAM", value: "$229.79", style: "line" },
+      { label: "Tax", value: "$597.90", style: "line" },
+      { label: "Insurance", value: "$112.01", style: "line" },
+      { label: "Water", value: "$72.00", style: "line" },
     ]);
     expect(doc.rentBlock.lines.at(-3)?.value).toBe("$4,161.70");
     expect(doc.rentBlock.lines.at(-2)?.value).toBe("$250.00");
     expect(doc.rentBlock.lines.at(-1)?.value).toBe("($834.54)");
+  });
+});
+
+describe("letter with fixed charges", () => {
+  it("states the new monthly rent with the charges included", () => {
+    const continuing = lucky.continuing;
+    if (!continuing) throw new Error("Super Lucky should be continuing");
+    const letter = letterDocument({
+      ...lucky,
+      continuing: {
+        ...continuing,
+        fixedCharges: [{ name: "Sign", amountCents: 3_500 }],
+        newMonthlyRentCents: continuing.newMonthlyRentCents + 3_500,
+      },
+    });
+    expect(text(letter.paragraphs[2])).toContain(
+      "the monthly rent will be changed to $3,709.64.",
+    );
   });
 });

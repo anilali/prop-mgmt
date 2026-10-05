@@ -64,6 +64,12 @@ export interface LetterDocument {
   signature: string[];
 }
 
+export interface StatementArea {
+  label: string;
+  value: string;
+  unit: string;
+}
+
 export interface StatementCostLine {
   name: string;
   actual: string;
@@ -74,22 +80,33 @@ export interface StatementCostLine {
 
 export interface StatementTable {
   columns: string[];
+  tenantLines: string[];
   rows: string[][];
   total: string;
 }
 
+export type StatementRentLineStyle = "line" | "total" | "boxed";
+
 export interface StatementRentLine {
   label: string;
   value: string;
-  total: boolean;
+  style: StatementRentLineStyle;
+}
+
+export interface StatementRentBlock {
+  heading: string | null;
+  effective: string | null;
+  lines: StatementRentLine[];
 }
 
 export interface StatementDocument {
-  heading: string[];
-  areas: string[];
+  title: string;
+  areas: StatementArea[];
+  actualsHeading: string;
   costLines: StatementCostLine[];
+  reconciliationHeading: string;
   table: StatementTable;
-  rentBlock: { heading: string | null; lines: StatementRentLine[] };
+  rentBlock: StatementRentBlock;
 }
 
 const MONTH_NAMES = [
@@ -280,8 +297,8 @@ export function letterDocument(data: StatementData): LetterDocument {
 export function statementColumns(data: StatementData): string[] {
   const showMonths = data.rows.some((row) => row.months < 12);
   return [
-    "",
     "SQ.FT LEASED",
+    "",
     `${data.year} ACTUALS`,
     "TENANT'S PRO-RATA SHARE",
     ...(showMonths ? ["MONTHS"] : []),
@@ -291,60 +308,73 @@ export function statementColumns(data: StatementData): string[] {
   ];
 }
 
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function formatNumberCents(cents: number): string {
+  return formatCents(cents).replace("$", "");
+}
+
 export function statementDocument(data: StatementData): StatementDocument {
   const showMonths = data.rows.some((row) => row.months < 12);
-  const priorBalanceLabel =
+  const unpaidLabel =
     data.priorBalanceAsOf < `${data.year}-12-31`
-      ? `Rent Balance as of ${longDate(data.priorBalanceAsOf)}`
-      : "Rent Balance";
+      ? `Unpaid Balance as of ${longDate(data.priorBalanceAsOf)}`
+      : "Unpaid Balance";
   const balanceLines: StatementRentLine[] = [
     {
-      label: priorBalanceLabel,
+      label: unpaidLabel,
       value: formatCents(data.priorBalanceCents),
-      total: false,
+      style: "line",
     },
     {
       label: "Balance on Account",
       value: formatAccounting(data.balanceOnAccountCents),
-      total: true,
+      style: "boxed",
     },
   ];
   const continuing = data.continuing;
 
   return {
-    heading: [
-      data.property.name,
-      `${data.year} EXPENSE RECONCILIATION`,
-      data.tenant.businessName,
-      streetWithSuite(data.unit.address),
-      cityLine(data.unit.address),
-    ].filter((line) => line.trim() !== ""),
+    title: `${data.year} Expense Reconciliation`,
     areas: [
-      `BUILDING AREA: ${formatSqft(data.buildingSqft)} Sq. Ft`,
-      ...data.otherPoolAreas.map(
-        (area) =>
-          `${area.name.toUpperCase()} SERVICE AREA: ${formatSqft(area.sqft)} Sq. Ft`,
-      ),
-      `SQ.FT LEASED: ${formatSqft(data.unit.sqft)}`,
+      {
+        label: "BUILDING NET RENTABLE AREA:",
+        value: formatSqft(data.buildingSqft),
+        unit: "Sq. Ft",
+      },
+      ...data.otherPoolAreas.map((area) => ({
+        label: `${area.name.toUpperCase()} SERVICE AREA:`,
+        value: formatSqft(area.sqft),
+        unit: "Sq. Ft",
+      })),
     ],
+    actualsHeading: `${data.year} ACTUAL OPERATING EXPENSE`,
     costLines: data.rows.map((row) => ({
-      name: row.name,
-      actual: formatCents(row.actualCents),
+      name: `${row.name.toUpperCase()}:`,
+      actual: `$ ${formatNumberCents(row.actualCents)}`,
       perYear: `${formatCents(costPerSqftYearCents(row.actualCents, row.poolSqft))} psf/year`,
       perMonth: `${formatHundredthsOfCent(costPerSqftMonthHundredths(row.actualCents, row.poolSqft))} psf/month`,
       billNote: row.billOverride
         ? `Bill amount: ${row.billOverride.note}`
         : null,
     })),
+    reconciliationHeading: `${data.year} EXPENSE RECONCILIATION`,
     table: {
       columns: statementColumns(data),
-      rows: data.rows.map((row) => [
-        row.name,
-        formatSqft(data.unit.sqft),
+      tenantLines: [
+        data.tenant.businessName,
+        streetWithSuite(data.unit.address),
+        cityLine(data.unit.address),
+      ].filter((line) => line.trim() !== ""),
+      rows: data.rows.map((row, index) => [
+        index === 0 ? formatSqft(data.unit.sqft) : "",
+        row.name.toUpperCase(),
         formatCents(row.actualCents),
         formatPercentBps(shareBps(data.unit.sqft, row.poolSqft)),
         ...(showMonths ? [String(row.months)] : []),
-        formatCents(row.partCents),
+        formatNumberCents(row.partCents),
         formatCents(row.estimatesCents),
         formatCents(row.balanceCents),
       ]),
@@ -352,27 +382,37 @@ export function statementDocument(data: StatementData): StatementDocument {
     },
     rentBlock: continuing
       ? {
-          heading: `REVISED MONTHLY RENT (Effective ${longDate(continuing.effectiveDate)})`,
+          heading: "REVISED MONTHLY RENT",
+          effective: `(Effective ${longDate(continuing.effectiveDate)})`,
           lines: [
             {
               label: "Base Rent",
               value: formatCents(continuing.baseRentCents),
-              total: false,
+              style: "line",
             },
-            ...continuing.newEstimates.map((estimate) => ({
-              label: estimate.name,
-              value: formatCents(estimate.amountCents),
-              total: false,
-            })),
+            ...continuing.newEstimates.map(
+              (estimate): StatementRentLine => ({
+                label: capitalized(estimate.letterName),
+                value: formatCents(estimate.amountCents),
+                style: "line",
+              }),
+            ),
+            ...continuing.fixedCharges.map(
+              (charge): StatementRentLine => ({
+                label: charge.name,
+                value: formatCents(charge.amountCents),
+                style: "line",
+              }),
+            ),
             {
               label: "Total Monthly Rent",
               value: formatCents(continuing.newMonthlyRentCents),
-              total: true,
+              style: "total",
             },
             ...balanceLines,
           ],
         }
-      : { heading: null, lines: balanceLines },
+      : { heading: null, effective: null, lines: balanceLines },
   };
 }
 

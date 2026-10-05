@@ -780,7 +780,7 @@ Pools with `poolSqft(P) = 0` skip both `prorate` calls (5.8).
 - An account with two leases in the year (a renewal) counts each month once and adds up the estimates expected under each lease.
 - "Estimates" are what the account was expected to pay, not cash received. Short payments stay in `priorBalance`.
 - The true-up for year `Y` is dated in `Y+1` (5.11), so `balance(A, Y-12-31)` never includes it, and January of `Y+1` is not counted.
-- `newestBank` is the newest imported bank `posted_on` (cash expenses do not count). During the November dry run, `priorAsOf` is the earlier of today and that date, so rent that is due but not yet imported does not show as owed. With no bank rows it is today. The workspace and the preview PDF label it "Rent balance as of {date}".
+- `newestBank` is the newest imported bank `posted_on` (cash expenses do not count). During the November dry run, `priorAsOf` is the earlier of today and that date, so rent that is due but not yet imported does not show as owed. With no bank rows it is today. The workspace labels it "Rent balance as of {date}" and the preview PDF "Unpaid Balance as of {date}".
 - A pool with zero actual cost still gets a row: part 0, balance equal to minus the estimates, new estimate 0.
 - `newEstimate` uses a full year's share even when `monthsP < 12`.
 - A pool the account paid in its last counted month carries over to `J` even when `J` has no step for it, as long as the unit is still in the pool. A renewal starting January 1 that was entered with blank estimates still gets every pool the tenant paid in December. A pool carried over this way gets a checklist warning (5.10).
@@ -1172,13 +1172,15 @@ US Letter, built-in Helvetica, 11 pt. One PDF per account: page 1 is the letter,
 
 The three amounts are bold. Letter text is built by pure functions in `statement-document.ts` as a list of text runs with a bold flag, so tests check wording without rendering a PDF.
 
-**Statement:**
+**Statement** (follows the owner's spreadsheet):
 
-1. Heading: property name, "{YEAR} EXPENSE RECONCILIATION", business name, unit address.
-2. Areas: "BUILDING AREA: 9,350 Sq. Ft", one "{POOL NAME} SERVICE AREA: n Sq. Ft" line per `otherPoolAreas` entry, "SQ.FT LEASED: 2,500".
-3. Cost lines, one per row: pool name, actual cost, "$1.38 psf/year", "$0.1149 psf/month". When a bill amount is used, a small line under it: "Bill amount: {note}".
-4. Table with columns: pool, SQ.FT LEASED, {YEAR} ACTUALS, TENANT'S PRO-RATA SHARE, MONTHS (only when a row has fewer than 12), TENANT'S ANNUAL SHARE, ESTIMATES BILLED IN {YEAR}, BALANCE DUE. Negative amounts print as `-$362.79`. Under BALANCE DUE, a ruled total row with no label holds the true-up, as on the owner's sheet.
-5. Rent block. Continuing account: "REVISED MONTHLY RENT (Effective January 1, {year+1})", then Base Rent, one line per new estimate by pool name, Total Monthly Rent, Rent Balance, Balance on Account. Account not continuing: only Rent Balance and Balance on Account. Balance on Account prints in accounting format, `($834.54)`, when negative.
+1. Centered bold title: "{year} Expense Reconciliation".
+2. Areas, with the numbers right-aligned: "BUILDING NET RENTABLE AREA: 9,350 Sq. Ft", then one "{POOL NAME} SERVICE AREA: n Sq. Ft" line per `otherPoolAreas` entry.
+3. Bold "{YEAR} ACTUAL OPERATING EXPENSE", then one cost line per row: "CAM:", "$ 12,891.19", and "$1.38 psf/year", with "$0.1149 psf/month" under the psf/year amount. When a bill amount is used, a small line under it: "Bill amount: {note}".
+4. Bold "{YEAR} EXPENSE RECONCILIATION", then the table. The header cells are boxed: SQ.FT LEASED, a blank pool column, {YEAR} ACTUALS, TENANT'S PRO-RATA SHARE, MONTHS (only when a row has fewer than 12), TENANT'S ANNUAL SHARE, ESTIMATES BILLED IN {YEAR}, BALANCE DUE. A column to the left of the box holds the business name and the unit address. The sqft prints once, on the first row. Pool names print in capitals. Actuals, estimates, and balances have a dollar sign; the annual share does not. The share prints with two decimals. Negative amounts print as `-$362.79`. The true-up sits in a box under BALANCE DUE, with no label.
+5. Rent block. Continuing account: bold "REVISED MONTHLY RENT", then "(Effective January 1, {year+1})". Lines: Base Rent, one line per new estimate by letter name with a capital first letter (CAM, Tax, Insurance, Water), one line per fixed charge in effect on January 1, a rule, bold Total Monthly Rent, Unpaid Balance, and bold Balance on Account with its amount in a box. Account not continuing: only Unpaid Balance and Balance on Account. The dry run labels it "Unpaid Balance as of {date}". Balance on Account prints in accounting format, `($834.54)`, when negative.
+
+The statement page is built by `statementDocument` in `statement-document.ts` as plain strings, so tests check it without rendering a PDF.
 
 ### 9.3 Generation and storage
 

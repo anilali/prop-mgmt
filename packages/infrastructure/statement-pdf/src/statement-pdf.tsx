@@ -13,6 +13,8 @@ import type {
   StatementData,
   StatementDocument,
   StatementRenderer,
+  StatementRentLine,
+  StatementTable,
 } from "@moonship/billing";
 import { letterDocument, statementDocument } from "@moonship/billing";
 
@@ -39,52 +41,80 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica",
     lineHeight: 1.3,
   },
-  heading: {
+  title: {
     fontFamily: "Helvetica-Bold",
     textAlign: "center",
-    fontSize: 11,
+    fontSize: 12,
+    marginBottom: 16,
   },
-  subheading: { textAlign: "center" },
-  areas: { marginTop: 16, marginBottom: 12 },
+  areaLine: { flexDirection: "row" },
+  areaLabel: { width: 190 },
+  areaValue: { width: 50, textAlign: "right" },
+  areaUnit: { marginLeft: 4 },
+  sectionHeading: {
+    fontFamily: "Helvetica-Bold",
+    marginTop: 16,
+    marginBottom: 6,
+  },
   costLine: { flexDirection: "row" },
-  costName: { width: 120, fontFamily: "Helvetica-Bold" },
-  costAmount: { width: 90, textAlign: "right" },
-  costRate: { width: 110, textAlign: "right" },
+  costName: { width: 90 },
+  costAmount: { width: 80, textAlign: "right" },
+  costRates: { width: 120 },
+  costRate: { textAlign: "right" },
   billNote: { fontSize: 8, marginLeft: 12, marginBottom: 2 },
-  table: { marginTop: 16 },
-  tableRow: { flexDirection: "row", paddingVertical: 3 },
-  headerRow: {
+  costGroup: { marginBottom: 4 },
+  table: { fontSize: 8 },
+  tableRow: { flexDirection: "row" },
+  tenantColumn: { flex: 1, paddingRight: 6 },
+  headerBox: {
     flexDirection: "row",
+    borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderBottomColor: "#000000",
-    paddingBottom: 3,
+    borderColor: "#000000",
   },
   headerCell: {
-    flex: 1,
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.5,
-    textAlign: "right",
+    fontSize: 7,
+    textAlign: "center",
     paddingHorizontal: 2,
+    paddingVertical: 3,
+    borderLeftWidth: 1,
+    borderLeftColor: "#000000",
   },
-  firstCell: { flex: 1.2, textAlign: "left" },
-  cell: { flex: 1, textAlign: "right", paddingHorizontal: 2 },
+  lastHeaderCell: { borderRightWidth: 1, borderRightColor: "#000000" },
+  body: { flexDirection: "row", marginTop: 4 },
+  cell: { textAlign: "right", paddingHorizontal: 3, paddingVertical: 2 },
+  poolCell: { textAlign: "left" },
+  totalRow: { flexDirection: "row", marginTop: 4 },
   totalCell: {
-    flex: 1,
     textAlign: "right",
-    paddingHorizontal: 2,
-    paddingTop: 3,
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: "#000000",
+    fontFamily: "Helvetica-Bold",
+  },
+  rentBlock: { marginTop: 24 },
+  rentHeadingRow: { flexDirection: "row", marginBottom: 6 },
+  rentHeading: { fontFamily: "Helvetica-Bold", marginRight: 16 },
+  rentLine: { flexDirection: "row", alignItems: "center", marginBottom: 2 },
+  rentLabel: { width: 190 },
+  rentValue: {
+    width: 80,
+    textAlign: "right",
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+  },
+  rentTotalLine: { marginTop: 2, marginBottom: 8 },
+  rentTotalValue: {
     borderTopWidth: 1,
     borderTopColor: "#000000",
     fontFamily: "Helvetica-Bold",
   },
-  rentBlock: { marginTop: 24, width: 300 },
-  rentHeading: { fontFamily: "Helvetica-Bold", marginBottom: 4 },
-  rentLine: { flexDirection: "row", paddingVertical: 2 },
-  rentLabel: { flex: 1 },
-  rentValue: { width: 100, textAlign: "right" },
-  rentTotal: {
-    borderTopWidth: 1,
-    borderTopColor: "#000000",
+  rentBoxedLine: { marginTop: 4 },
+  rentBoxedValue: {
+    borderWidth: 1,
+    borderColor: "#000000",
     fontFamily: "Helvetica-Bold",
   },
 });
@@ -137,31 +167,129 @@ function LetterPage({ letter }: { letter: LetterDocument }) {
   );
 }
 
+const LEADING_WIDTHS = [42, 56, 62, 54];
+const MONTHS_WIDTH = 34;
+const TRAILING_WIDTHS = [58, 64, 58];
+
+function columnWidths(columns: readonly string[]): number[] {
+  const showMonths =
+    columns.length > LEADING_WIDTHS.length + TRAILING_WIDTHS.length;
+  return [
+    ...LEADING_WIDTHS,
+    ...(showMonths ? [MONTHS_WIDTH] : []),
+    ...TRAILING_WIDTHS,
+  ];
+}
+
+function StatementTableView({ table }: { table: StatementTable }) {
+  const widths = columnWidths(table.columns);
+  const lastIndex = widths.length - 1;
+  return (
+    <View style={styles.table}>
+      <View style={styles.tableRow}>
+        <View style={styles.tenantColumn} />
+        <View style={styles.headerBox}>
+          {table.columns.map((column, index) => (
+            <Text
+              key={index}
+              style={[
+                styles.headerCell,
+                { width: widths[index] },
+                index === lastIndex ? styles.lastHeaderCell : {},
+              ]}
+            >
+              {column}
+            </Text>
+          ))}
+        </View>
+      </View>
+      <View style={styles.body}>
+        <View style={styles.tenantColumn}>
+          <Lines lines={table.tenantLines} />
+        </View>
+        <View>
+          {table.rows.map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.tableRow}>
+              {row.map((value, index) => (
+                <Text
+                  key={index}
+                  style={[
+                    styles.cell,
+                    { width: widths[index] },
+                    index === 1 ? styles.poolCell : {},
+                  ]}
+                >
+                  {value}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={styles.totalRow}>
+        <View style={styles.tenantColumn} />
+        {widths.map((width, index) =>
+          index === lastIndex ? (
+            <Text key={index} style={[styles.totalCell, { width }]}>
+              {table.total}
+            </Text>
+          ) : (
+            <View key={index} style={{ width }} />
+          ),
+        )}
+      </View>
+    </View>
+  );
+}
+
+function RentLine({ line }: { line: StatementRentLine }) {
+  const bold = line.style === "line" ? {} : styles.bold;
+  return (
+    <View
+      style={[
+        styles.rentLine,
+        line.style === "total" ? styles.rentTotalLine : {},
+        line.style === "boxed" ? styles.rentBoxedLine : {},
+      ]}
+    >
+      <Text style={[styles.rentLabel, bold]}>{line.label}</Text>
+      <Text
+        style={[
+          styles.rentValue,
+          line.style === "total" ? styles.rentTotalValue : {},
+          line.style === "boxed" ? styles.rentBoxedValue : {},
+        ]}
+      >
+        {line.value}
+      </Text>
+    </View>
+  );
+}
+
 function StatementPage({ statement }: { statement: StatementDocument }) {
-  const [title, ...subtitles] = statement.heading;
-  const lastColumn = statement.table.columns.length - 1;
   return (
     <Page size="LETTER" style={styles.statementPage}>
-      <Text style={styles.heading}>{title}</Text>
-      {subtitles.map((line, index) => (
-        <Text
-          key={index}
-          style={index === 0 ? styles.heading : styles.subheading}
-        >
-          {line}
-        </Text>
-      ))}
-      <View style={styles.areas}>
-        <Lines lines={statement.areas} />
+      <Text style={styles.title}>{statement.title}</Text>
+      <View>
+        {statement.areas.map((area, index) => (
+          <View key={index} style={styles.areaLine}>
+            <Text style={styles.areaLabel}>{area.label}</Text>
+            <Text style={styles.areaValue}>{area.value}</Text>
+            <Text style={styles.areaUnit}>{area.unit}</Text>
+          </View>
+        ))}
       </View>
+      <Text style={styles.sectionHeading}>{statement.actualsHeading}</Text>
       <View>
         {statement.costLines.map((line, index) => (
-          <View key={index}>
+          <View key={index} style={styles.costGroup}>
             <View style={styles.costLine}>
               <Text style={styles.costName}>{line.name}</Text>
               <Text style={styles.costAmount}>{line.actual}</Text>
-              <Text style={styles.costRate}>{line.perYear}</Text>
-              <Text style={styles.costRate}>{line.perMonth}</Text>
+              <View style={styles.costRates}>
+                <Text style={styles.costRate}>{line.perYear}</Text>
+                <Text style={styles.costRate}>{line.perMonth}</Text>
+              </View>
             </View>
             {line.billNote ? (
               <Text style={styles.billNote}>{line.billNote}</Text>
@@ -169,61 +297,23 @@ function StatementPage({ statement }: { statement: StatementDocument }) {
           </View>
         ))}
       </View>
-      <View style={styles.table}>
-        <View style={styles.headerRow}>
-          {statement.table.columns.map((column, index) => (
-            <Text
-              key={index}
-              style={[styles.headerCell, index === 0 ? styles.firstCell : {}]}
-            >
-              {column}
-            </Text>
-          ))}
-        </View>
-        {statement.table.rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.tableRow}>
-            {row.map((value, index) => (
-              <Text
-                key={index}
-                style={[styles.cell, index === 0 ? styles.firstCell : {}]}
-              >
-                {value}
-              </Text>
-            ))}
-          </View>
-        ))}
-        <View style={styles.tableRow}>
-          {statement.table.columns.map((_, index) => (
-            <Text
-              key={index}
-              style={
-                index === lastColumn
-                  ? styles.totalCell
-                  : [styles.cell, index === 0 ? styles.firstCell : {}]
-              }
-            >
-              {index === lastColumn ? statement.table.total : ""}
-            </Text>
-          ))}
-        </View>
-      </View>
+      <Text style={styles.sectionHeading}>
+        {statement.reconciliationHeading}
+      </Text>
+      <StatementTableView table={statement.table} />
       <View style={styles.rentBlock}>
         {statement.rentBlock.heading ? (
-          <Text style={styles.rentHeading}>{statement.rentBlock.heading}</Text>
+          <View style={styles.rentHeadingRow}>
+            <Text style={styles.rentHeading}>
+              {statement.rentBlock.heading}
+            </Text>
+            {statement.rentBlock.effective ? (
+              <Text>{statement.rentBlock.effective}</Text>
+            ) : null}
+          </View>
         ) : null}
         {statement.rentBlock.lines.map((line, index) => (
-          <View key={index} style={styles.rentLine}>
-            <Text style={styles.rentLabel}>{line.label}</Text>
-            <Text
-              style={
-                line.total
-                  ? [styles.rentValue, styles.rentTotal]
-                  : styles.rentValue
-              }
-            >
-              {line.value}
-            </Text>
-          </View>
+          <RentLine key={index} line={line} />
         ))}
       </View>
     </Page>

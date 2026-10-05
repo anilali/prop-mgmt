@@ -230,7 +230,7 @@ The letter has the letter date, the tenant's mailing address, the year and unit 
 
 The owner sets the letter date on the year, and it must be in the next year. No date is saved until the owner sets one. The field suggests January 1 of the next year.
 
-The statement shows the building area and the area of each other pool the tenant pays, each pool's actual cost and cost per sqft per year and per month, the table above with a months column for partial years, the new monthly rent, and the balance on account. It uses the owner's column labels.
+The statement follows the owner's spreadsheet. It shows the building's net rentable area and the area of each other pool the tenant pays, each pool's actual cost and cost per sqft per year and per month, and the table above with a months column for partial years. The tenant's name and unit address sit to the left of the table, and the true-up sits in a box under the balance due. Below it come the revised monthly rent with each line (base rent, each estimate, each fixed charge), the unpaid balance, and the balance on account. It uses the owner's column labels.
 
 ### Finalize
 

@@ -242,10 +242,13 @@ export {
 export type {
   LetterDocument,
   Paragraph,
+  StatementArea,
   StatementCostLine,
   StatementData,
   StatementDocument,
+  StatementRentBlock,
   StatementRentLine,
+  StatementRentLineStyle,
   StatementRowData,
   StatementTable,
   TextRun,
