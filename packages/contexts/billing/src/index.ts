@@ -162,6 +162,7 @@ export type {
 } from "./reconciliation";
 export {
   accountStatement,
+  firstReconciliationYear,
   newestBankDate,
   nextJanuary1,
   poolActuals,

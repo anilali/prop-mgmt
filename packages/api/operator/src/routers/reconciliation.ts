@@ -16,6 +16,7 @@ import {
   finalizeBlockers,
   finalizedYearView,
   finalizePlan,
+  firstReconciliationYear,
   reconciliationWorkspace,
   snapshotFileName,
   yearEnd,
@@ -107,10 +108,14 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
         "Set the tracking start date in Setup before opening a reconciliation",
       );
     }
-    if (year < yearOf(trackingStart) || year > yearOf(today)) {
+    const firstYear = firstReconciliationYear(trackingStart);
+    if (firstYear > yearOf(today)) {
       throw badRequest(
-        `Choose a year from ${yearOf(trackingStart)} to ${yearOf(today)}`,
+        `The first reconciliation is ${firstYear}, the first full year after the tracking start date`,
       );
+    }
+    if (year < firstYear || year > yearOf(today)) {
+      throw badRequest(`Choose a year from ${firstYear} to ${yearOf(today)}`);
     }
     return { property, today, trackingStart };
   }
@@ -194,7 +199,8 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
       const trackingStart = property.trackingStartDate;
       const years: number[] = [];
       if (trackingStart !== null) {
-        for (let year = yearOf(today); year >= yearOf(trackingStart); year--) {
+        const firstYear = firstReconciliationYear(trackingStart);
+        for (let year = yearOf(today); year >= firstYear; year--) {
           years.push(year);
         }
       }

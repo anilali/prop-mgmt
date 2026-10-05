@@ -674,6 +674,8 @@ When `poolSqft(P)` is 0, nothing calls `prorate` for that pool. The pool card sh
 
 For year `Y` and account `A`, using 5.2:
 
+The first year that can be reconciled is the first year whose January 1 is on or after the tracking start date. A tracking start of 2024-01-01 makes 2024 the first year; a tracking start of 2024-04-01 makes it 2025, so no reconciliation covers a partial year.
+
 ```text
 months    = { m in Y : counted(A, m) }
 paysIn(m, P) = paysOn(lease(A, m), P, due(A, m))
@@ -713,16 +715,17 @@ Pools with `poolSqft(P) = 0` skip both `prorate` calls (5.8).
 Blockers (finalize stays disabled):
 
 1. No transaction dated in `Y` is left to sort.
-2. Every pool on a statement has a total sqft above 0 and contains the account's unit.
-3. No pool on a statement has a negative actual cost (5.8).
-4. Owner name, title, company, phone, and email are set, and every statement tenant has a mailing address.
+2. Every pool on a statement, or paid by the lease that covers January 1 of `Y+1`, has a total sqft above 0 and contains the account's unit. A pool with sqft 0 gets only the no-units blocker.
+3. No such pool has a negative actual cost (5.8), so finalize never writes a negative estimate.
+4. Owner name, title, company, phone, and email are set, and every statement tenant has a mailing address with a street and city. Values that are only spaces count as missing.
+5. Every statement can be computed.
 
 Warnings (shown, not blocking):
 
-5. A pool had a bill amount in `Y-1` and has none in `Y`.
-6. An account is in holdover. Finalize would give it new estimates.
-7. "Bank data only through {date}" when the newest imported `posted_on` is before `Y-12-31`.
-8. A pool's members or a unit's sqft changed during `Y` (`members_changed_on` or `sqft_changed_on` on or after `Y-01-01`). The current values apply to the whole year.
+6. A pool had a bill amount in `Y-1` and has none in `Y`.
+7. An account is in holdover. Finalize would give it new estimates.
+8. "Bank data only through {date}" when the newest imported `posted_on` is before `Y-12-31`.
+9. A pool's members or a unit's sqft changed during `Y` (`members_changed_on` or `sqft_changed_on` on or after `Y-01-01`). The current values apply to the whole year.
 
 Finalize also needs: status `draft`, a letter date after `Y-12-31`, and today after `Y-12-31`.
 
@@ -957,7 +960,7 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | | `removeEntry` | id | ok; rejected for `true_up` and for entries dated inside a finalized year |
 | | `approveLateFee`, `dismissLateFee` | accountId, month | entry |
 | `home` | `comingUp` | none | the lists in 5.12 |
-| `reconciliation` | `listYears` | none | years from the tracking start year to the current year, with status and letter date |
+| `reconciliation` | `listYears` | none | years from the first full year after the tracking start (5.9) to the current year, with status and letter date |
 | | `workspace` | year | checklist, pool cards, statements, finalize gates, and, when finalized, snapshots, mismatch flags, January table |
 | | `setLetterDate` | year, letterDate | year |
 | | `setBillOverride` | year, poolId, amountCents, note | override |
@@ -1067,9 +1070,9 @@ US Letter, built-in Helvetica, 11 pt. One PDF per account: page 1 is the letter,
 3. `Re:` block: "{year} Expense Reconciliation", business name, unit street with suite, unit city, state, zip.
 4. P1: "In accordance with the lease for the above-referenced location, enclosed for your review and reimbursement is the {year} expense reconciliation. Copies of tax and insurance receipts are also enclosed."
 5. P2, true-up 0 or more: "Based upon the reconciliation, the balance of your pro rata share of the {year} expenses for the center totals **{true-up}**." True-up below 0: "Based upon the reconciliation, the balance of your pro rata share of the {year} expenses for the center results in a credit of **{absolute true-up}**, which has been applied to your account."
-6. P3, continuing accounts only: "The monthly charges for {letter names} for the year {year+1} will change to reflect the {year} actual expense. Effective January 1, {year+1}, the monthly rent will be changed to **{new monthly rent}**." Letter names are the `letter_name` of each pool `J` pays, joined as "CAM", "CAM and tax", or "CAM, tax, and insurance".
+6. P3, continuing accounts only: "The monthly charges for {letter names} for the year {year+1} will change to reflect the {year} actual expense. Effective January 1, {year+1}, the monthly rent will be changed to **{new monthly rent}**." Letter names are the `letter_name` of each pool `J` pays, joined as "CAM", "CAM and tax", or "CAM, tax, and insurance". When `J` pays no pools, P3 is only the "Effective January 1" sentence.
 7. P4, only when `insuranceRequest`: "We don't have a copy of your insurance on file for the year {year+1}. Could you please send us a copy at your earliest convenience. The copy can be emailed to {owner email}."
-8. P5: "The current balance on your account is **{balance on account}**. If you have any questions, please call me at {owner phone}." When negative: "is a credit of **{absolute amount}**".
+8. P5: "The current balance on your account is **{balance on account}**. If you have any questions, please call me at {owner phone}." The phone uses non-breaking spaces so it stays on one line. When negative: "is a credit of **{absolute amount}**".
 9. "Sincerely," then owner name, title, company.
 
 The three amounts are bold. Letter text is built by pure functions in `statement-document.ts` as a list of text runs with a bold flag, so tests check wording without rendering a PDF.

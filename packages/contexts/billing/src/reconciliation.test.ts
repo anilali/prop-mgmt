@@ -32,6 +32,7 @@ import {
   finalizeBlockers,
   finalizedYearView,
   finalizePlan,
+  firstReconciliationYear,
   januaryTable,
   reconciliationWorkspace,
 } from "./reconciliation";
@@ -85,6 +86,14 @@ function codes(overrides: Partial<ReconciliationInput> = {}) {
     item.code,
   ]);
 }
+
+describe("first reconciliation year", () => {
+  it("is the first year whose January 1 is on or after the tracking start", () => {
+    expect(firstReconciliationYear("2024-01-01")).toBe(2024);
+    expect(firstReconciliationYear("2024-02-01")).toBe(2025);
+    expect(firstReconciliationYear("2024-12-01")).toBe(2025);
+  });
+});
 
 describe("pool actual cost (5.8)", () => {
   it("sums category lines in the year with refunds subtracting", () => {
@@ -410,6 +419,38 @@ describe("pool months (6.4)", () => {
   });
 });
 
+function luckyWithWaterFrom2025(): AccountTerms {
+  const base = superLucky.leases[0];
+  if (!base) throw new Error("missing lease");
+  return {
+    ...superLucky,
+    leases: [
+      {
+        ...base,
+        estimateSteps: [
+          ...base.estimateSteps,
+          {
+            id: "lucky-water-2025",
+            poolId: POOLS.water,
+            startsOn: "2025-01-01",
+            amountCents: 0,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function waterRefund(amountCents: number): Txn {
+  return {
+    ...EXPENSES[0],
+    id: "water-refund",
+    postedOn: "2024-12-01",
+    amountCents,
+    lines: [{ accountId: null, categoryId: CATEGORY_IDS.water, amountCents }],
+  } as Txn;
+}
+
 describe("edge cases", () => {
   it("gives a pool with zero actual cost a row with part 0", () => {
     const statement = statementFor(superLucky.accountId, {
@@ -490,6 +531,64 @@ describe("edge cases", () => {
       }),
     );
     expect(result.canFinalize).toBe(false);
+  });
+
+  it("blocks a pool with no units that only the next year's lease pays", () => {
+    const pools = POOL_LIST.map((pool) =>
+      pool.id === POOLS.water ? { ...pool, unitIds: [] } : pool,
+    );
+    const result = workspace({
+      pools,
+      accounts: [luckyWithWaterFrom2025()],
+    });
+    const lucky = result.statements[0];
+    expect(lucky?.rows.map((row) => row.poolId)).not.toContain(POOLS.water);
+    expect(lucky?.data).toBeNull();
+    expect(
+      result.checklist.filter((item) => item.severity === "blocker"),
+    ).toEqual([
+      expect.objectContaining({
+        code: "pool_has_no_units",
+        poolId: POOLS.water,
+      }),
+      expect.objectContaining({
+        code: "statement_incomplete",
+        accountId: superLucky.accountId,
+        message:
+          "The statement for Super Lucky LLC (unit A) cannot be computed yet.",
+      }),
+    ]);
+    expect(result.canFinalize).toBe(false);
+  });
+
+  it("blocks a negative actual cost that only the next year's lease pays", () => {
+    const pools = POOL_LIST.map((pool) =>
+      pool.id === POOLS.water
+        ? { ...pool, unitIds: [...pool.unitIds, "unit-a"] }
+        : pool,
+    );
+    const input = {
+      pools,
+      accounts: [luckyWithWaterFrom2025()],
+      transactions: [...TRANSACTIONS, ...EXPENSES, waterRefund(300_000)],
+    };
+    const result = workspace(input);
+    expect(
+      result.statements[0]?.continuing?.newEstimates.find(
+        (e) => e.poolId === POOLS.water,
+      )?.amountCents,
+    ).toBeLessThan(0);
+    expect(result.checklist).toContainEqual(
+      expect.objectContaining({
+        severity: "blocker",
+        code: "negative_actual",
+        poolId: POOLS.water,
+      }),
+    );
+    expect(result.canFinalize).toBe(false);
+    expect(() => planFor(input)).toThrow(
+      "The Water cost for 2024 is -$1,120.83",
+    );
   });
 
   it("uses today's balance during a dry run", () => {
@@ -592,6 +691,47 @@ describe("checklist (5.10)", () => {
         poolId: POOLS.cam,
       }),
     );
+  });
+
+  it("does not add unit_not_in_pool for a pool with no units", () => {
+    const pools = POOL_LIST.map((pool) =>
+      pool.id === POOLS.water ? { ...pool, unitIds: [] } : pool,
+    );
+    const items = workspace({ pools }).checklist;
+    expect(items.map((item) => item.code)).toContain("pool_has_no_units");
+    expect(items.map((item) => item.code)).not.toContain("unit_not_in_pool");
+  });
+
+  it("treats blank letter details and a blank street or city as missing", () => {
+    const blankAddress = (street1: string, city: string) =>
+      TENANTS.map((tenant) =>
+        tenant.id === tenantD.tenantId && tenant.mailingAddress
+          ? {
+              ...tenant,
+              mailingAddress: { ...tenant.mailingAddress, street1, city },
+            }
+          : tenant,
+      );
+    for (const tenants of [
+      blankAddress("  ", "Springfield"),
+      blankAddress("1 Elm St", " "),
+    ]) {
+      expect(
+        workspace({
+          letter: { ...LETTER, ownerName: " ", ownerTitle: "\t" },
+          tenants,
+        }).checklist,
+      ).toEqual([
+        expect.objectContaining({
+          code: "missing_letter_details",
+          fields: ["owner name", "owner title"],
+        }),
+        expect.objectContaining({
+          code: "missing_mailing_address",
+          tenantId: tenantD.tenantId,
+        }),
+      ]);
+    }
   });
 
   it("blocks missing letter details and mailing addresses", () => {

@@ -153,6 +153,7 @@ export type ChecklistCode =
   | "negative_actual"
   | "missing_letter_details"
   | "missing_mailing_address"
+  | "statement_incomplete"
   | "bill_amount_missing"
   | "holdover"
   | "bank_data_through"
@@ -200,6 +201,11 @@ export function yearEnd(year: number): IsoDate {
 
 export function nextJanuary1(year: number): IsoDate {
   return `${year + 1}-01-01`;
+}
+
+export function firstReconciliationYear(trackingStart: IsoDate): number {
+  const year = Number(trackingStart.slice(0, 4));
+  return trackingStart <= `${year}-01-01` ? year : year + 1;
 }
 
 function inYear(date: IsoDate, year: number): boolean {
@@ -502,6 +508,10 @@ export function newestBankDate(transactions: readonly Txn[]): IsoDate | null {
   return newest;
 }
 
+function isBlank(value: string | null | undefined): boolean {
+  return (value ?? "").trim() === "";
+}
+
 const LETTER_FIELDS: [keyof ReconciliationLetterDetails, string][] = [
   ["ownerName", "owner name"],
   ["ownerTitle", "owner title"],
@@ -517,7 +527,7 @@ export function reconciliationChecklist(input: {
   tenants: readonly ReconciliationTenant[];
   pools: readonly Pool[];
   actuals: readonly PoolActual[];
-  statements: readonly Omit<AccountStatement, "data">[];
+  statements: readonly AccountStatement[];
   transactions: readonly Txn[];
   overrides: readonly PoolBillOverride[];
 }): ChecklistItem[] {
@@ -539,8 +549,12 @@ export function reconciliationChecklist(input: {
   }
 
   for (const pool of input.actuals) {
-    const onStatements = input.statements.filter((s) =>
-      s.rows.some((row) => row.poolId === pool.poolId),
+    const onStatements = input.statements.filter(
+      (s) =>
+        s.rows.some((row) => row.poolId === pool.poolId) ||
+        (s.continuing?.newEstimates ?? []).some(
+          (estimate) => estimate.poolId === pool.poolId,
+        ),
     );
     if (onStatements.length === 0) continue;
     if (pool.poolSqft <= 0) {
@@ -552,7 +566,7 @@ export function reconciliationChecklist(input: {
       });
     }
     for (const statement of onStatements) {
-      if (!pool.unitIds.includes(statement.unitId)) {
+      if (pool.poolSqft > 0 && !pool.unitIds.includes(statement.unitId)) {
         items.push({
           severity: "blocker",
           code: "unit_not_in_pool",
@@ -573,8 +587,8 @@ export function reconciliationChecklist(input: {
     }
   }
 
-  const missingFields = LETTER_FIELDS.filter(
-    ([field]) => !input.letter[field]?.trim(),
+  const missingFields = LETTER_FIELDS.filter(([field]) =>
+    isBlank(input.letter[field]),
   ).map(([, label]) => label);
   if (missingFields.length > 0) {
     items.push({
@@ -588,12 +602,24 @@ export function reconciliationChecklist(input: {
   const tenantIds = [...new Set(input.statements.map((s) => s.tenantId))];
   for (const tenantId of tenantIds) {
     const tenant = input.tenants.find((t) => t.id === tenantId);
-    if (!tenant?.mailingAddress) {
+    const address = tenant?.mailingAddress;
+    if (!address || isBlank(address.street1) || isBlank(address.city)) {
       items.push({
         severity: "blocker",
         code: "missing_mailing_address",
         tenantId,
         message: `${tenant?.businessName ?? "A tenant"} has no mailing address.`,
+      });
+    }
+  }
+
+  for (const statement of input.statements) {
+    if (statement.data === null) {
+      items.push({
+        severity: "blocker",
+        code: "statement_incomplete",
+        accountId: statement.accountId,
+        message: `The statement for ${statement.businessName} (unit ${statement.unitLabel}) cannot be computed yet.`,
       });
     }
   }
@@ -831,6 +857,11 @@ function newEstimateSteps(
     if (estimate.amountCents === null) {
       throw new Error(
         `The new ${estimate.name} estimate for ${statement.businessName} is missing`,
+      );
+    }
+    if (estimate.amountCents < 0) {
+      throw new Error(
+        `The new ${estimate.name} estimate for ${statement.businessName} is negative`,
       );
     }
     return {

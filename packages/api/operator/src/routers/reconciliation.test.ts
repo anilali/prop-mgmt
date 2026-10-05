@@ -227,6 +227,28 @@ describe("reconciliation.listYears", () => {
     ]);
   });
 
+  it("starts at the first full year after a mid-year tracking start", async () => {
+    const { app, caller } = await setup("2026-11-16");
+    const property = app.properties.properties.get(PROPERTY_ID);
+    if (!property) throw new Error("missing property");
+    property.trackingStartDate = "2024-04-01";
+
+    const result = await caller.reconciliation.listYears();
+
+    expect(result.years.map((y) => y.year)).toEqual([2026, 2025]);
+  });
+
+  it("lists nothing while the first full year is still ahead", async () => {
+    const { app, caller } = await setup("2026-11-16");
+    const property = app.properties.properties.get(PROPERTY_ID);
+    if (!property) throw new Error("missing property");
+    property.trackingStartDate = "2026-04-01";
+
+    const result = await caller.reconciliation.listYears();
+
+    expect(result.years).toEqual([]);
+  });
+
   it("lists nothing without a tracking start date", async () => {
     useToday("2026-11-16");
     const caller = await createTestApp({ trackingStartDate: null }).callerFor();
@@ -308,6 +330,18 @@ describe("reconciliation.workspace", () => {
     expect(await codeOf(caller.reconciliation.workspace({ year: 2026 }))).toBe(
       "BAD_REQUEST",
     );
+  });
+
+  it("rejects the partial year of a mid-year tracking start", async () => {
+    const { app, caller } = await setup("2025-11-16");
+    const property = app.properties.properties.get(PROPERTY_ID);
+    if (!property) throw new Error("missing property");
+    property.trackingStartDate = "2024-04-01";
+    expect(await codeOf(caller.reconciliation.workspace({ year: 2024 }))).toBe(
+      "BAD_REQUEST",
+    );
+    const result = await caller.reconciliation.workspace({ year: 2025 });
+    expect(result.year).toBe(2025);
   });
 
   it("asks for a tracking start date", async () => {
