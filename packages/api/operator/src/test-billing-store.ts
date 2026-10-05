@@ -74,6 +74,25 @@ export class InMemoryBillingStore
     return Promise.resolve();
   }
 
+  addPoolMember(
+    propertyId: string,
+    poolId: string,
+    unitId: string,
+    changedOn: IsoDate | null,
+  ): Promise<void> {
+    if (this.failNextSave) {
+      this.failNextSave = false;
+      return Promise.reject(new Error("Simulated store failure"));
+    }
+    const pool = this.pools.get(poolId);
+    if (pool?.propertyId !== propertyId || pool.unitIds.includes(unitId)) {
+      return Promise.resolve();
+    }
+    pool.unitIds = [...pool.unitIds, unitId];
+    if (changedOn !== null) pool.membersChangedOn = changedOn;
+    return Promise.resolve();
+  }
+
   removeUnitFromPools(
     propertyId: string,
     unitId: string,

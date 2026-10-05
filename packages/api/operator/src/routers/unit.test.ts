@@ -32,6 +32,31 @@ describe("unit procedures", () => {
     expect(water?.units).toEqual([]);
   });
 
+  it("create adds the new unit and keeps existing pool members", async () => {
+    const { caller, poolId } = await setup();
+    const a = await caller.unit.create({
+      label: "A",
+      sqft: 2500,
+      address: TEST_ADDRESS,
+    });
+    await caller.pool.setUnits({ id: poolId("Water"), unitIds: [a.id] });
+
+    const b = await caller.unit.create({
+      label: "B",
+      sqft: 2000,
+      address: TEST_ADDRESS,
+    });
+
+    const pools = await caller.pool.list();
+    const members = (name: string) =>
+      pools
+        .find((p) => p.name === name)
+        ?.units.map((u) => u.unitId)
+        .sort();
+    expect(members("CAM")).toEqual([a.id, b.id].sort());
+    expect(members("Water")).toEqual([a.id]);
+  });
+
   it("create does not set members_changed_on before the first transaction", async () => {
     const { caller } = await setup();
     await caller.unit.create({ label: "A", sqft: 2500, address: TEST_ADDRESS });

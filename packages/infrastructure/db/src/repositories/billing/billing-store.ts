@@ -95,6 +95,37 @@ export class PGBillingStore implements BillingStore {
     }
   }
 
+  async addPoolMember(
+    propertyId: string,
+    poolId: string,
+    unitId: string,
+    changedOn: IsoDate | null,
+  ): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [pool] = await tx
+        .select({ id: costPools.id })
+        .from(costPools)
+        .where(
+          and(eq(costPools.propertyId, propertyId), eq(costPools.id, poolId)),
+        );
+      if (!pool) {
+        throw new Error(`Pool ${poolId} belongs to another property`);
+      }
+      const added = await tx
+        .insert(costPoolUnits)
+        .values({ poolId, unitId, propertyId })
+        .onConflictDoNothing()
+        .returning({ poolId: costPoolUnits.poolId });
+      if (changedOn === null || added.length === 0) return;
+      await tx
+        .update(costPools)
+        .set({ membersChangedOn: changedOn, updatedAt: new Date() })
+        .where(
+          and(eq(costPools.propertyId, propertyId), eq(costPools.id, poolId)),
+        );
+    });
+  }
+
   async removeUnitFromPools(
     propertyId: string,
     unitId: string,

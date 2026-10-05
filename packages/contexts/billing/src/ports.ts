@@ -8,6 +8,12 @@ export interface BillingStore {
   savePool(pool: Pool): Promise<void>;
   deletePool(propertyId: string, poolId: string): Promise<void>;
   saveCategory(category: Category): Promise<void>;
+  addPoolMember(
+    propertyId: string,
+    poolId: string,
+    unitId: string,
+    changedOn: IsoDate | null,
+  ): Promise<void>;
   removeUnitFromPools(
     propertyId: string,
     unitId: string,

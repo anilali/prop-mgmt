@@ -17,7 +17,7 @@ WHERE "p"."id" = "u"."property_id";--> statement-breakpoint
 ALTER TABLE "property"."units" ALTER COLUMN "address" SET NOT NULL;--> statement-breakpoint
 DELETE FROM "property"."units" WHERE "sqft" <= 0;--> statement-breakpoint
 UPDATE "property"."units" AS "u"
-SET "label" = "u"."label" || ' ' || "d"."position"
+SET "label" = left("u"."label", 49) || ' (dup ' || left("u"."id"::text, 8) || ')'
 FROM (
   SELECT "id", row_number() OVER (PARTITION BY "property_id", "label" ORDER BY "created_at", "id") AS "position"
   FROM "property"."units"

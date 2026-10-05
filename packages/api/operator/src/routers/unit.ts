@@ -105,11 +105,12 @@ export function unitRouter(deps: UnitRouterDeps) {
           await stores.unitRepository.save(unit);
           const pools = await stores.billing.listPools(ctx.propertyId);
           for (const pool of pools.filter((p) => p.addsNewUnits)) {
-            await stores.billing.savePool({
-              ...pool,
-              unitIds: [...pool.unitIds, unit.id],
-              membersChangedOn: changedOn ?? pool.membersChangedOn,
-            });
+            await stores.billing.addPoolMember(
+              ctx.propertyId,
+              pool.id,
+              unit.id,
+              changedOn,
+            );
           }
         });
         return getUnit(ctx.propertyId, unit.id);
