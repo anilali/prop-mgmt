@@ -112,18 +112,6 @@ function sum(amounts: readonly number[]): number {
   return amounts.reduce((total, amount) => total + amount, 0);
 }
 
-export function paymentsBetween(
-  ledger: AccountLedger,
-  from: IsoDate,
-  to: IsoDate,
-): number {
-  return sum(
-    countedPayments(ledger, to)
-      .filter((payment) => payment.postedOn >= from)
-      .map((payment) => payment.amountCents),
-  );
-}
-
 export function expectedOn(ledger: AccountLedger, asOf: IsoDate): number {
   return (
     ledger.account.openingBalanceCents +

@@ -2,7 +2,7 @@ import type { IsoDate, YearMonth } from "@moonship/shared";
 import { addDays, dateInMonth, maxDate, monthOf } from "@moonship/shared";
 
 import type { AccountLedger } from "./balance";
-import { balanceOn, paymentsBetween } from "./balance";
+import { monthsDue } from "./balance";
 import {
   dueDate,
   isCounted,
@@ -33,6 +33,54 @@ export function isLateFeeDecided(
   );
 }
 
+function sum(amounts: readonly number[]): number {
+  return amounts.reduce((total, amount) => total + amount, 0);
+}
+
+function receivedBetween(
+  ledger: AccountLedger,
+  trackingStart: IsoDate,
+  from: IsoDate,
+  to: IsoDate,
+): number {
+  const openingDate = addDays(trackingStart, -1);
+  const openingCredit =
+    from <= openingDate && openingDate <= to
+      ? Math.max(0, -ledger.account.openingBalanceCents)
+      : 0;
+  const payments = ledger.payments
+    .filter(
+      (payment) =>
+        payment.postedOn >= trackingStart &&
+        payment.postedOn >= from &&
+        payment.postedOn <= to,
+    )
+    .map((payment) => payment.amountCents);
+  const credits = ledger.entries
+    .filter(
+      (entry) =>
+        entry.amountCents < 0 &&
+        entry.entryDate >= from &&
+        entry.entryDate <= to,
+    )
+    .map((entry) => -entry.amountCents);
+  return openingCredit + sum(payments) + sum(credits);
+}
+
+function rentOnlyBalance(
+  ledger: AccountLedger,
+  trackingStart: IsoDate,
+  asOf: IsoDate,
+): number {
+  const charges = monthsDue(ledger.account, trackingStart, asOf).map(
+    (month) => month.totalCents,
+  );
+  return (
+    sum(charges) -
+    receivedBetween(ledger, trackingStart, addDays(trackingStart, -1), asOf)
+  );
+}
+
 export function lateFeeSuggestion(
   ledger: AccountLedger,
   month: YearMonth,
@@ -46,12 +94,15 @@ export function lateFeeSuggestion(
   if (!lateFee) return null;
   const due = dueDate(account, month);
   const feeDate = maxDate(dateInMonth(month, lateFee.day), due);
-  if (today <= feeDate) return null;
+  if (monthOf(today) !== month || today <= feeDate) return null;
   if (isLateFeeDecided(ledger, month)) return null;
-  const carriedCredit = Math.max(0, -balanceOn(ledger, addDays(due, -1)));
-  const paid = paymentsBetween(ledger, due, feeDate) + carriedCredit;
-  if (paid >= monthlyExpected(account, month)) return null;
-  if (balanceOn(ledger, today) <= 0) return null;
+  const carried = Math.max(
+    0,
+    -rentOnlyBalance(ledger, trackingStart, addDays(due, -1)),
+  );
+  const paidForMonth =
+    carried + receivedBetween(ledger, trackingStart, due, feeDate);
+  if (paidForMonth >= monthlyExpected(account, month)) return null;
   return {
     accountId: account.accountId,
     month,
