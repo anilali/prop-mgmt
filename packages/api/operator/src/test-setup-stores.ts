@@ -306,11 +306,11 @@ export function createTestApp(
     statementRenderer: renderer,
   });
 
-  async function callerFor(
+  function accessFor(
     operator: Operator = PROPERTY_ADMIN,
     cookieValue: string | null = PROPERTY_ID,
-  ): Promise<TestCaller> {
-    const requestAccess = await loadRequestAccess(
+  ) {
+    return loadRequestAccess(
       {
         accessQueries: access.queries,
         platformAdminRepository: access.adminRepository,
@@ -318,6 +318,13 @@ export function createTestApp(
       },
       { operator, cookieValue },
     );
+  }
+
+  async function callerFor(
+    operator: Operator = PROPERTY_ADMIN,
+    cookieValue: string | null = PROPERTY_ID,
+  ): Promise<TestCaller> {
+    const requestAccess = await accessFor(operator, cookieValue);
     return createCallerFactory(appRouter)({ access: requestAccess });
   }
 
@@ -331,6 +338,8 @@ export function createTestApp(
     renderer,
     blob,
     unitOfWork,
+    appRouter,
+    accessFor,
     callerFor,
   };
 }

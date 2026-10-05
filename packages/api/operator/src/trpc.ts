@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
+import { ZodError } from "zod";
 
 import type { AccessState } from "@moonship/access";
 import {
@@ -16,8 +17,21 @@ export interface TRPCContext {
   access: RequestAccess | null;
 }
 
+function zodMessage(error: ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return error.message;
+  if (issue.path.length === 0) return issue.message;
+  return `${issue.path.map(String).join(".")}: ${issue.message}`;
+}
+
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
+  errorFormatter({ shape, error }) {
+    if (error.code === "BAD_REQUEST" && error.cause instanceof ZodError) {
+      return { ...shape, message: zodMessage(error.cause) };
+    }
+    return shape;
+  },
 });
 
 export const router = t.router;
