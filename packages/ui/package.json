@@ -20,7 +20,9 @@
     "./select": "./src/select.tsx",
     "./page-header": "./src/page-header.tsx",
     "./empty-state": "./src/empty-state.tsx",
-    "./toolbar": "./src/toolbar.tsx"
+    "./toolbar": "./src/toolbar.tsx",
+    "./checkbox": "./src/checkbox.tsx",
+    "./switch": "./src/switch.tsx"
   },
   "license": "MIT",
   "scripts": {
