@@ -317,8 +317,8 @@ export function toLeaseInput(
   let lateFee: LeaseInput["lateFee"] = null;
   if (form.hasLateFee) {
     const day = Number(form.lateFeeDay);
-    if (!Number.isInteger(day) || day < 1 || day > 28) {
-      throw new Error("The late fee day must be between 1 and 28");
+    if (!Number.isInteger(day) || day < 1 || day > 27) {
+      throw new Error("The late fee day must be between 1 and 27");
     }
     const amountCents = parseAmount(form.lateFeeAmount, "late fee");
     if (amountCents === 0) {

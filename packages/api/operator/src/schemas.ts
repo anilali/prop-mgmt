@@ -53,7 +53,7 @@ export const leaseInputSchema = z.object({
   lateFee: z
     .object({
       amountCents: centsSchema.positive(),
-      day: z.number().int().min(1).max(28),
+      day: z.number().int().min(1).max(27),
     })
     .nullable()
     .optional(),

@@ -159,8 +159,8 @@ function assertLease(lease: Lease): void {
     if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
       throw new Error("Late fee amount must be above 0");
     }
-    if (!Number.isInteger(day) || day < 1 || day > 28) {
-      throw new Error("Late fee day must be between 1 and 28");
+    if (!Number.isInteger(day) || day < 1 || day > 27) {
+      throw new Error("Late fee day must be between 1 and 27");
     }
   }
 }

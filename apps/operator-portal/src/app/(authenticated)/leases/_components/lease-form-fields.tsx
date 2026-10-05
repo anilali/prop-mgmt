@@ -376,7 +376,7 @@ export function LeaseFormFields({
               <Input
                 type="number"
                 min={1}
-                max={28}
+                max={27}
                 value={value.lateFeeDay}
                 onChange={(e) =>
                   onChange((prev) => ({ ...prev, lateFeeDay: e.target.value }))

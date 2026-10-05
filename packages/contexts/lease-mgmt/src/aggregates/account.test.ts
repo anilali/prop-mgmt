@@ -353,13 +353,13 @@ describe("Account", () => {
       ).toThrow("Late fee amount must be above 0");
     });
 
-    it("rejects a day outside 1 to 28", () => {
-      for (const day of [0, 29]) {
+    it("rejects a day outside 1 to 27", () => {
+      for (const day of [0, 28]) {
         expect(() =>
           openAccount(
             buildLease("lease-1", { lateFee: { amountCents: 5000, day } }),
           ),
-        ).toThrow("Late fee day must be between 1 and 28");
+        ).toThrow("Late fee day must be between 1 and 27");
       }
     });
   });
