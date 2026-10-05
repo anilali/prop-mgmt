@@ -7,6 +7,14 @@ export function parseCsvText(text: string): string[][] {
     delimiter: ",",
     skipEmptyLines: false,
   });
+  const quoteError = result.errors.find((error) => error.type === "Quotes");
+  if (quoteError) {
+    const row =
+      quoteError.row === undefined ? "A row" : `Row ${quoteError.row + 1}`;
+    throw new Error(
+      `${row} has a quote mark that does not match, so the rows after it cannot be read. Fix that row or export the file again.`,
+    );
+  }
   return result.data;
 }
 

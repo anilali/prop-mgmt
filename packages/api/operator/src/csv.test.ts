@@ -15,6 +15,31 @@ describe("parseCsvText", () => {
       [""],
     ]);
   });
+
+  it("rejects a file with a misplaced quote instead of merging later rows", () => {
+    expect(() =>
+      parseCsvText(
+        'Date,Description,Amount\n1/2/2026,"BAD "QUOTE" CO,100.00\n1/3/2026,RENT,200.00\n',
+      ),
+    ).toThrow(
+      "Row 2 has a quote mark that does not match, so the rows after it cannot be read",
+    );
+  });
+
+  it("rejects a file with a quote that is never closed", () => {
+    expect(() =>
+      parseCsvText(
+        'Date,Description,Amount\n1/2/2026,A,1.00\n1/3/2026,"OPEN QUOTE,100.00\n1/4/2026,RENT,200.00\n',
+      ),
+    ).toThrow("Row 3 has a quote mark that does not match");
+  });
+
+  it("accepts a quote inside an unquoted cell", () => {
+    expect(parseCsvText('Date,Description\n1/2/2026,B "x" y')).toEqual([
+      ["Date", "Description"],
+      ["1/2/2026", 'B "x" y'],
+    ]);
+  });
 });
 
 describe("hashCsvRow", () => {
