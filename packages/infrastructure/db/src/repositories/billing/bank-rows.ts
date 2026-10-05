@@ -7,7 +7,7 @@ import {
   eq,
   inArray,
   isNotNull,
-  isNull,
+  sql,
 } from "drizzle-orm";
 
 import type {
@@ -128,14 +128,16 @@ export async function loadDedupeState(
       postedOn: transactions.postedOn,
       descriptionKey: transactions.descriptionKey,
       amountCents: transactions.amountCents,
-      count: count(),
+      total: count(),
+      withoutId: count(
+        sql`case when ${transactions.externalId} is null then 1 end`,
+      ),
     })
     .from(transactions)
     .where(
       and(
         eq(transactions.propertyId, propertyId),
         eq(transactions.bankAccountId, bankAccountId),
-        isNull(transactions.externalId),
         between(transactions.postedOn, range.from, range.to),
       ),
     )
@@ -148,7 +150,12 @@ export async function loadDedupeState(
     range.externalIds.length === 0
       ? []
       : await db
-          .select({ externalId: transactions.externalId })
+          .select({
+            externalId: transactions.externalId,
+            postedOn: transactions.postedOn,
+            descriptionKey: transactions.descriptionKey,
+            amountCents: transactions.amountCents,
+          })
           .from(transactions)
           .where(
             and(
@@ -159,10 +166,17 @@ export async function loadDedupeState(
             ),
           );
   return {
-    externalIds: new Set(
-      idRows.flatMap((row) => (row.externalId ? [row.externalId] : [])),
+    externalIds: new Map(
+      idRows.flatMap((row) =>
+        row.externalId ? [[row.externalId, dedupeKey(row)] as const] : [],
+      ),
     ),
-    counts: new Map(countRows.map((row) => [dedupeKey(row), row.count])),
+    counts: new Map(
+      countRows.map((row) => [
+        dedupeKey(row),
+        { total: row.total, withoutId: row.withoutId },
+      ]),
+    ),
   };
 }
 

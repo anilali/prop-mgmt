@@ -12,8 +12,9 @@ import {
   commitImport,
   CSV_DATE_FORMATS,
   findHeaderRow,
+  headerProblem,
   headersAt,
-  missingColumns,
+  NOTHING_STORED,
   planFileImport,
   readImportRows,
   removeImportBatch,
@@ -130,7 +131,12 @@ export function bankImportRouter(deps: BankImportRouterDeps) {
   }
 
   function readCsv(text: string) {
-    const rows = parseCsvText(text);
+    let rows: string[][];
+    try {
+      rows = parseCsvText(text);
+    } catch (e) {
+      throw toBadRequest(e, "The file could not be read");
+    }
     if (rows.every((cells) => cells.every((cell) => cell.trim() === ""))) {
       throw badRequest("The file has no rows");
     }
@@ -177,10 +183,11 @@ export function bankImportRouter(deps: BankImportRouterDeps) {
             mappingError = "No row in the file has every matched column";
             headerRow = findHeaderRow(rows, null);
           } else {
-            const missing = missingColumns(headersAt(rows, headerRow), mapping);
-            if (missing.length > 0) {
-              mappingError = `Row ${headerRow} has no column named ${missing.map((c) => `"${c}"`).join(", ")}`;
-            }
+            mappingError = headerProblem(
+              headersAt(rows, headerRow),
+              headerRow,
+              mapping,
+            );
           }
         } else {
           headerRow ??= findHeaderRow(rows, null);
@@ -214,7 +221,7 @@ export function bankImportRouter(deps: BankImportRouterDeps) {
                   bankAccount.id,
                   range,
                 )
-              : Promise.resolve({ externalIds: new Set(), counts: new Map() }),
+              : Promise.resolve(NOTHING_STORED),
         });
         return {
           ...base,

@@ -35,8 +35,8 @@ export function readImportRows(
   };
 }
 
-const NOTHING_STORED: DedupeState = {
-  externalIds: new Set(),
+export const NOTHING_STORED: DedupeState = {
+  externalIds: new Map(),
   counts: new Map(),
 };
 

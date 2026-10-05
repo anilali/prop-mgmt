@@ -14,6 +14,7 @@ import type {
   ImportBatchSummary,
   NewBankTransaction,
   Pool,
+  StoredKeyCount,
   Txn,
 } from "@moonship/billing";
 import type {
@@ -196,26 +197,23 @@ export class InMemoryBillingStore
         this.importBatches.get(t.importBatchId ?? "")?.bankAccountId ===
           bankAccountId,
     );
-    const counts = new Map<string, number>();
+    const counts = new Map<string, StoredKeyCount>();
+    const externalIds = new Map<string, string>();
     for (const row of bankRows) {
+      if (row.postedOn >= range.from && row.postedOn <= range.to) {
+        const count = counts.get(dedupeKey(row)) ?? { total: 0, withoutId: 0 };
+        count.total += 1;
+        if (row.externalId === null) count.withoutId += 1;
+        counts.set(dedupeKey(row), count);
+      }
       if (
-        row.externalId === null &&
-        row.postedOn >= range.from &&
-        row.postedOn <= range.to
+        row.externalId !== null &&
+        range.externalIds.includes(row.externalId)
       ) {
-        counts.set(dedupeKey(row), (counts.get(dedupeKey(row)) ?? 0) + 1);
+        externalIds.set(row.externalId, dedupeKey(row));
       }
     }
-    return Promise.resolve({
-      externalIds: new Set(
-        bankRows.flatMap((row) =>
-          row.externalId !== null && range.externalIds.includes(row.externalId)
-            ? [row.externalId]
-            : [],
-        ),
-      ),
-      counts,
-    });
+    return Promise.resolve({ externalIds, counts });
   }
 
   saveCsvMapping(

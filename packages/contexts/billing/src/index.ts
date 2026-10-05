@@ -65,15 +65,16 @@ export type {
   CsvTransactionRow,
   DedupeState,
   ImportPlan,
+  StoredKeyCount,
 } from "./csv-import";
 export {
   dedupeKey,
   dedupeRange,
   findHeaderRow,
+  headerProblem,
   headersAt,
   importCandidates,
   mappedColumns,
-  missingColumns,
   parseCsvDate,
   parseRows,
   planImport,
@@ -83,6 +84,7 @@ export {
 export type { ParsedImport } from "./bank-import";
 export {
   commitImport,
+  NOTHING_STORED,
   planFileImport,
   readImportRows,
   removeImportBatch,

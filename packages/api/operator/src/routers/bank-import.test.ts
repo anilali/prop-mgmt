@@ -109,6 +109,41 @@ describe("bankImport procedures", () => {
     expect(batches.map((b) => b.insertedCount).sort()).toEqual([0, 4]);
   });
 
+  it("does not double rows when the id column changes between imports", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const withId: CsvMapping = { ...MAPPING, idColumn: "Id" };
+    const file = [
+      "Date,Description,Amount,Id",
+      "1/5/2026,SERVICE FEE,-25.00,T1",
+      "1/5/2026,SERVICE FEE,-25.00,T2",
+      "",
+    ].join("\n");
+
+    const first = await caller.bankImport.commit({
+      csvText: file,
+      fileName: "jan.csv",
+      mapping: MAPPING,
+    });
+    expect(first.insertedCount).toBe(2);
+
+    const second = await caller.bankImport.commit({
+      csvText: `${file}1/6/2026,RENT,100.00,T3\n`,
+      fileName: "jan.csv",
+      mapping: withId,
+    });
+    expect(second.insertedCount).toBe(1);
+    expect(second.duplicateCount).toBe(2);
+
+    const third = await caller.bankImport.commit({
+      csvText: `${file}1/6/2026,RENT,100.00,T3\n`,
+      fileName: "jan.csv",
+      mapping: MAPPING,
+    });
+    expect(third.insertedCount).toBe(0);
+    expect(app.billing.transactions.size).toBe(3);
+  });
+
   it("rejects a commit until every error row is skipped", async () => {
     const app = createTestApp();
     const caller = await app.callerFor();
@@ -220,6 +255,57 @@ describe("bankImport procedures", () => {
         }),
       ),
     ).toBe("BAD_REQUEST");
+  });
+
+  it("rejects a file with a broken quote from preview and commit", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const broken =
+      'Date,Description,Amount\n1/2/2026,"BAD "QUOTE" CO,100.00\n1/3/2026,RENT,200.00\n';
+
+    await expect(
+      caller.bankImport.preview({ csvText: broken, mapping: MAPPING }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Row 2 has a quote mark") as string,
+    });
+    await expect(
+      caller.bankImport.commit({
+        csvText: broken,
+        fileName: "jan.csv",
+        mapping: MAPPING,
+        skipRows: [2],
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Row 2 has a quote mark") as string,
+    });
+    expect(app.billing.importBatches.size).toBe(0);
+  });
+
+  it("reports a header row with a mapped column name more than once", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const csvText = "Date,Description,Amount,Amount\n1/2/2026,RENT,,10.00\n";
+
+    const preview = await caller.bankImport.preview({
+      csvText,
+      mapping: MAPPING,
+    });
+    expect(preview.mappingError).toBe(
+      'Row 1 has more than one column named "Amount"',
+    );
+    expect(preview.counts).toBeNull();
+    expect(
+      await codeOf(
+        caller.bankImport.commit({
+          csvText,
+          fileName: "jan.csv",
+          mapping: MAPPING,
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(app.billing.importBatches.size).toBe(0);
   });
 
   it("rejects a header row past the end of the file", async () => {

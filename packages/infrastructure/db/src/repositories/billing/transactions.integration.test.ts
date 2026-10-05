@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { CsvMapping } from "@moonship/billing";
 import { commitImport, removeImportBatch } from "@moonship/billing";
 
+import type { PGBillingStore } from "./billing-store";
 import { createDb } from "../../client";
 import { PGBillingQueries } from "../../queries/billing/billing-queries";
 import {
@@ -26,6 +27,12 @@ const mapping: CsvMapping = {
 
 function csv(...lines: string[]): string[][] {
   return ["Date,Description,Amount", ...lines].map((line) => line.split(","));
+}
+
+function csvWithIds(...lines: string[]): string[][] {
+  return ["Date,Description,Amount,Id", ...lines].map((line) =>
+    line.split(","),
+  );
 }
 
 describe.skipIf(!databaseUrl)("bank transaction import", () => {
@@ -56,19 +63,32 @@ describe.skipIf(!databaseUrl)("bank transaction import", () => {
     return propertyId;
   }
 
-  async function commit(propertyId: string, rows: string[][]) {
+  function commitIn(
+    billing: PGBillingStore,
+    propertyId: string,
+    rows: string[][],
+    csvMapping: CsvMapping,
+  ) {
+    return commitImport(billing, {
+      propertyId,
+      fileName: "activity.csv",
+      rows,
+      mapping: csvMapping,
+      trackingStart: "2026-01-01",
+      importedAt: new Date(),
+      newId: randomUUID,
+      hashRow: (cells) =>
+        createHash("sha256").update(cells.join("\u001f")).digest("hex"),
+    });
+  }
+
+  async function commit(
+    propertyId: string,
+    rows: string[][],
+    csvMapping: CsvMapping = mapping,
+  ) {
     const { batch } = await unitOfWork.run(({ billing }) =>
-      commitImport(billing, {
-        propertyId,
-        fileName: "activity.csv",
-        rows,
-        mapping,
-        trackingStart: "2026-01-01",
-        importedAt: new Date(),
-        newId: randomUUID,
-        hashRow: (cells) =>
-          createHash("sha256").update(cells.join("\u001f")).digest("hex"),
-      }),
+      commitIn(billing, propertyId, rows, csvMapping),
     );
     return batch;
   }
@@ -120,6 +140,88 @@ describe.skipIf(!databaseUrl)("bank transaction import", () => {
     expect((await commit(propertyId, file)).insertedCount).toBe(2);
     expect((await commit(propertyId, file)).insertedCount).toBe(0);
     expect(await stored(propertyId)).toHaveLength(2);
+  });
+
+  it("inserts once in total when the same file is committed twice at the same time", async () => {
+    const propertyId = newProperty();
+    const file = csv(
+      "1/5/2026,FEE,-25.00",
+      "1/5/2026,FEE,-25.00",
+      "1/6/2026,RENT,3654.82",
+    );
+
+    const batches = await Promise.all([
+      commit(propertyId, file),
+      commit(propertyId, file),
+    ]);
+
+    expect(batches.map((b) => b.insertedCount).sort()).toEqual([0, 3]);
+    expect(await stored(propertyId)).toHaveLength(3);
+    expect(await queries.listImportBatches(propertyId)).toHaveLength(2);
+  });
+
+  it("leaves no batch or rows when a commit fails", async () => {
+    const propertyId = newProperty();
+
+    await expect(
+      unitOfWork.run(async ({ billing }) => {
+        await commitIn(
+          billing,
+          propertyId,
+          csv("1/5/2026,FEE,-25.00"),
+          mapping,
+        );
+        throw new Error("failed after insert");
+      }),
+    ).rejects.toThrow("failed after insert");
+
+    expect(await stored(propertyId)).toHaveLength(0);
+    expect(await queries.listImportBatches(propertyId)).toHaveLength(0);
+  });
+
+  it("does not double rows when the id column is added after imports without one", async () => {
+    const propertyId = newProperty();
+    const withId: CsvMapping = { ...mapping, idColumn: "Id" };
+    const january = [
+      "1/5/2026,FEE,-25.00,T1",
+      "1/5/2026,FEE,-25.00,T2",
+      "1/6/2026,RENT,3654.82,T3",
+    ];
+
+    expect(
+      (await commit(propertyId, csvWithIds(...january))).insertedCount,
+    ).toBe(3);
+    const overlap = await commit(
+      propertyId,
+      csvWithIds(...january, "1/5/2026,FEE,-25.00,T4"),
+      withId,
+    );
+
+    expect(overlap.insertedCount).toBe(1);
+    expect(overlap.duplicateCount).toBe(3);
+    expect(await stored(propertyId)).toHaveLength(4);
+  });
+
+  it("does not double rows when the id column is removed after imports with one", async () => {
+    const propertyId = newProperty();
+    const withId: CsvMapping = { ...mapping, idColumn: "Id" };
+    const january = [
+      "1/5/2026,FEE,-25.00,T1",
+      "1/5/2026,FEE,-25.00,T2",
+      "1/6/2026,RENT,3654.82,T3",
+    ];
+
+    expect(
+      (await commit(propertyId, csvWithIds(...january), withId)).insertedCount,
+    ).toBe(3);
+    const overlap = await commit(
+      propertyId,
+      csvWithIds(...january, "1/5/2026,FEE,-25.00,T4"),
+    );
+
+    expect(overlap.insertedCount).toBe(1);
+    expect(overlap.duplicateCount).toBe(3);
+    expect(await stored(propertyId)).toHaveLength(4);
   });
 
   it("brings rows back when a removed batch is committed again", async () => {
