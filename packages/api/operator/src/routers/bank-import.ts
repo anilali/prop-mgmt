@@ -276,15 +276,19 @@ export function bankImportRouter(deps: BankImportRouterDeps) {
     removeBatch: propertyProcedure
       .input(z.object({ id: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
-        const result = await deps.unitOfWork.run(({ billing }) =>
-          removeImportBatch(billing, ctx.propertyId, input.id),
-        );
-        if (result === "notFound") throw notFound("Import not found");
-        if (result === "sorted") {
-          throw conflict(
-            "Some transactions from this import are sorted. Unsort them before removing the import.",
+        await deps.unitOfWork.run(async ({ billing }) => {
+          const result = await removeImportBatch(
+            billing,
+            ctx.propertyId,
+            input.id,
           );
-        }
+          if (result === "notFound") throw notFound("Import not found");
+          if (result === "sorted") {
+            throw conflict(
+              "Some transactions from this import are sorted. Unsort them before removing the import.",
+            );
+          }
+        });
         return { ok: true as const };
       }),
   });
