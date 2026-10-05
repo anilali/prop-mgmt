@@ -2,75 +2,33 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Building2,
-  CalendarDays,
-  ChevronDown,
-  ClipboardList,
-  KeyRound,
-  LayoutDashboard,
-  Send,
-  Settings,
-  Users,
-} from "lucide-react";
+import { Building2, FileText, KeyRound, Settings, Users } from "lucide-react";
 
 import { cn } from "@moonship/ui";
-import { Separator } from "@moonship/ui/separator";
 
 interface NavItem {
   label: string;
   href: string;
-  icon: typeof LayoutDashboard;
-  activePaths: string[];
-  chevron?: boolean;
+  icon: typeof Users;
 }
 
-const mainItems: NavItem[] = [
-  {
-    label: "Dashboard",
-    href: "/property",
-    icon: LayoutDashboard,
-    activePaths: ["/property"],
-  },
-  {
-    label: "Tasks",
-    href: "/leases",
-    icon: ClipboardList,
-    activePaths: [],
-  },
-  {
-    label: "Applicants",
-    href: "/tenants",
-    icon: Users,
-    activePaths: ["/tenants"],
-    chevron: true,
-  },
-  {
-    label: "Events",
-    href: "/events",
-    icon: CalendarDays,
-    activePaths: ["/events"],
-  },
+const propertyItems: NavItem[] = [
+  { label: "Tenants", href: "/tenants", icon: Users },
+  { label: "Leases", href: "/leases", icon: FileText },
+  { label: "Setup", href: "/setup", icon: Settings },
 ];
 
 const accessItem: NavItem = {
   label: "Access",
   href: "/access",
   icon: KeyRound,
-  activePaths: ["/access"],
 };
-
-const secondaryItems: NavItem[] = [
-  { label: "Outgoing", href: "/leases", icon: Send, activePaths: [] },
-  { label: "Settings", href: "/property", icon: Settings, activePaths: [] },
-];
 
 const platformItems: NavItem[] = [
   {
     label: "Properties",
     href: "/platform/properties",
     icon: Building2,
-    activePaths: ["/platform/properties"],
   },
 ];
 
@@ -95,9 +53,6 @@ function SidebarNavItem({
     >
       <Icon className="size-4 shrink-0" />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {item.chevron ? (
-        <ChevronDown className="size-3.5 shrink-0 opacity-60" />
-      ) : null}
     </Link>
   );
 }
@@ -110,37 +65,22 @@ export function SidebarNav({
   role?: "admin" | "staff";
 }) {
   const pathname = usePathname();
-  const primaryItems =
+  const items =
     mode === "platform"
       ? platformItems
-      : [...mainItems, ...(role === "admin" ? [accessItem] : [])];
-  const showSecondary = mode === "property";
-  const items = showSecondary
-    ? [...primaryItems, ...secondaryItems]
-    : primaryItems;
-  const isActive = (item: NavItem) =>
-    item.activePaths.some((prefix) => pathname.startsWith(prefix));
-  const anyActive = items.some((item) => isActive(item));
+      : [...propertyItems, ...(role === "admin" ? [accessItem] : [])];
   const isSelected = (item: NavItem) =>
-    isActive(item) || (!anyActive && item.label === "Events");
+    pathname === item.href || pathname.startsWith(`${item.href}/`);
 
   return (
     <nav className="flex flex-col gap-0.5">
-      {primaryItems.map((item) => (
-        <SidebarNavItem key={item.label} item={item} selected={isSelected(item)} />
+      {items.map((item) => (
+        <SidebarNavItem
+          key={item.href}
+          item={item}
+          selected={isSelected(item)}
+        />
       ))}
-      {showSecondary ? (
-        <>
-          <Separator className="my-2" />
-          {secondaryItems.map((item) => (
-            <SidebarNavItem
-              key={item.label}
-              item={item}
-              selected={isSelected(item)}
-            />
-          ))}
-        </>
-      ) : null}
     </nav>
   );
 }
