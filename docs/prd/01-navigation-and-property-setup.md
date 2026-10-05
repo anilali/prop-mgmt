@@ -28,6 +28,7 @@ Replace the operator sidebar with one organized around leasing and finance, add 
 - Charts or financial summaries on the dashboard.
 - Platform mode changes, other than using the new sidebar.
 - Address autocomplete.
+- Splitting a month between an old and a new unit when space changes mid-month. Units count by whole months (see "Effective months").
 
 ## Users and permissions
 
@@ -78,6 +79,7 @@ The assistant from 07 has no sidebar item. It opens from an "Ask" button in a pa
 - Only admins see Access. Hiding it doesn't replace the access check on the Access page.
 - An item stays highlighted on its detail pages and the pages under it. Opening a lease keeps Leases highlighted. Rules (05) keeps Transactions highlighted, and the charge run list (04) keeps Rent roll highlighted.
 - When the current page doesn't belong to any item, nothing is highlighted.
+- Platform mode lands on Properties.
 - Transactions shows a count of transactions needing review. The count updates as the operator moves between pages. A zero hides it.
 
 ### Page changes
@@ -110,24 +112,26 @@ The property name, its time zone, and a list of its street addresses.
 - The same address can't be added twice, compared ignoring upper and lower case and extra spaces.
 - A property needs at least one address. The address entered when a platform admin registers the property becomes the first one.
 - The first address on the list is the property's main address. It's shown wherever the property is listed, like the property switcher and the Properties list.
-- An operator can add, edit, and reorder addresses. Editing an address changes it for every unit that uses it. An address can't be removed while any unit uses it, including an archived unit.
-- The time zone decides what "today" and "this month" mean everywhere on the property. It's set when the property is registered.
+- An operator can add, edit, and reorder addresses. Editing an address fixes a typo or follows a city renumbering. The change shows on every unit that uses it, including archived units. Unit labels don't change, and statement PDFs already saved keep the old address. An address can't be removed while any unit uses it, including an archived unit.
+- An operator can rename the property.
+- The time zone decides what "today" and "this month" mean everywhere on the property. It's set when the property is registered, and only a platform admin can change it, from platform mode. The Property tab shows it read-only.
 
 ### Units tab
 
 A table with label, address, area, and occupancy, and an "Add unit" action that opens a side panel.
 
-- Each unit picks one address from the property's list and can add an optional suite, such as #101. Two units can't have the same address and suite.
-- Each unit has a label, required and unique per property, ignoring upper and lower case. It's prefilled from the street number and suite, like "4708 #101", and can be changed. Pickers, the rent roll, and statements show the label. Statements also print the full address.
+- Each unit picks one address from the property's list and can add an optional suite, such as #101. Two units that aren't archived can't have the same address and suite.
+- Each unit has a label, required and unique among the property's units that aren't archived, ignoring upper and lower case. It's prefilled from the street number and suite, like "4708 #101", and can be changed. Pickers, the rent roll, and statements show the label. Statements also print the full address.
+- An archived unit keeps its label, and a new unit can reuse it. Wherever an archived unit appears, such as on a past lease or in a pool's history, its label shows with an "Archived" marker so the two can be told apart.
 - Area is required, in whole square feet above zero.
-- When adding a unit, the side panel lists every pool with picked units as a checkbox, such as each shared water meter, so the operator decides which ones the unit joins. The unit and its pool choices save together. The unit joins building-wide pools automatically.
+- When adding a unit, the side panel lists every picked-units pool as a checkbox, including one with no units yet, such as each shared water meter, so the operator decides which ones the unit joins. The unit and its pool choices save together. The unit joins building-wide pools automatically.
 - When editing a unit, the side panel lists the unit's pools as read-only text with a link to the Cost pools tab. Pool membership is changed there.
 - Total rentable area shows at the bottom of the table.
-- A lease is current from its start date through its end date. For an ended lease, the end date is the move-out date (02), so a lease ended with a move-out date still ahead stays current until then. A month-to-month lease stays current past its end date until it's ended. A lease is upcoming when its start date is after today.
-- Occupancy comes from leases and can't be set by hand. A unit shows "Occupied" with the tenant's name when it has a current lease, and "Vacant" when it has none. An upcoming lease doesn't make the unit Occupied. The table shows it as "Vacant, leased from Mar 1". A unit being renovated or used by the owner is Vacant, and the owner pays its share of every pool.
+- Occupancy comes from leases and can't be set by hand. A unit shows "Occupied" with the tenant's name when it has a current lease (see "Current lease" in the README glossary), and "Vacant" when it has none. An upcoming lease doesn't make the unit Occupied. The table shows it as "Vacant, leased from Mar 1". A unit being renovated or used by the owner is Vacant, and the owner pays its share of every pool.
 - Units are never deleted, so their leases, charges, and reconciliation history stay intact.
-- An operator archives a unit when the space no longer exists as its own unit, for example after combining two suites or splitting one. Archiving asks for the last month the unit counts (see "Effective months"). The unit leaves every pool after that month, and it's hidden from the table and from unit pickers on leases and pools right away. A "Show archived" toggle on the table lists archived units, and their past leases still show them.
+- An operator archives a unit when the space no longer exists as its own unit, for example after combining two suites or splitting one. Archiving asks for the last month the unit counts (see "Effective months"). The unit leaves every pool after that month, and it's hidden from the table and from unit pickers on leases and pools right away. A "Show archived" toggle on the table lists archived units, and their past leases still show them. Archived units can't be edited.
 - A unit with a current or upcoming lease can't be archived. The operator first ends a current lease with the move-out date, or cancels an upcoming one, which deletes it (02).
+- The last month can't be before the month the unit's last lease ended. The error names the lease and the earliest month allowed. This catches a slip like archiving in October with June as the last month when the tenant left in August.
 - Archiving asks for confirmation and lists the cost pools the unit will leave.
 - Archiving can't be undone. To bring a space back, the operator creates a new unit.
 
@@ -138,6 +142,7 @@ A unit keeps a history of its area, with the month each value takes effect.
 - Creating a unit records its first area, effective from the unit's first month.
 - Editing the area asks for the new area and the month it takes effect. It can't be before the unit's first month.
 - A second change for the same month replaces the first. This is how a typo is fixed. A change for a future month can be removed.
+- The unit's edit panel lists its area history under the area field: each area, its month, and who set it. Each pool's history also lists area changes for the units in it.
 - The Units tab and the Cost pools tab show the area in effect this month.
 - Monthly estimates on leases don't change when an area changes.
 - Reconciliation (06) works out shares month by month, using the units in each pool and their area in that month. It copies these when the year's reconciliation starts, and the operator can adjust that copy before finalizing.
@@ -156,7 +161,8 @@ Changes that decide who pays what take effect from a month, not a day. A unit co
 
 - Each month defaults to the current month. It can be in the past or the future, but not in a year whose reconciliation is finalized (06).
 - All-units pools follow each unit's first month and last month. A new unit's picked-unit pools on the create form use its first month.
-- Archiving a unit created by mistake with the month before its first month means it never counted in any pool.
+- A unit's first month can be edited until the unit has a lease. Its first area and any pool memberships that started on the old first month move with it. It can't move past a later area or pool change, and it can't move into or out of a finalized year.
+- Archiving a unit created by mistake with the month before its first month means it never counted in any pool. This is allowed even when that month is in a finalized year, since nothing in that year changes.
 - A unit whose first month is in the future shows in the Units table as "Starts Apr 2027" and isn't in this month's share tables.
 
 #### Removed from units
@@ -216,7 +222,8 @@ One card per recoverable category. Each card has:
   - **Picked units**: units the operator picks from the units that aren't archived. Adding or removing a unit asks for its month (see "Effective months"). For a cost shared by some units, like a shared water meter. After a unit is created, this is the only place to change which of these pools it's in.
   - Switching a pool from All units to Picked units starts with every current unit picked, so no unit drops out by accident. Switching back adds every unit. Both ask for the month.
 - **Removing a unit whose lease pays into the pool.** The save shows a warning naming each lease that still recovers costs from the pool, and asks for confirmation. 02, 04, and 06 handle those leases afterwards.
-- **Share table.** Each unit's share is its area divided by the total area of the pool's units, using this month's units and areas. It updates as the operator edits, before saving. Changes that take effect in a later month are listed under the table with their month:
+- **Last unit.** A change that would leave the pool with no units is blocked while any current or upcoming lease recovers costs from it. This covers removing a unit and archiving one.
+- **Share table.** Each unit's share is its area divided by the total area of the pool's units in one month. The table shows this month until the operator edits. During an edit it shows the month the edit takes effect, labelled with that month, and updates before saving. Other changes scheduled for later months are listed under the table with their month:
 
 ```text
 Water                        Membership: picked units   Total: 4,350 sqft
@@ -234,17 +241,17 @@ Defaults:
 |---|---|
 | CAM, Real Estate Tax, Insurance | All units |
 | Water | Picked units, none picked |
-| Any pool an operator creates later | Picked units, none picked |
+| The pool of a recoverable category created later | Picked units, none picked |
 
 Water starts empty because only units on a shared meter belong in it, and the operator has to pick them.
 
-A pool with no units shows a warning on its card. This happens with Water before the operator picks its units, with a pool whose units were all archived, and on a property with no units yet. No lease can recover costs from an empty pool, and billing (04) can't estimate charges for it.
+A pool with no units shows a warning on its card. This happens with Water before the operator picks its units, with a pool whose units were all archived while no lease recovered from it, and on a property with no units yet. No lease can recover costs from an empty pool, and billing (04) can't estimate charges for it.
 
 Pools are never deleted directly. Archiving the category archives its pool and hides its card. 06 still reconciles an archived pool's costs for any year not yet finalized.
 
 Shares are shown to two decimals. Calculations use the exact values, so the displayed shares can add up to slightly more or less than 100%.
 
-Each card has a history listing every unit's months in the pool, and who made each change.
+Each card has a history listing every unit's months in the pool, the area changes of its units, and who made each change.
 
 ## Dashboard
 
@@ -275,15 +282,20 @@ Later PRDs add these cards. Each card's name and rule are set in the PRD that ad
 - **A unit in a pool is archived.** The operator picks the last month and confirms after seeing the pools the unit will leave. The unit leaves every pool after that month. Finalized reconciliations don't change.
 - **A unit with a current lease is archived.** Rejected, including when the lease is month to month. The operator ends the lease with the move-out date first (02).
 - **A unit with an upcoming lease is archived.** Rejected. The unit shows Vacant, but the lease still needs it.
-- **Two suites are combined on July 15.** The operator ends their leases if needed and archives both units with June as their last month. They create the combined unit with its new area and July as its first month. It joins building-wide pools automatically, and the operator picks its meter pools in the same form. No month counts the space twice.
+- **Two suites are combined.** The operator ends their leases if needed and archives both units with June as their last month. They create the combined unit with its new area and July as its first month, and can reuse one of the old labels. It joins building-wide pools automatically, and the operator picks its meter pools in the same form. No month counts the space twice.
+- **A suite's lease ends mid-month and the space is combined that month.** The old unit's last month can't be before the month its lease ended, so the old unit and the combined unit both count that month. The space counts twice for one month. This is rare and accepted for now (see Non-goals).
+- **A unit is archived with a last month before its last lease ended.** Rejected. The error names the lease and the earliest month allowed.
 - **A unit is remeasured mid-year.** The operator enters the new area and the month it takes effect. The year's reconciliation uses the old area for earlier months and the new one after (06).
-- **A unit created by mistake.** It can't be deleted. The operator archives it with the month before its first month, so it never counted in any pool. If it was never in a lease, it only shows under "Show archived".
+- **A unit created by mistake.** It can't be deleted. The operator archives it with the month before its first month, so it never counted in any pool. If it was never in a lease, it only shows under "Show archived". A new unit can reuse its label and address.
+- **A unit's first month was entered wrong.** If the unit has no lease yet, the operator edits the first month. Otherwise it stays, since leases can't start before it (02).
 - **An operator wants to move an existing unit onto a shared meter.** The edit panel points to the Cost pools tab, where the operator adds the unit to the meter's pool from the month it was connected.
 - **A month-to-month tenant has moved out but the lease isn't ended.** The unit still shows "Occupied" and billing (04) keeps charging. The month-to-month dashboard card (02) is the prompt to end the lease.
 - **Two shared water meters at one property.** The operator creates a second recoverable category for the second meter. Each gets its own pool and its own units.
 - **A unit pays no share of a pool, like a gross lease.** It stays in the pool, and its lease doesn't recover costs from it. The owner pays its share.
-- **Every unit in a picked-units pool is archived.** The pool card shows the empty-pool warning, and billing (04) can't estimate charges for that pool in the next charge run.
+- **The last unit in a pool is removed or archived while a lease recovers from the pool.** Rejected. The operator ends that recovery on the lease first (02).
+- **Every unit in a picked-units pool is archived, and no lease recovers from it.** The pool card shows the empty-pool warning, and billing (04) can't estimate charges for that pool in the next charge run.
 - **An address is removed while a unit uses it.** Rejected. The operator moves the unit to another address first. Archived units can't be edited, so an address one of them uses stays on the list.
+- **The city renumbers the building.** The operator edits the address. Every unit that uses it shows the new address, including archived ones. Labels stay as they were and can be changed by hand.
 - **Property has no units.** The Cost pools tab shows an empty state linking to Units.
 - **A newly registered property.** It already has default categories and four cost pools. Each unit added joins CAM, Real Estate Tax, and Insurance automatically, and the unit form asks about Water.
 - **A dashboard card fails to load.** It shows "Couldn't load {card}". The rest of the dashboard loads.
@@ -295,20 +307,22 @@ Later PRDs add these cards. Each card's name and rule are set in the PRD that ad
 3. Staff and admins can open Settings and make every change in it. Only admins see Access.
 4. A unit can't be created, and its area can't be changed, without a whole-number area above zero. Unit forms have no bedrooms, bathrooms, utilities, status, or typed-in address fields.
 5. Registering a property creates the default categories and four cost pools: CAM, Real Estate Tax, and Insurance with all units, and Water with picked units and none picked.
-6. Editing a pool's membership or units updates the share table before saving. Each displayed share equals the unit's area divided by the pool's total area, rounded to two decimals.
+6. Editing a pool's membership or units updates the share table before saving, for the month the edit takes effect. Each displayed share equals the unit's area divided by the pool's total area in that month, rounded to two decimals.
 7. A new unit joins every building-wide pool automatically, and its create form lets the operator choose its picked-units pools. After that, those pools only change on the Cost pools tab.
 8. Archiving a unit asks for its last month and confirmation, and lists the pools it leaves.
 9. Categories can't be deleted, and a category's kind can't be changed. Archiving hides it from pickers but not from existing records.
 10. The Units tab shows Occupied or Vacant for each unit, based on its current lease. A unit with only an upcoming lease shows Vacant. A lease ended with a future move-out date keeps its unit Occupied until that date.
-11. Units can't be deleted. Archiving is blocked while the unit has a current or upcoming lease, and an archived unit drops out of pickers and pools but still shows on its past leases.
-12. Each unit's address is picked from the property's address list, and an address in use can't be removed. A property can't have no addresses or the same address twice, and the first address is shown as the main one.
+11. Units can't be deleted. Archiving is blocked while the unit has a current or upcoming lease, or when the last month is before the month its last lease ended. An archived unit drops out of pickers and pools but still shows on its past leases, marked as archived.
+12. Each unit's address is picked from the property's address list, and an address in use can't be removed. A property can't have no addresses or the same address twice, and the first address is shown as the main one. Editing an address changes it on every unit that uses it.
 13. Creating a unit, changing its area, adding it to or removing it from a picked-units pool, and archiving it each record a month. A unit counts toward a pool in exactly the months it's in it, with the area in effect each month. None of these months can fall in a finalized reconciliation year.
-14. Unit labels are required and unique per property, and two units can't share an address and suite.
+14. Unit labels are required. Among units that aren't archived, labels are unique and no two share an address and suite. A new unit can reuse an archived unit's label.
 15. Creating a recoverable category creates its pool. Tenant Payment, Other Income, Transfer, and Security Deposit can't be archived. Category names are unique, including archived ones.
-16. A pool with no units shows a warning on its card, and each pool's history lists every unit's months in it and who made each change.
+16. A pool with no units shows a warning on its card, and each pool's history lists every unit's months in it, its units' area changes, and who made each change. A pool's last unit can't be removed or archived while a current or upcoming lease recovers from the pool.
 17. The Units table hides archived units unless "Show archived" is on, and shows total rentable area at the bottom.
 18. Detail pages and the pages under an item keep that sidebar item highlighted.
 19. The dashboard shows "Nothing needs attention" only when every card loaded with nothing to show. A card that fails shows "Couldn't load" in its place.
+20. A unit's first month can be edited until it has a lease, and its area history shows in its edit panel.
+21. Staff and admins can rename the property. Only a platform admin can change its time zone.
 
 ## Open questions
 

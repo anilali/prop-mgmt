@@ -49,6 +49,8 @@ Each PRD adds terms of its own. These are used across all of them.
 - **Unit.** A rentable space with a label, an address, and an area in sqft that can change over time.
 - **Tenant.** A business or person that leases one or more units.
 - **Lease.** An agreement between one tenant and one unit for a date range.
+- **Current lease.** A lease that has started and whose move-out date hasn't passed. Ending a lease records the move-out date and moves the end date to it (02). A lease that hasn't been ended stays current past its end date, which makes it month to month (02).
+- **Upcoming lease.** A lease whose start date is after today.
 - **Category.** A label for money moving in or out, configured per property. Example: CAM.
 - **Recoverable category.** A category of cost that tenants pay back a share of.
 - **Cost pool.** A recoverable category plus the rule for splitting it across units.
