@@ -167,6 +167,14 @@ describe("rent procedures need property mode and membership", () => {
         }),
     ],
     ["rent.removeEntry", (c) => c.rent.removeEntry({ id: ID })],
+    [
+      "rent.approveLateFee",
+      (c) => c.rent.approveLateFee({ accountId: ID, month: "2026-03" }),
+    ],
+    [
+      "rent.dismissLateFee",
+      (c) => c.rent.dismissLateFee({ accountId: ID, month: "2026-03" }),
+    ],
   ];
 
   it.each(calls)("%s rejects platform mode", async (_name, call) => {
@@ -606,5 +614,186 @@ describe("adjustments", () => {
     expect(
       await codeOf(caller.property.update({ trackingStartDate: "2026-02-01" })),
     ).toBe("CONFLICT");
+  });
+});
+
+describe("late fees", () => {
+  beforeEach(() => useToday("2026-03-15"));
+
+  const march = {
+    month: "2026-03",
+    amountCents: 5_000,
+    feeDate: "2026-03-10",
+  };
+
+  it("adds suggestions to rent.status rows and rent.history", async () => {
+    const { caller, ids } = await setup();
+
+    const status = await caller.rent.status();
+    const suggestions = Object.fromEntries(
+      status.rows.map((row) => [row.unit.label, row.suggestions]),
+    );
+    expect(suggestions).toEqual({
+      D: [{ accountId: ids.behind, ...march }],
+      E: [{ accountId: ids.due, ...march }],
+      B: [],
+      A: [],
+      G: [],
+      F: [],
+    });
+
+    const history = await caller.rent.history({ accountId: ids.due });
+    expect(history.suggestions).toEqual([{ accountId: ids.due, ...march }]);
+
+    useToday("2026-03-10");
+    const onFeeDay = await caller.rent.status();
+    expect(onFeeDay.rows.flatMap((row) => row.suggestions)).toEqual([]);
+  });
+
+  it("approves a fee dated the day after the fee date", async () => {
+    const { app, caller, ids } = await setup();
+
+    const result = await caller.rent.approveLateFee({
+      accountId: ids.due,
+      month: "2026-03",
+    });
+
+    expect(result.movedFrom).toBeNull();
+    expect(result.entry).toMatchObject({
+      accountId: ids.due,
+      kind: "late_fee",
+      entryDate: "2026-03-11",
+      amountCents: 5_000,
+      feeMonth: "2026-03",
+      note: null,
+    });
+    expect(app.billing.ledgerEntries.get(result.entry.id)).toEqual(
+      result.entry,
+    );
+    const history = await caller.rent.history({ accountId: ids.due });
+    expect(history.balanceCents).toBe(155_000);
+    expect(history.suggestions).toEqual([]);
+    expect(history.rows.find((row) => row.kind === "late_fee")).toMatchObject({
+      date: "2026-03-11",
+      amountCents: 5_000,
+      locked: false,
+    });
+
+    expect(
+      await codeOf(
+        caller.rent.approveLateFee({ accountId: ids.due, month: "2026-03" }),
+      ),
+    ).toBe("CONFLICT");
+    expect(
+      await codeOf(
+        caller.rent.dismissLateFee({ accountId: ids.due, month: "2026-03" }),
+      ),
+    ).toBe("CONFLICT");
+    expect(app.billing.ledgerEntries.size).toBe(1);
+  });
+
+  it("rejects approval with no current suggestion", async () => {
+    const { app, caller, ids } = await setup();
+    const approve = (accountId: string, month: string) =>
+      codeOf(caller.rent.approveLateFee({ accountId, month }));
+
+    expect(await approve(ids.paid, "2026-03")).toBe("CONFLICT");
+    expect(await approve(ids.closedOwing, "2026-03")).toBe("CONFLICT");
+    expect(await approve(ids.behind, "2026-02")).toBe("CONFLICT");
+    expect(await approve(ID, "2026-03")).toBe("NOT_FOUND");
+    expect(await approve(ids.due, "2026-13")).toBe("BAD_REQUEST");
+    useToday("2026-03-10");
+    expect(await approve(ids.due, "2026-03")).toBe("CONFLICT");
+    useToday("2026-04-01");
+    expect(await approve(ids.due, "2026-03")).toBe("CONFLICT");
+    expect(app.billing.ledgerEntries.size).toBe(0);
+  });
+
+  it("posts the covering lease's fee amount and day", async () => {
+    const { caller, ids } = await setup();
+    const account = await caller.account.get({ id: ids.paid });
+    const first = account.account.leases[0];
+    if (!first) throw new Error("missing lease");
+    await caller.lease.update({
+      accountId: ids.paid,
+      leaseId: first.id,
+      lease: leaseInput({ endDate: "2026-02-28" }),
+    });
+    await caller.lease.add({
+      accountId: ids.paid,
+      lease: {
+        ...leaseInput({
+          startDate: "2026-03-01",
+          endDate: "2027-02-28",
+          rentCents: 260_000,
+        }),
+        lateFee: { amountCents: 7_500, day: 3 },
+      },
+    });
+
+    const result = await caller.rent.approveLateFee({
+      accountId: ids.paid,
+      month: "2026-03",
+    });
+
+    expect(result.entry).toMatchObject({
+      entryDate: "2026-03-04",
+      amountCents: 7_500,
+    });
+  });
+
+  it("dismisses a fee with no amount, and removing the dismissal brings the suggestion back", async () => {
+    const { app, caller, ids } = await setup();
+
+    const { entry } = await caller.rent.dismissLateFee({
+      accountId: ids.due,
+      month: "2026-03",
+    });
+
+    expect(entry).toMatchObject({
+      kind: "late_fee_dismissed",
+      entryDate: "2026-03-15",
+      amountCents: 0,
+      feeMonth: "2026-03",
+    });
+    const history = await caller.rent.history({ accountId: ids.due });
+    expect(history.balanceCents).toBe(150_000);
+    expect(history.suggestions).toEqual([]);
+    expect(
+      await codeOf(
+        caller.rent.approveLateFee({ accountId: ids.due, month: "2026-03" }),
+      ),
+    ).toBe("CONFLICT");
+
+    await caller.rent.removeEntry({ id: entry.id });
+    expect(app.billing.ledgerEntries.size).toBe(0);
+    const restored = await caller.rent.history({ accountId: ids.due });
+    expect(restored.suggestions).toEqual([{ accountId: ids.due, ...march }]);
+  });
+
+  it("returns CONFLICT when the store finds the month already decided", async () => {
+    const { app, caller, ids } = await setup();
+    vi.spyOn(app.billing, "insertLedgerEntry").mockRejectedValueOnce(
+      new DuplicateLedgerEntryError(),
+    );
+    expect(
+      await codeOf(
+        caller.rent.approveLateFee({ accountId: ids.due, month: "2026-03" }),
+      ),
+    ).toBe("CONFLICT");
+  });
+
+  it("dates the fee on the approval day when the fee date is in a finalized year", async () => {
+    const { app, caller, ids } = await setup();
+    useToday("2026-12-20");
+    app.billing.finalizedYears = [2026];
+
+    const result = await caller.rent.approveLateFee({
+      accountId: ids.due,
+      month: "2026-12",
+    });
+
+    expect(result.movedFrom).toBe("2026-12-11");
+    expect(result.entry.entryDate).toBe("2026-12-20");
   });
 });

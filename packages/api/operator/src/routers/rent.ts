@@ -3,34 +3,33 @@ import { z } from "zod";
 
 import type {
   AccountLedger,
-  AccountState,
   BillingQueries,
   BillingStore,
-  Txn,
+  LateFeeSuggestion,
 } from "@moonship/billing";
-import type { AccountQueries, AccountView } from "@moonship/lease-mgmt";
+import type { AccountQueries } from "@moonship/lease-mgmt";
 import type { PropertyQueries, UnitQueries } from "@moonship/property";
-import type { IsoDate } from "@moonship/shared";
+import type { IsoDate, YearMonth } from "@moonship/shared";
 import type { TenantQueries } from "@moonship/tenant-mgmt";
 import {
-  accountBalance,
-  accountEnd,
-  accountEntries,
-  accountPayments,
-  accountStart,
-  accountState,
-  compareRentStatus,
   DuplicateLedgerEntryError,
   entryDateFor,
   historyRows,
   isInFinalizedYear,
-  rentStatus,
+  isLateFeeDecided,
+  lateFeeEntryDate,
+  lateFeeSuggestions,
 } from "@moonship/billing";
 
-import { toAccountTerms } from "../accounts";
 import { badRequest, conflict, notFound, toBadRequest } from "../errors";
 import { loadProperty } from "../property-context";
-import { centsSchema, isoDate } from "../schemas";
+import {
+  loadRentData,
+  newestBankDate,
+  rentStatusRows,
+  rentSummary,
+} from "../rent-data";
+import { centsSchema, isoDate, yearMonth } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
 export interface RentRouterDeps {
@@ -50,77 +49,36 @@ const adjustmentFields = {
   note: z.string().trim().min(1).max(500),
 };
 
-export interface RentAccount {
-  id: string;
-  tenant: { id: string; businessName: string };
-  unit: { id: string; label: string };
-  state: AccountState;
-  openingBalanceCents: number;
-  startDate: IsoDate;
-  endDate: IsoDate | null;
-}
+const lateFeeInput = z.object({
+  accountId: z.string().uuid(),
+  month: yearMonth,
+});
 
-function newestBankDate(transactions: readonly Txn[]): IsoDate | null {
-  let newest: IsoDate | null = null;
-  for (const txn of transactions) {
-    if (txn.source === "bank" && (newest === null || txn.postedOn > newest)) {
-      newest = txn.postedOn;
-    }
+function currentSuggestion(
+  ledger: AccountLedger,
+  month: YearMonth,
+  today: IsoDate,
+): LateFeeSuggestion {
+  if (isLateFeeDecided(ledger, month)) {
+    throw conflict(
+      "The late fee for this month was already approved or dismissed",
+    );
   }
-  return newest;
+  const suggestion = lateFeeSuggestions(ledger, today).find(
+    (s) => s.month === month,
+  );
+  if (!suggestion) {
+    throw conflict("There is no late fee to decide for this month");
+  }
+  return suggestion;
 }
 
 export function rentRouter(deps: RentRouterDeps) {
-  async function loadRentData(propertyId: string) {
-    const [{ property, today }, views, tenants, units, transactions, entries] =
-      await Promise.all([
-        loadProperty(deps.propertyQueries, propertyId),
-        deps.accountQueries.list(propertyId),
-        deps.tenantQueries.list(propertyId),
-        deps.unitQueries.list(propertyId),
-        deps.billingQueries.listTransactions(propertyId),
-        deps.billingQueries.listLedgerEntries(propertyId),
-      ]);
-
-    function accountOf(view: AccountView): RentAccount {
-      const terms = toAccountTerms(view);
-      const tenant = tenants.find((t) => t.id === view.tenantId);
-      const unit = units.find((u) => u.id === view.unitId);
-      return {
-        id: view.id,
-        tenant: { id: view.tenantId, businessName: tenant?.businessName ?? "" },
-        unit: { id: view.unitId, label: unit?.label ?? "" },
-        state: accountState(terms, today),
-        openingBalanceCents: view.openingBalanceCents,
-        startDate: accountStart(terms),
-        endDate: accountEnd(terms),
-      };
-    }
-
-    function ledgerOf(view: AccountView): AccountLedger {
-      return {
-        account: toAccountTerms(view),
-        trackingStart: property.trackingStartDate,
-        payments: accountPayments(transactions, view.id),
-        entries: accountEntries(entries, view.id),
-      };
-    }
-
-    return {
-      property,
-      today,
-      views,
-      transactions,
-      accountOf,
-      ledgerOf,
-    };
-  }
-
-  function summaryOf(ledger: AccountLedger, today: IsoDate) {
-    return {
-      ...accountBalance(ledger, today),
-      status: rentStatus(ledger, today),
-    };
+  async function loadLedger(propertyId: string, accountId: string) {
+    const data = await loadRentData(deps, propertyId);
+    const view = data.views.find((v) => v.id === accountId);
+    if (!view) throw notFound("Account not found");
+    return { today: data.today, ledger: data.ledgerOf(view) };
   }
 
   async function loadEntry(propertyId: string, id: string) {
@@ -162,36 +120,12 @@ export function rentRouter(deps: RentRouterDeps) {
 
   return router({
     status: propertyProcedure.query(async ({ ctx }) => {
-      const data = await loadRentData(ctx.propertyId);
-      const rows = data.views
-        .map((view) => {
-          const account = data.accountOf(view);
-          return {
-            accountId: account.id,
-            tenant: account.tenant,
-            unit: account.unit,
-            state: account.state,
-            ...summaryOf(data.ledgerOf(view), data.today),
-          };
-        })
-        .filter(
-          (row) =>
-            row.state === "open" ||
-            row.state === "holdover" ||
-            row.balanceCents !== 0,
-        )
-        .sort(
-          (a, b) =>
-            compareRentStatus(a, b) ||
-            a.unit.label.localeCompare(b.unit.label, undefined, {
-              numeric: true,
-            }),
-        );
+      const data = await loadRentData(deps, ctx.propertyId);
       return {
         today: data.today,
         trackingStart: data.property.trackingStartDate,
         newestBankDate: newestBankDate(data.transactions),
-        rows,
+        rows: rentStatusRows(data),
       };
     }),
 
@@ -199,7 +133,7 @@ export function rentRouter(deps: RentRouterDeps) {
       .input(z.object({ accountId: z.string().uuid() }))
       .query(async ({ ctx, input }) => {
         const [data, pools, finalizedYears] = await Promise.all([
-          loadRentData(ctx.propertyId),
+          loadRentData(deps, ctx.propertyId),
           deps.billingQueries.listPools(ctx.propertyId),
           deps.billingQueries.listFinalizedYears(ctx.propertyId),
         ]);
@@ -213,7 +147,7 @@ export function rentRouter(deps: RentRouterDeps) {
           trackingStart: data.property.trackingStartDate,
           newestBankDate: newestBankDate(data.transactions),
           account: data.accountOf(view),
-          ...summaryOf(ledger, data.today),
+          ...rentSummary(ledger, data.today),
           rows: historyRows(ledger, data.today).map((row) => {
             switch (row.kind) {
               case "opening":
@@ -325,6 +259,58 @@ export function rentRouter(deps: RentRouterDeps) {
         );
         if (!removed) throw notFound("Entry not found");
         return { ok: true as const };
+      }),
+    approveLateFee: propertyProcedure
+      .input(lateFeeInput)
+      .mutation(async ({ ctx, input }) => {
+        const [{ today, ledger }, finalizedYears] = await Promise.all([
+          loadLedger(ctx.propertyId, input.accountId),
+          deps.billingQueries.listFinalizedYears(ctx.propertyId),
+        ]);
+        const suggestion = currentSuggestion(ledger, input.month, today);
+        const { entryDate, movedFrom } = lateFeeEntryDate(
+          suggestion,
+          today,
+          finalizedYears,
+        );
+        const entry = await save(() =>
+          deps.billingStore.insertLedgerEntry({
+            id: randomUUID(),
+            propertyId: ctx.propertyId,
+            accountId: input.accountId,
+            kind: "late_fee",
+            entryDate,
+            amountCents: suggestion.amountCents,
+            note: null,
+            feeMonth: suggestion.month,
+            reconciliationYearId: null,
+          }),
+        );
+        return { entry, movedFrom };
+      }),
+
+    dismissLateFee: propertyProcedure
+      .input(lateFeeInput)
+      .mutation(async ({ ctx, input }) => {
+        const { today, ledger } = await loadLedger(
+          ctx.propertyId,
+          input.accountId,
+        );
+        const suggestion = currentSuggestion(ledger, input.month, today);
+        const entry = await save(() =>
+          deps.billingStore.insertLedgerEntry({
+            id: randomUUID(),
+            propertyId: ctx.propertyId,
+            accountId: input.accountId,
+            kind: "late_fee_dismissed",
+            entryDate: today,
+            amountCents: 0,
+            note: null,
+            feeMonth: suggestion.month,
+            reconciliationYearId: null,
+          }),
+        );
+        return { entry };
       }),
   });
 }
