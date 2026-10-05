@@ -21,9 +21,11 @@ import {
   checkAllocationLines,
   checkLedgerEntry,
   descriptionKey,
+  DuplicateLedgerEntryError,
 } from "@moonship/billing";
 
 import type { DbExecutor } from "../../client";
+import { isUniqueViolation } from "../../pg-errors";
 import {
   accountLedgerEntries,
   bankAccounts,
@@ -366,43 +368,47 @@ export class PGBillingStore implements BillingStore {
 
   async insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry> {
     checkLedgerEntry(entry);
-    const [row] = await this.db
-      .insert(accountLedgerEntries)
-      .values({
-        id: entry.id,
-        propertyId: entry.propertyId,
-        accountId: entry.accountId,
-        kind: entry.kind,
-        entryDate: entry.entryDate,
-        amountCents: entry.amountCents,
-        note: entry.note,
-        feeMonth: entry.feeMonth,
-        reconciliationYearId: entry.reconciliationYearId,
-      })
-      .returning();
+    const [row] = await withDuplicateCheck(() =>
+      this.db
+        .insert(accountLedgerEntries)
+        .values({
+          id: entry.id,
+          propertyId: entry.propertyId,
+          accountId: entry.accountId,
+          kind: entry.kind,
+          entryDate: entry.entryDate,
+          amountCents: entry.amountCents,
+          note: entry.note,
+          feeMonth: entry.feeMonth,
+          reconciliationYearId: entry.reconciliationYearId,
+        })
+        .returning(),
+    );
     if (!row) throw new Error(`Ledger entry ${entry.id} was not saved`);
     return toLedgerEntry(row);
   }
 
   async updateLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry | null> {
     checkLedgerEntry(entry);
-    const [row] = await this.db
-      .update(accountLedgerEntries)
-      .set({
-        entryDate: entry.entryDate,
-        amountCents: entry.amountCents,
-        note: entry.note,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(accountLedgerEntries.id, entry.id),
-          eq(accountLedgerEntries.propertyId, entry.propertyId),
-          eq(accountLedgerEntries.accountId, entry.accountId),
-          eq(accountLedgerEntries.kind, entry.kind),
-        ),
-      )
-      .returning();
+    const [row] = await withDuplicateCheck(() =>
+      this.db
+        .update(accountLedgerEntries)
+        .set({
+          entryDate: entry.entryDate,
+          amountCents: entry.amountCents,
+          note: entry.note,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(accountLedgerEntries.id, entry.id),
+            eq(accountLedgerEntries.propertyId, entry.propertyId),
+            eq(accountLedgerEntries.accountId, entry.accountId),
+            eq(accountLedgerEntries.kind, entry.kind),
+          ),
+        )
+        .returning(),
+    );
     return row ? toLedgerEntry(row) : null;
   }
 
@@ -417,6 +423,15 @@ export class PGBillingStore implements BillingStore {
       )
       .returning({ id: accountLedgerEntries.id });
     return deleted.length > 0;
+  }
+}
+
+async function withDuplicateCheck<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new DuplicateLedgerEntryError();
+    throw error;
   }
 }
 

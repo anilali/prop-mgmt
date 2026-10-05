@@ -32,6 +32,21 @@ describe("checkLedgerEntry", () => {
     );
   });
 
+  it("rejects an amount larger than a database integer", () => {
+    expect(() =>
+      checkLedgerEntry({ ...adjustment, amountCents: 2_147_483_647 }),
+    ).not.toThrow();
+    expect(() =>
+      checkLedgerEntry({ ...adjustment, amountCents: -2_147_483_647 }),
+    ).not.toThrow();
+    expect(() =>
+      checkLedgerEntry({ ...adjustment, amountCents: 2_147_483_648 }),
+    ).toThrow("too large");
+    expect(() =>
+      checkLedgerEntry({ ...adjustment, amountCents: -2_147_483_648 }),
+    ).toThrow("too large");
+  });
+
   it("checks late fee kinds", () => {
     const fee: LedgerEntry = {
       ...adjustment,

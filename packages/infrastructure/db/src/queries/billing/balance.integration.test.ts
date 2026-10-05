@@ -8,6 +8,7 @@ import {
   accountEntries,
   accountPayments,
   balanceOn,
+  DuplicateLedgerEntryError,
   monthsDue,
 } from "@moonship/billing";
 import { Account } from "@moonship/lease-mgmt";
@@ -341,5 +342,87 @@ describe.skipIf(!databaseUrl)("balance through PGBillingQueries", () => {
         note: " ",
       }),
     ).rejects.toThrow();
+  });
+  it("rejects a second true-up for the same year and account", async () => {
+    const propertyId = randomUUID();
+    const accountId = randomUUID();
+    const reconciliationYearId = randomUUID();
+    propertyIds.push(propertyId);
+    const trueUp = {
+      propertyId,
+      accountId,
+      kind: "true_up" as const,
+      entryDate: "2027-01-01",
+      amountCents: 23_774,
+      note: null,
+      feeMonth: null,
+      reconciliationYearId,
+    };
+    await store.insertLedgerEntry({ id: randomUUID(), ...trueUp });
+
+    await expect(
+      store.insertLedgerEntry({ id: randomUUID(), ...trueUp }),
+    ).rejects.toThrow(DuplicateLedgerEntryError);
+    await expect(
+      store.insertLedgerEntry({
+        id: randomUUID(),
+        ...trueUp,
+        accountId: randomUUID(),
+      }),
+    ).resolves.toMatchObject({ reconciliationYearId });
+  });
+
+  it("maps a second fee decision from the store to a duplicate error", async () => {
+    const propertyId = randomUUID();
+    const accountId = randomUUID();
+    propertyIds.push(propertyId);
+    const fee = {
+      propertyId,
+      accountId,
+      kind: "late_fee" as const,
+      entryDate: "2026-03-11",
+      amountCents: 5_000,
+      note: null,
+      feeMonth: "2026-03",
+      reconciliationYearId: null,
+    };
+    await store.insertLedgerEntry({ id: randomUUID(), ...fee });
+
+    await expect(
+      store.insertLedgerEntry({
+        id: randomUUID(),
+        ...fee,
+        kind: "late_fee_dismissed",
+        amountCents: 0,
+      }),
+    ).rejects.toThrow(DuplicateLedgerEntryError);
+  });
+
+  it("rejects a dismissed late fee with an amount and an adjustment of 0", async () => {
+    const propertyId = randomUUID();
+    const accountId = randomUUID();
+    propertyIds.push(propertyId);
+
+    await expect(
+      db.insert(accountLedgerEntries).values({
+        propertyId,
+        accountId,
+        kind: "late_fee_dismissed",
+        entryDate: "2026-04-11",
+        amountCents: 5_000,
+        feeMonth: "2026-04",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.insert(accountLedgerEntries).values({
+        propertyId,
+        accountId,
+        kind: "adjustment",
+        entryDate: "2026-04-12",
+        amountCents: 0,
+        note: "Nothing",
+      }),
+    ).rejects.toThrow();
+    expect(await queries.listLedgerEntries(propertyId)).toEqual([]);
   });
 });

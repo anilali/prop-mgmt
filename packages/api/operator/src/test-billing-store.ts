@@ -30,6 +30,7 @@ import {
   checkLedgerEntry,
   dedupeKey,
   descriptionKey,
+  DuplicateLedgerEntryError,
 } from "@moonship/billing";
 import { Account } from "@moonship/lease-mgmt";
 
@@ -404,12 +405,16 @@ export class InMemoryBillingStore
   insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry> {
     checkLedgerEntry(entry);
     if (
-      entry.feeMonth !== null &&
-      this.propertyEntries(entry.propertyId).some(
-        (e) => e.accountId === entry.accountId && e.feeMonth === entry.feeMonth,
+      [...this.ledgerEntries.values()].some(
+        (e) =>
+          e.accountId === entry.accountId &&
+          ((entry.feeMonth !== null && e.feeMonth === entry.feeMonth) ||
+            (entry.kind === "true_up" &&
+              e.kind === "true_up" &&
+              e.reconciliationYearId === entry.reconciliationYearId)),
       )
     ) {
-      return Promise.reject(new Error("Duplicate fee month"));
+      return Promise.reject(new DuplicateLedgerEntryError());
     }
     this.ledgerEntries.set(entry.id, structuredClone(entry));
     return Promise.resolve(structuredClone(entry));

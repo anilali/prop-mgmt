@@ -1,7 +1,16 @@
 import type { IsoDate } from "@moonship/shared";
-import { isIsoDate, isYearMonth } from "@moonship/shared";
+import { isIsoDate, isYearMonth, MAX_CENTS } from "@moonship/shared";
 
 import type { LedgerEntry } from "./types";
+
+export class DuplicateLedgerEntryError extends Error {
+  constructor(
+    message = "This account already has an entry for that month or year",
+  ) {
+    super(message);
+    this.name = "DuplicateLedgerEntryError";
+  }
+}
 
 export function checkLedgerEntry(entry: LedgerEntry): void {
   if (!isIsoDate(entry.entryDate)) {
@@ -9,6 +18,9 @@ export function checkLedgerEntry(entry: LedgerEntry): void {
   }
   if (!Number.isSafeInteger(entry.amountCents)) {
     throw new Error("The amount must be a whole number of cents");
+  }
+  if (Math.abs(entry.amountCents) > MAX_CENTS) {
+    throw new Error("The amount is too large");
   }
   const isFee =
     entry.kind === "late_fee" || entry.kind === "late_fee_dismissed";

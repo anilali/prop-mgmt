@@ -94,7 +94,12 @@ export {
 
 export { checkAllocationLines } from "./allocations";
 
-export { checkLedgerEntry, entryDateFor, isInFinalizedYear } from "./ledger";
+export {
+  checkLedgerEntry,
+  DuplicateLedgerEntryError,
+  entryDateFor,
+  isInFinalizedYear,
+} from "./ledger";
 
 export type {
   AccountBalance,
