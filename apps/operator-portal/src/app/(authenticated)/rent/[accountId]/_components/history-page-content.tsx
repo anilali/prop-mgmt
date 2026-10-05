@@ -135,7 +135,9 @@ function RowDescription({
     case "payment":
       return (
         <>
-          <span className="font-medium">Payment</span>
+          <span className="font-medium">
+            {row.amountCents > 0 ? "Returned payment" : "Payment"}
+          </span>
           <button
             type="button"
             className="text-muted-foreground hover:text-foreground block max-w-80 truncate text-left text-xs underline underline-offset-4"
