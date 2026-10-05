@@ -1,31 +1,52 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["pdx1"],
-  "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi",
   "services": {
     "operator-portal": {
       "root": "apps/operator-portal",
-      "framework": "nextjs"
+      "framework": "nextjs",
+      "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi"
     },
     "tenant-portal": {
       "root": "apps/tenant-portal",
-      "framework": "nextjs"
+      "framework": "nextjs",
+      "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi"
     }
   },
   "rewrites": [
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": { "pre": "operator." } }],
-      "destination": { "service": "operator-portal" }
+      "has": [
+        {
+          "type": "host",
+          "value": {
+            "pre": "operator."
+          }
+        }
+      ],
+      "destination": {
+        "service": "operator-portal"
+      }
     },
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": { "pre": "tenant." } }],
-      "destination": { "service": "tenant-portal" }
+      "has": [
+        {
+          "type": "host",
+          "value": {
+            "pre": "tenant."
+          }
+        }
+      ],
+      "destination": {
+        "service": "tenant-portal"
+      }
     },
     {
       "source": "/(.*)",
-      "destination": { "service": "operator-portal" }
+      "destination": {
+        "service": "operator-portal"
+      }
     }
   ]
 }
