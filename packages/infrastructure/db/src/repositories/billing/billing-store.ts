@@ -16,6 +16,7 @@ import type {
   Pool,
   PoolBillOverride,
   ReconciliationYear,
+  StatementSnapshot,
   Txn,
 } from "@moonship/billing";
 import type { IsoDate } from "@moonship/shared";
@@ -34,6 +35,7 @@ import {
   costPoolUnits,
   importBatches,
   poolBillOverrides,
+  reconciliationStatements,
   reconciliationYears,
   transactionAllocations,
   transactions,
@@ -49,6 +51,7 @@ import { toLedgerEntry } from "./ledger-rows";
 import {
   toPoolBillOverride,
   toReconciliationYear,
+  toStatementSnapshot,
 } from "./reconciliation-rows";
 
 const INSERT_CHUNK = 1000;
@@ -487,6 +490,28 @@ export class PGBillingStore implements BillingStore {
       )
       .returning({ id: poolBillOverrides.id });
     return deleted.length > 0;
+  }
+
+  async insertStatementSnapshot(
+    snapshot: StatementSnapshot,
+  ): Promise<StatementSnapshot> {
+    const [row] = await this.db
+      .insert(reconciliationStatements)
+      .values({
+        id: snapshot.id,
+        propertyId: snapshot.propertyId,
+        reconciliationYearId: snapshot.reconciliationYearId,
+        accountId: snapshot.accountId,
+        tenantId: snapshot.tenantId,
+        data: snapshot.data,
+        trueUpCents: snapshot.trueUpCents,
+        balanceOnAccountCents: snapshot.balanceOnAccountCents,
+        pdfStorageKey: snapshot.pdfStorageKey,
+        createdAt: snapshot.createdAt,
+      })
+      .returning();
+    if (!row) throw new Error(`Statement ${snapshot.id} was not saved`);
+    return toStatementSnapshot(row, snapshot.year);
   }
 }
 

@@ -18,7 +18,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import type { CsvMapping } from "@moonship/billing";
+import type { CsvMapping, StatementData } from "@moonship/billing";
 
 export const billingSchema = pgSchema("billing");
 
@@ -346,6 +346,35 @@ export const poolBillOverrides = billingSchema.table(
       name: "pool_bill_overrides_pool_fk",
       columns: [table.poolId],
       foreignColumns: [costPools.id],
+    }),
+  ],
+);
+
+export const reconciliationStatements = billingSchema.table(
+  "reconciliation_statements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    reconciliationYearId: uuid("reconciliation_year_id").notNull(),
+    accountId: uuid("account_id").notNull(),
+    tenantId: uuid("tenant_id").notNull(),
+    data: jsonb("data").$type<StatementData>().notNull(),
+    trueUpCents: integer("true_up_cents").notNull(),
+    balanceOnAccountCents: integer("balance_on_account_cents").notNull(),
+    pdfStorageKey: text("pdf_storage_key").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("reconciliation_statements_year_account_unique").on(
+      table.reconciliationYearId,
+      table.accountId,
+    ),
+    index("reconciliation_statements_property_id_idx").on(table.propertyId),
+    index("reconciliation_statements_account_id_idx").on(table.accountId),
+    foreignKey({
+      name: "reconciliation_statements_reconciliation_year_fk",
+      columns: [table.reconciliationYearId],
+      foreignColumns: [reconciliationYears.id],
     }),
   ],
 );

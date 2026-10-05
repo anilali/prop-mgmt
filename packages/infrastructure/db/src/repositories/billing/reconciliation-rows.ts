@@ -4,11 +4,13 @@ import type {
   PoolBillOverride,
   ReconciliationStatus,
   ReconciliationYear,
+  StatementSnapshot,
 } from "@moonship/billing";
 
 import type { DbExecutor } from "../../client";
 import {
   poolBillOverrides,
+  reconciliationStatements,
   reconciliationYears,
 } from "../../schemas/billing/schema";
 
@@ -71,4 +73,50 @@ export async function loadBillOverrides(
     )
     .orderBy(asc(reconciliationYears.year), asc(poolBillOverrides.createdAt));
   return rows.map((row) => toPoolBillOverride(row.override, row.year));
+}
+
+export function toStatementSnapshot(
+  row: typeof reconciliationStatements.$inferSelect,
+  year: number,
+): StatementSnapshot {
+  return {
+    id: row.id,
+    propertyId: row.propertyId,
+    reconciliationYearId: row.reconciliationYearId,
+    year,
+    accountId: row.accountId,
+    tenantId: row.tenantId,
+    data: row.data,
+    trueUpCents: row.trueUpCents,
+    balanceOnAccountCents: row.balanceOnAccountCents,
+    pdfStorageKey: row.pdfStorageKey,
+    createdAt: row.createdAt,
+  };
+}
+
+export async function loadStatementSnapshots(
+  db: DbExecutor,
+  propertyId: string,
+): Promise<StatementSnapshot[]> {
+  const rows = await db
+    .select({
+      snapshot: reconciliationStatements,
+      year: reconciliationYears.year,
+    })
+    .from(reconciliationStatements)
+    .innerJoin(
+      reconciliationYears,
+      eq(reconciliationYears.id, reconciliationStatements.reconciliationYearId),
+    )
+    .where(
+      and(
+        eq(reconciliationStatements.propertyId, propertyId),
+        eq(reconciliationYears.propertyId, propertyId),
+      ),
+    )
+    .orderBy(
+      asc(reconciliationYears.year),
+      asc(reconciliationStatements.createdAt),
+    );
+  return rows.map((row) => toStatementSnapshot(row.snapshot, row.year));
 }

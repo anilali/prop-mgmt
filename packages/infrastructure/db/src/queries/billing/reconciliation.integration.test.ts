@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
+import type { StatementData, StatementSnapshot } from "@moonship/billing";
+
 import { createDb } from "../../client";
 import { PGBillingStore } from "../../repositories/billing/billing-store";
 import {
   costPools,
   poolBillOverrides,
+  reconciliationStatements,
   reconciliationYears,
 } from "../../schemas/billing/schema";
 import { createPGUnitOfWork } from "../../unit-of-work";
@@ -24,6 +27,9 @@ describe.skipIf(!databaseUrl)("reconciliation years and bill amounts", () => {
 
   afterAll(async () => {
     if (propertyIds.length > 0) {
+      await db
+        .delete(reconciliationStatements)
+        .where(inArray(reconciliationStatements.propertyId, propertyIds));
       await db
         .delete(poolBillOverrides)
         .where(inArray(poolBillOverrides.propertyId, propertyIds));
@@ -152,5 +158,81 @@ describe.skipIf(!databaseUrl)("reconciliation years and bill amounts", () => {
         note: "   ",
       }),
     ).rejects.toThrow();
+  });
+
+  function statementData(): StatementData {
+    const address = {
+      street1: "1 Main St",
+      city: "Springfield",
+      state: "IL",
+      postalCode: "62701",
+      country: "US",
+    };
+    return {
+      year: 2025,
+      letterDate: "2026-01-02",
+      property: { name: "Lucky Plaza" },
+      owner: {
+        name: "Pat Owner",
+        title: "Managing Member",
+        company: "Lucky Plaza LLC",
+        phone: "(555) 010-2000",
+        email: "owner@example.com",
+      },
+      tenant: { businessName: "Super Lucky LLC", mailingAddress: address },
+      unit: { label: "A", address, sqft: 2500 },
+      buildingSqft: 9350,
+      otherPoolAreas: [],
+      rows: [
+        {
+          poolId: randomUUID(),
+          name: "CAM",
+          poolSqft: 9350,
+          actualCents: 1_289_119,
+          billOverride: null,
+          months: 12,
+          partCents: 344_684,
+          estimatesCents: 322_332,
+          balanceCents: 22_352,
+        },
+      ],
+      trueUpCents: 22_352,
+      priorBalanceCents: 41_374,
+      priorBalanceAsOf: "2025-12-31",
+      balanceOnAccountCents: 63_726,
+      continuing: null,
+    };
+  }
+
+  it("stores one statement snapshot per year and account", async () => {
+    const { propertyId } = await seedPool();
+    const year = await store.lockYear(propertyId, 2025);
+    const accountId = randomUUID();
+    const snapshot: StatementSnapshot = {
+      id: randomUUID(),
+      propertyId,
+      reconciliationYearId: year.id,
+      year: 2025,
+      accountId,
+      tenantId: randomUUID(),
+      data: statementData(),
+      trueUpCents: 22_352,
+      balanceOnAccountCents: 63_726,
+      pdfStorageKey: `reconciliations/${propertyId}/2025/${accountId}.pdf`,
+      createdAt: new Date("2026-01-05T15:00:00Z"),
+    };
+    expect(await queries.accountHasActivity(propertyId, accountId)).toBe(false);
+
+    expect(await store.insertStatementSnapshot(snapshot)).toEqual(snapshot);
+    expect(await queries.listStatementSnapshots(propertyId)).toEqual([
+      snapshot,
+    ]);
+    expect(await queries.listStatementSnapshots(randomUUID())).toEqual([]);
+    expect(await queries.accountHasActivity(propertyId, accountId)).toBe(true);
+
+    await expect(
+      store.insertStatementSnapshot({ ...snapshot, id: randomUUID() }),
+    ).rejects.toThrow();
+    expect(await queries.listStatementSnapshots(propertyId)).toHaveLength(1);
   });
 });

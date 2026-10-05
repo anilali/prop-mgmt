@@ -11,6 +11,7 @@ import type {
   Pool,
   PoolBillOverride,
   ReconciliationYear,
+  StatementSnapshot,
   Txn,
 } from "@moonship/billing";
 
@@ -29,10 +30,12 @@ import { loadLedgerEntries } from "../../repositories/billing/ledger-rows";
 import {
   loadBillOverrides,
   loadReconciliationYears,
+  loadStatementSnapshots,
 } from "../../repositories/billing/reconciliation-rows";
 import {
   accountLedgerEntries,
   bankAccounts,
+  reconciliationStatements,
   reconciliationYears,
   transactionAllocations,
   transactions,
@@ -110,7 +113,18 @@ export class PGBillingQueries implements BillingQueries {
         ),
       )
       .limit(1);
-    return entries.length > 0;
+    if (entries.length > 0) return true;
+    const statements = await this.db
+      .select({ id: reconciliationStatements.id })
+      .from(reconciliationStatements)
+      .where(
+        and(
+          eq(reconciliationStatements.propertyId, propertyId),
+          eq(reconciliationStatements.accountId, accountId),
+        ),
+      )
+      .limit(1);
+    return statements.length > 0;
   }
 
   async getBankAccount(propertyId: string): Promise<BankAccount | null> {
@@ -175,5 +189,9 @@ export class PGBillingQueries implements BillingQueries {
 
   listBillOverrides(propertyId: string): Promise<PoolBillOverride[]> {
     return loadBillOverrides(this.db, propertyId);
+  }
+
+  listStatementSnapshots(propertyId: string): Promise<StatementSnapshot[]> {
+    return loadStatementSnapshots(this.db, propertyId);
   }
 }
