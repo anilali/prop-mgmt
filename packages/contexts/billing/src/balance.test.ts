@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AccountLedger } from "./balance";
+import type { AccountLedger, AccountPayment } from "./balance";
 import type { AccountTerms, LedgerEntry, Txn } from "./types";
 import {
   accountBalance,
@@ -161,16 +161,12 @@ describe("expected, received, and balance", () => {
       entry(tenantB.accountId, { entryDate: "2024-09-30", amountCents: 7_725 }),
     ];
     const ledger = ledgerFor(tenantB, { entries });
-    for (const asOf of [
-      "2024-01-01",
-      "2024-05-31",
-      "2024-06-15",
-      "2024-12-31",
-    ]) {
-      const months = monthsDue(tenantB, TRACKING_START, asOf).reduce(
-        (sum, m) => sum + m.totalCents,
-        0,
-      );
+    for (const [asOf, months] of [
+      ["2024-01-01", 407_000],
+      ["2024-05-31", 5 * 407_000],
+      ["2024-06-15", 5 * 407_000 + 427_500],
+      ["2024-12-31", 5 * 407_000 + 7 * 427_500],
+    ] as const) {
       const entrySum = entries
         .filter((e) => e.entryDate <= asOf)
         .reduce((sum, e) => sum + e.amountCents, 0);
@@ -183,7 +179,7 @@ describe("expected, received, and balance", () => {
     }
   });
 
-  it("reports the last positive payment date", () => {
+  it("reports the last payment date before a bounced December check", () => {
     const bounced: Txn = {
       ...TRANSACTIONS[0],
       id: "bounced",
@@ -204,8 +200,49 @@ describe("expected, received, and balance", () => {
       expectedCents: 4_385_784,
       receivedCents: 4_020_302,
       balanceCents: 365_482,
-      lastPaymentOn: "2024-12-01",
+      lastPaymentOn: "2024-11-01",
     });
+  });
+
+  it("skips a payment that a later line of the same amount takes back", () => {
+    const payment = (postedOn: string, amountCents: number) => ({
+      transactionId: `t-${postedOn}-${amountCents}`,
+      postedOn,
+      description: "Rent",
+      amountCents,
+    });
+    const lastPaymentOn = (payments: AccountPayment[]) =>
+      accountBalance(
+        { ...ledgerFor(superLucky, { transactions: [] }), payments },
+        "2024-12-31",
+      ).lastPaymentOn;
+    const paid = [
+      payment("2024-01-01", 365_482),
+      payment("2024-02-01", 365_482),
+    ];
+
+    expect(lastPaymentOn(paid)).toBe("2024-02-01");
+    expect(lastPaymentOn([...paid, payment("2024-02-05", -365_482)])).toBe(
+      "2024-01-01",
+    );
+    expect(
+      lastPaymentOn([
+        payment("2024-01-01", 365_482),
+        payment("2024-02-01", -365_482),
+        payment("2024-02-01", 365_482),
+      ]),
+    ).toBe("2024-01-01");
+    expect(lastPaymentOn([...paid, payment("2024-02-05", -100)])).toBe(
+      "2024-02-01",
+    );
+    expect(
+      lastPaymentOn([
+        ...paid,
+        payment("2024-02-05", -365_482),
+        payment("2024-02-10", 365_482),
+      ]),
+    ).toBe("2024-02-10");
+    expect(lastPaymentOn([payment("2024-02-05", -365_482)])).toBeNull();
   });
 
   it("takes one payment per line to the account", () => {

@@ -63,6 +63,18 @@ function ledger(
 
 const paidThroughFebruary = [pay("2026-01-01"), pay("2026-02-01")];
 
+const paidThroughSeptember = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+].map((month) => pay(`2026-${month}-01`));
+
 describe("rentStatus", () => {
   it("is Paid at a zero balance", () => {
     expect(
@@ -125,6 +137,58 @@ describe("rentStatus", () => {
     };
     const l = ledger(account(), paidThroughFebruary, [charge]);
     expect(rentStatus(l, "2026-03-04")).toBe("due");
+  });
+
+  it("uses the newest lease's fee day in holdover", () => {
+    const [lease] = account().leases;
+    if (!lease) throw new Error("missing lease");
+    const terms: AccountTerms = {
+      ...account(),
+      leases: [
+        { ...lease, leaseId: "old", endDate: "2025-12-31" },
+        {
+          ...lease,
+          leaseId: "new",
+          startDate: "2026-01-01",
+          endDate: "2026-06-30",
+          lateFee: { amountCents: 5_000, day: 3 },
+          rentSteps: [
+            {
+              id: "r2",
+              startsOn: "2026-01-01",
+              amountCents: RENT,
+              tenantNotifiedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+    const l = ledger(terms, paidThroughSeptember);
+    expect(graceDate(l, "2026-10-01")).toBe("2026-10-03");
+    expect(rentStatus(l, "2026-10-03")).toBe("due");
+    expect(rentStatus(l, "2026-10-04")).toBe("behind");
+  });
+
+  it("puts a payment toward the oldest charge first", () => {
+    const septemberCharge: LedgerEntry = {
+      id: "e",
+      propertyId: "p",
+      accountId: "a",
+      kind: "adjustment",
+      entryDate: "2026-09-20",
+      amountCents: 2_500,
+      note: "Key replacement",
+      feeMonth: null,
+      reconciliationYearId: null,
+    };
+    const l = ledger(
+      account(),
+      [...paidThroughSeptember, pay("2026-10-01")],
+      [septemberCharge],
+    );
+    expect(rentStatus(l, "2026-10-04")).toBe("due");
+    expect(rentStatus(l, "2026-10-10")).toBe("due");
+    expect(rentStatus(l, "2026-10-11")).toBe("behind");
   });
 
   it("is Behind for a closed account that still owes", () => {

@@ -150,21 +150,32 @@ export function accountBalance(
 ): AccountBalance {
   const expectedCents = expectedOn(ledger, asOf);
   const receivedCents = receivedOn(ledger, asOf);
-  let lastPaymentOn: IsoDate | null = null;
-  for (const payment of countedPayments(ledger, asOf)) {
-    if (
-      payment.amountCents > 0 &&
-      (lastPaymentOn === null || payment.postedOn > lastPaymentOn)
-    ) {
-      lastPaymentOn = payment.postedOn;
-    }
-  }
   return {
     expectedCents,
     receivedCents,
     balanceCents: expectedCents - receivedCents,
-    lastPaymentOn,
+    lastPaymentOn: lastPaymentOn(countedPayments(ledger, asOf)),
   };
+}
+
+function lastPaymentOn(payments: readonly AccountPayment[]): IsoDate | null {
+  const byDate = [...payments].sort(
+    (a, b) =>
+      (a.postedOn < b.postedOn ? -1 : a.postedOn > b.postedOn ? 1 : 0) ||
+      b.amountCents - a.amountCents,
+  );
+  const standing: AccountPayment[] = [];
+  for (const payment of byDate) {
+    if (payment.amountCents > 0) {
+      standing.push(payment);
+      continue;
+    }
+    const cancelled = standing
+      .map((p) => p.amountCents)
+      .lastIndexOf(-payment.amountCents);
+    if (cancelled !== -1) standing.splice(cancelled, 1);
+  }
+  return standing.at(-1)?.postedOn ?? null;
 }
 
 const ROW_ORDER: Record<HistoryRow["kind"], number> = {
