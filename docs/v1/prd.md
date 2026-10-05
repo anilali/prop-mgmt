@@ -242,6 +242,8 @@ Finalizing a year:
 
 It runs once per year. If data in a finalized year changes later, the year shows how each statement differs from what was saved. A mistake is fixed with an adjustment on the account.
 
+A year reconciled before tracking started can be added to the app. It shows on the Reconciliation page like any finalized year: each pool's cost with its transactions, each account's true-up and balance on account, and the PDF to download. It cannot be changed. Its true-ups are already in the opening balances, so it does not change any balance.
+
 ## Acceptance criteria
 
 1. The owner can enter the property, units, pools, tenants, accounts, and leases, including base rent steps, estimates, late fee, insurance date, and opening balance.

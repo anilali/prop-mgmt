@@ -449,6 +449,7 @@ Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a 
 | 9 | v1 | `billing`: add `import_batches.format` and `import_batches.account_last4`. |
 | 10 | v1 | `lease_mgmt`: `lease_documents`. |
 | 11 | v1 | `lease_mgmt`: `lease_fixed_charge_steps`. |
+| 12 | v1 | `billing`: add `reconciliation_years.source`; `recorded_pool_lines` (5.11). |
 
 ## 4. Account aggregate
 
@@ -739,6 +740,8 @@ The minus sign turns money out into a positive cost. A deposit sorted to the cat
 
 Pool members and unit sqft are the current values, used for the whole year (3.4).
 
+The management fee is entered each year as a cash expense in CAM.
+
 When `poolSqft(P)` is 0, nothing calls `prorate` for that pool. The pool card shows "No units" in place of cost per sqft, statement rows for it show "Pool has no units" with no amounts, and the checklist blocks finalize. The seeded Water pool starts this way.
 
 ### 5.9 Year-end statement
@@ -838,6 +841,8 @@ finalize(Y):
 After finalize, the year page shows the stored snapshots. It recomputes each statement and compares the pool lines, true-up, rent balance, and balance on account with the snapshot. It compares the snapshot's new estimates and new monthly rent with what the lease covering January 1 bills now (`estimateOn(J, P, jan1)` for each pool `J` pays then, and `rentOn(J, jan1)` plus those estimates), and the insurance request with `J`'s insurance date. So a later edit to `J`'s January steps or January rent, or January steps that never landed, shows as a mismatch. When any differ, the account shows "Current data no longer matches this statement" with each changed value as snapshot, now, and difference, such as "Balance on account: $651.48, now $701.48 (+$50.00)". The finalize writes themselves do not cause a mismatch: the true-up is dated after December 31, and new estimates start January 1 of `Y+1`. New fees and adjustments cannot have a locked date (3.6), so a mismatch comes from bank rows, sorting, or lease edits.
 
 The finalized page also lists January `Y+1` for each continuing account: new monthly rent, payments dated in January so far, and the difference. This answers which tenants' January 1 payment came in at the old amount.
+
+A year done before tracking started can be recorded. Its `reconciliation_years` row has `source = 'recorded'` (`source varchar(16) not null default 'app'`, check in `app`, `recorded`; a recorded row must be finalized). It has one snapshot per account and a PDF under the usual key. `billing.recorded_pool_lines` keeps the costs behind each pool: `reconciliation_year_id` (cascade), `pool_id` (references `cost_pools`), `posted_on`, `description`, `source` (`bank` or `cash`), and `cost_cents` (a cost is positive). Each pool's lines add up to the actual on the snapshots. `listYears` shows a recorded year even when it is before the first reconciliation year. Its page shows the pool cards and saved statements read-only, with no comparison and no January table. Every write procedure rejects it. It does not lock dates and does not count as the previous year for the finalize gate. Its true-ups are already in the opening balances, so nothing is posted. A pool with recorded lines cannot be deleted. A script creates the year with `recordedYearPlan` and `insertRecordedYear`; there is no procedure.
 
 ### 5.12 Coming up
 
