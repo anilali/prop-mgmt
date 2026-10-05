@@ -71,6 +71,13 @@
       "when": 1791182166378,
       "tag": "1791182166_account_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791183219060,
+      "tag": "1791183219_reconciliation_years",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   char,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -274,5 +275,77 @@ export const accountLedgerEntries = billingSchema.table(
       .where(sql`${table.kind} = 'true_up'`),
     index("account_ledger_entries_property_id_idx").on(table.propertyId),
     index("account_ledger_entries_account_id_idx").on(table.accountId),
+    foreignKey({
+      name: "account_ledger_entries_reconciliation_year_fk",
+      columns: [table.reconciliationYearId],
+      foreignColumns: [reconciliationYears.id],
+    }),
+  ],
+);
+
+export const reconciliationYears = billingSchema.table(
+  "reconciliation_years",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    year: integer("year").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("draft"),
+    letterDate: date("letter_date", { mode: "string" }),
+    finalizedAt: timestamp("finalized_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("reconciliation_years_property_id_year_unique").on(
+      table.propertyId,
+      table.year,
+    ),
+    check(
+      "reconciliation_years_status_check",
+      sql`${table.status} in ('draft', 'finalized')`,
+    ),
+    check(
+      "reconciliation_years_finalized_check",
+      sql`${table.status} <> 'finalized' or (${table.finalizedAt} is not null and ${table.letterDate} is not null)`,
+    ),
+  ],
+);
+
+export const poolBillOverrides = billingSchema.table(
+  "pool_bill_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    reconciliationYearId: uuid("reconciliation_year_id").notNull(),
+    poolId: uuid("pool_id").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    note: text("note").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("pool_bill_overrides_year_pool_unique").on(
+      table.reconciliationYearId,
+      table.poolId,
+    ),
+    check("pool_bill_overrides_amount_check", sql`${table.amountCents} >= 0`),
+    check("pool_bill_overrides_note_check", sql`btrim(${table.note}) <> ''`),
+    index("pool_bill_overrides_property_id_idx").on(table.propertyId),
+    foreignKey({
+      name: "pool_bill_overrides_reconciliation_year_fk",
+      columns: [table.reconciliationYearId],
+      foreignColumns: [reconciliationYears.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "pool_bill_overrides_pool_fk",
+      columns: [table.poolId],
+      foreignColumns: [costPools.id],
+    }),
   ],
 );

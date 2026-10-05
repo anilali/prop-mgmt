@@ -9,6 +9,8 @@ import type {
   ImportBatchSummary,
   LedgerEntry,
   Pool,
+  PoolBillOverride,
+  ReconciliationYear,
   Txn,
 } from "@moonship/billing";
 
@@ -25,8 +27,13 @@ import {
 } from "../../repositories/billing/billing-rows";
 import { loadLedgerEntries } from "../../repositories/billing/ledger-rows";
 import {
+  loadBillOverrides,
+  loadReconciliationYears,
+} from "../../repositories/billing/reconciliation-rows";
+import {
   accountLedgerEntries,
   bankAccounts,
+  reconciliationYears,
   transactionAllocations,
   transactions,
 } from "../../schemas/billing/schema";
@@ -149,7 +156,24 @@ export class PGBillingQueries implements BillingQueries {
     return entry ?? null;
   }
 
-  listFinalizedYears(_propertyId: string): Promise<number[]> {
-    return Promise.resolve([]);
+  async listFinalizedYears(propertyId: string): Promise<number[]> {
+    const rows = await this.db
+      .select({ year: reconciliationYears.year })
+      .from(reconciliationYears)
+      .where(
+        and(
+          eq(reconciliationYears.propertyId, propertyId),
+          eq(reconciliationYears.status, "finalized"),
+        ),
+      );
+    return rows.map((row) => row.year);
+  }
+
+  listReconciliationYears(propertyId: string): Promise<ReconciliationYear[]> {
+    return loadReconciliationYears(this.db, propertyId);
+  }
+
+  listBillOverrides(propertyId: string): Promise<PoolBillOverride[]> {
+    return loadBillOverrides(this.db, propertyId);
   }
 }

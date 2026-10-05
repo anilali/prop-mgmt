@@ -14,6 +14,8 @@ import type {
   LedgerEntry,
   NewBankTransaction,
   Pool,
+  PoolBillOverride,
+  ReconciliationYear,
   Txn,
 } from "@moonship/billing";
 import type { IsoDate } from "@moonship/shared";
@@ -31,6 +33,8 @@ import {
   costPools,
   costPoolUnits,
   importBatches,
+  poolBillOverrides,
+  reconciliationYears,
   transactionAllocations,
   transactions,
 } from "../../schemas/billing/schema";
@@ -42,6 +46,10 @@ import {
 } from "./bank-rows";
 import { loadCategories, loadPools } from "./billing-rows";
 import { toLedgerEntry } from "./ledger-rows";
+import {
+  toPoolBillOverride,
+  toReconciliationYear,
+} from "./reconciliation-rows";
 
 const INSERT_CHUNK = 1000;
 
@@ -385,6 +393,99 @@ export class PGBillingStore implements BillingStore {
         ),
       )
       .returning({ id: accountLedgerEntries.id });
+    return deleted.length > 0;
+  }
+
+  async lockYear(
+    propertyId: string,
+    year: number,
+  ): Promise<ReconciliationYear> {
+    return this.db.transaction(async (tx) => {
+      await tx
+        .insert(reconciliationYears)
+        .values({ propertyId, year })
+        .onConflictDoNothing({
+          target: [reconciliationYears.propertyId, reconciliationYears.year],
+        });
+      const [row] = await tx
+        .select()
+        .from(reconciliationYears)
+        .where(
+          and(
+            eq(reconciliationYears.propertyId, propertyId),
+            eq(reconciliationYears.year, year),
+          ),
+        )
+        .for("update");
+      if (!row) throw new Error(`Reconciliation year ${year} was not saved`);
+      return toReconciliationYear(row);
+    });
+  }
+
+  async saveYear(year: ReconciliationYear): Promise<ReconciliationYear> {
+    const [row] = await this.db
+      .update(reconciliationYears)
+      .set({
+        status: year.status,
+        letterDate: year.letterDate,
+        finalizedAt: year.finalizedAt,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(reconciliationYears.id, year.id),
+          eq(reconciliationYears.propertyId, year.propertyId),
+        ),
+      )
+      .returning();
+    if (!row) throw new Error(`Reconciliation year ${year.year} not found`);
+    return toReconciliationYear(row);
+  }
+
+  async saveBillOverride(
+    override: PoolBillOverride,
+  ): Promise<PoolBillOverride> {
+    const values = {
+      amountCents: override.amountCents,
+      note: override.note.trim(),
+    };
+    const [row] = await this.db
+      .insert(poolBillOverrides)
+      .values({
+        id: override.id,
+        propertyId: override.propertyId,
+        reconciliationYearId: override.reconciliationYearId,
+        poolId: override.poolId,
+        ...values,
+      })
+      .onConflictDoUpdate({
+        target: [
+          poolBillOverrides.reconciliationYearId,
+          poolBillOverrides.poolId,
+        ],
+        set: { ...values, updatedAt: new Date() },
+        setWhere: eq(poolBillOverrides.propertyId, override.propertyId),
+      })
+      .returning();
+    if (!row) throw new Error("Bill amount was not saved");
+    return toPoolBillOverride(row, override.year);
+  }
+
+  async deleteBillOverride(
+    propertyId: string,
+    reconciliationYearId: string,
+    poolId: string,
+  ): Promise<boolean> {
+    const deleted = await this.db
+      .delete(poolBillOverrides)
+      .where(
+        and(
+          eq(poolBillOverrides.propertyId, propertyId),
+          eq(poolBillOverrides.reconciliationYearId, reconciliationYearId),
+          eq(poolBillOverrides.poolId, poolId),
+        ),
+      )
+      .returning({ id: poolBillOverrides.id });
     return deleted.length > 0;
   }
 }
