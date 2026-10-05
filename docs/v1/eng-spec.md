@@ -397,7 +397,7 @@ Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a 
 | Utility share graph (`UtilityAssignment`, `validateUtilityAssignments`, unit dialog utilities UI, `utilities` column) | Removed. Pools replace it. |
 | Unit `status`, `changeStatus`, `UnitStatusChanged`, bedrooms, bathrooms | Removed. Vacancy comes from account dates. |
 | Unit `address_override` | Replaced by a full `address`. Migration fills it with the override, or the property address when there is none. |
-| Unit rows with `sqft <= 0` or a label used twice on one property | Migration deletes units with `sqft <= 0` (no lease points at them after the lease tables are dropped) and adds " 2", " 3" to later duplicate labels by `created_at`, before adding the checks. |
+| Unit rows with `sqft <= 0` or a label used twice on one property | Migration deletes units with `sqft <= 0` (no lease points at them after the lease tables are dropped) and renames later duplicate labels, by `created_at`, to "{label} (dup {first 8 characters of the unit id})", before adding the checks. The id keeps the new label unique, and the label is cut to 49 characters first so it fits in 64. |
 | `unit.remove` checks for an active lease | Checks for any account on the unit. Also deletes the unit's pool member rows. |
 | `Lease` aggregate and `LeaseRepository` | Replaced by the `Account` aggregate and `AccountRepository` (section 4). |
 | Existing lease rows | Dropped with the old table. The owner enters every account and lease in M1. An earlier migration already cleared tenants and leases, so little or nothing is lost. |
@@ -655,19 +655,24 @@ The preview lists each error with its row number and cells. The owner either fix
 
 6. Skip zero amounts. Skip rows dated before the tracking start date and count them.
 
-Dedupe, per row in file order. Stored state per key `(postedOn, descriptionKey, amountCents)`: the total count of stored rows, the count of stored rows with no `external_id`, and the key of every stored `external_id`.
+Dedupe makes two passes over the file in row order: rows with an id first, then rows with no id. Stored state per key `(postedOn, descriptionKey, amountCents)`: the total count of stored rows, the count of stored rows with no `external_id`, and the key of every stored `external_id`. `claimed[key]` counts the stored rows that id rows in this file already matched, either by the same id or by using up a stored row with no id.
 
 ```text
 key = (postedOn, descriptionKey, amountCents)
-if mapping.idColumn and row has an id:
-  if the id is stored or appeared earlier in this file:
-    duplicate when its stored or earlier key equals key, otherwise an error row
-  else:
-    if storedNoId[key] > usedNoId[key]: usedNoId[key] += 1 and it is a duplicate
-    else insert
-else:
+
+pass 1, each row with an id:
+  if the id appeared earlier in this file:
+    duplicate when the earlier row's key equals key, otherwise an error row
+  else if the id is stored:
+    if its stored key equals key: claimed[key] += 1 and it is a duplicate
+    else an error row
+  else if storedNoId[key] > usedNoId[key]:
+    usedNoId[key] += 1, claimed[key] += 1, and it is a duplicate
+  else insert
+
+pass 2, each row with no id:
   seenInFile[key] += 1
-  insert if seenInFile[key] > storedTotal[key] - usedNoId[key]
+  insert if seenInFile[key] > storedTotal[key] - claimed[key]
 ```
 
 This keeps `max(count already stored, count in this file)` rows per key. Two real $25.00 fees on the same day both import. Importing the same file again inserts nothing. An overlapping file inserts only the rows past what is stored.
@@ -1102,7 +1107,7 @@ US Letter, built-in Helvetica, 11 pt. One PDF per account: page 1 is the letter,
 3. `Re:` block: "{year} Expense Reconciliation", business name, unit street with suite, unit city, state, zip.
 4. P1: "In accordance with the lease for the above-referenced location, enclosed for your review and reimbursement is the {year} expense reconciliation. Copies of tax and insurance receipts are also enclosed."
 5. P2, true-up 0 or more: "Based upon the reconciliation, the balance of your pro rata share of the {year} expenses for the center totals **{true-up}**." True-up below 0: "Based upon the reconciliation, the balance of your pro rata share of the {year} expenses for the center results in a credit of **{absolute true-up}**, which has been applied to your account."
-6. P3, continuing accounts only: "The monthly charges for {letter names} for the year {year+1} will change to reflect the {year} actual expense. Effective January 1, {year+1}, the monthly rent will be changed to **{new monthly rent}**." Letter names are the `letter_name` of each pool `J` pays, joined as "CAM", "CAM and tax", or "CAM, tax, and insurance". When `J` pays no pools, P3 is only the "Effective January 1" sentence.
+6. P3, continuing accounts only: "The monthly charges for {letter names} for the year {year+1} will change to reflect the {year} actual expense. Effective January 1, {year+1}, the monthly rent will be changed to **{new monthly rent}**." Letter names are the `letter_name` of each pool in `continuingPools` (5.9), including pools carried over from December, joined as "CAM", "CAM and tax", or "CAM, tax, and insurance". P3 is the only place the letter names pools. When `continuingPools` is empty, P3 is only the "Effective January 1" sentence.
 7. P4, only when `insuranceRequest`: "We don't have a copy of your insurance on file for the year {year+1}. Could you please send us a copy at your earliest convenience. The copy can be emailed to {owner email}."
 8. P5: "The current balance on your account is **{balance on account}**. If you have any questions, please call me at {owner phone}." The phone uses non-breaking spaces so it stays on one line. When negative: "is a credit of **{absolute amount}**".
 9. "Sincerely," then owner name, title, company.
@@ -1114,7 +1119,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 1. Heading: property name, "{YEAR} EXPENSE RECONCILIATION", business name, unit address.
 2. Areas: "BUILDING AREA: 9,350 Sq. Ft", one "{POOL NAME} SERVICE AREA: n Sq. Ft" line per `otherPoolAreas` entry, "SQ.FT LEASED: 2,500".
 3. Cost lines, one per row: pool name, actual cost, "$1.38 psf/year", "$0.1149 psf/month". When a bill amount is used, a small line under it: "Bill amount: {note}".
-4. Table with columns: pool, SQ.FT LEASED, {YEAR} ACTUALS, PRO-RATA SHARE, MONTHS (only when a row has fewer than 12), ANNUAL SHARE, ESTIMATES BILLED IN {YEAR}, BALANCE DUE. Negative amounts print as `-$362.79`. Under BALANCE DUE, a ruled total row with no label holds the true-up, as on the owner's sheet.
+4. Table with columns: pool, SQ.FT LEASED, {YEAR} ACTUALS, TENANT'S PRO-RATA SHARE, MONTHS (only when a row has fewer than 12), TENANT'S ANNUAL SHARE, ESTIMATES BILLED IN {YEAR}, BALANCE DUE. Negative amounts print as `-$362.79`. Under BALANCE DUE, a ruled total row with no label holds the true-up, as on the owner's sheet.
 5. Rent block. Continuing account: "REVISED MONTHLY RENT (Effective January 1, {year+1})", then Base Rent, one line per new estimate by pool name, Total Monthly Rent, Rent Balance, Balance on Account. Account not continuing: only Rent Balance and Balance on Account. Balance on Account prints in accounting format, `($834.54)`, when negative.
 
 ### 9.3 Generation and storage
@@ -1185,6 +1190,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 | 9. August move-out gets 8/12 | `reconciliation.test.ts` case 6.2. |
 | 10. Actual cost or bill amount | `reconciliation.test.ts` override case. |
 | 11. Finalize | `reconciliation` router tests and `finalize.integration.test.ts`. |
+| 12. A renewal gives one statement | `reconciliation.test.ts` case 6.3 and the January 1 renewal cases, plus the `reconciliation` router test for a January 1 renewal entered with no estimates. |
 
 ## 11. Build order
 
