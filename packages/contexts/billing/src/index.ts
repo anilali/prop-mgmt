@@ -129,6 +129,35 @@ export {
   thisMonthCharges,
 } from "./rent-status";
 
+export type { LateFeeSuggestion } from "./late-fee";
+export {
+  isLateFeeDecided,
+  lateFeeEntryDate,
+  lateFeeMonths,
+  lateFeeSuggestion,
+  lateFeeSuggestions,
+} from "./late-fee";
+
+export type {
+  ComingUp,
+  InsuranceItem,
+  InsuranceProblem,
+  LeaseEndItem,
+  RentChange,
+} from "./coming-up";
+export {
+  comingUp,
+  INSURANCE_DAYS,
+  insuranceItems,
+  LEASE_ENDING_DAYS,
+  leasesEnding,
+  pastEndDate,
+  RENT_CHANGE_DAYS,
+  rentChanges,
+  toSortCount,
+  withinNextDays,
+} from "./coming-up";
+
 export type {
   BillingQueries,
   BillingStore,
