@@ -57,6 +57,13 @@
       "when": 1791179528527,
       "tag": "1791179528_accounts_and_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791181207144,
+      "tag": "1791181207_bank_data",
+      "breakpoints": true
     }
   ]
 }

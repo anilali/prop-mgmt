@@ -57,3 +57,83 @@ export interface Category {
   poolId: string | null;
   archivedAt: Date | null;
 }
+
+export const CSV_DATE_FORMATS = [
+  "MM/DD/YYYY",
+  "YYYY-MM-DD",
+  "DD/MM/YYYY",
+] as const;
+
+export type CsvDateFormat = (typeof CSV_DATE_FORMATS)[number];
+
+export interface CsvMapping {
+  dateColumn: string;
+  dateFormat: CsvDateFormat;
+  descriptionColumn: string;
+  amount:
+    | { mode: "signed"; column: string; flipSign: boolean }
+    | { mode: "debitCredit"; debitColumn: string; creditColumn: string };
+  idColumn: string | null;
+}
+
+export type TransactionSource = "bank" | "cash";
+
+export interface AllocationLine {
+  accountId: string | null;
+  categoryId: string | null;
+  amountCents: number;
+}
+
+export interface Txn {
+  id: string;
+  propertyId: string;
+  source: TransactionSource;
+  importBatchId: string | null;
+  postedOn: IsoDate;
+  description: string;
+  descriptionKey: string;
+  amountCents: number;
+  externalId: string | null;
+  lines: AllocationLine[];
+}
+
+export interface BankAccount {
+  id: string;
+  propertyId: string;
+  name: string;
+  csvMapping: CsvMapping | null;
+}
+
+export interface ImportBatch {
+  id: string;
+  propertyId: string;
+  bankAccountId: string;
+  fileName: string;
+  importedAt: Date;
+  rowCount: number;
+  insertedCount: number;
+  duplicateCount: number;
+  beforeTrackingStartCount: number;
+  notTransactionCount: number;
+  firstPostedOn: IsoDate | null;
+  lastPostedOn: IsoDate | null;
+}
+
+export interface NewBankTransaction {
+  id: string;
+  postedOn: IsoDate;
+  description: string;
+  descriptionKey: string;
+  amountCents: number;
+  externalId: string | null;
+  rawRowHash: string;
+}
+
+export interface CashExpense {
+  id: string;
+  propertyId: string;
+  postedOn: IsoDate;
+  description: string;
+  amountCents: number;
+  categoryId: string;
+}

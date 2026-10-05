@@ -6,11 +6,21 @@ import {
   accountsOverlap,
   accountStart,
   accountState,
+  countedMonths,
   coveringLease,
+  dueDate,
+  estimateOn,
+  isCounted,
   isHoldover,
+  leaseForMonth,
+  monthCharges,
+  monthlyExpected,
   newestLease,
   openOn,
+  paysOn,
   paysPool,
+  rentOn,
+  stepOn,
 } from "./lease-calendar";
 
 function lease(
@@ -166,5 +176,204 @@ describe("paysPool", () => {
     });
     expect(paysPool(l, "water")).toBe(true);
     expect(paysPool(l, "cam")).toBe(false);
+  });
+});
+
+function termsLease(
+  leaseId: string,
+  startDate: string,
+  endDate: string,
+  options: {
+    moveOutDate?: string | null;
+    rent?: [string, number][];
+    estimates?: [string, string, number][];
+  } = {},
+): LeaseTerms {
+  return {
+    leaseId,
+    startDate,
+    endDate,
+    moveOutDate: options.moveOutDate ?? null,
+    lateFee: null,
+    insuranceExpiresOn: null,
+    rentSteps: (options.rent ?? [[startDate, 100_000]]).map(
+      ([startsOn, amountCents], index) => ({
+        id: `${leaseId}-r${index}`,
+        startsOn,
+        amountCents,
+        tenantNotifiedAt: null,
+      }),
+    ),
+    estimateSteps: (options.estimates ?? []).map(
+      ([poolId, startsOn, amountCents], index) => ({
+        id: `${leaseId}-e${index}`,
+        poolId,
+        startsOn,
+        amountCents,
+      }),
+    ),
+  };
+}
+
+function months2024(a: AccountTerms, trackingStart = "2024-01-01") {
+  return countedMonths(a, trackingStart, "2024-01", "2024-12");
+}
+
+function poolMonths2024(a: AccountTerms, poolId: string) {
+  return months2024(a).filter((month) =>
+    paysOn(leaseForMonth(a, month), poolId, dueDate(a, month)),
+  ).length;
+}
+
+describe("stepOn", () => {
+  const steps = [
+    { startsOn: "2024-06-01", amountCents: 2 },
+    { startsOn: "2024-01-01", amountCents: 1 },
+  ];
+
+  it("returns the step with the latest start on or before the date", () => {
+    expect(stepOn(steps, "2023-12-31")).toBeNull();
+    expect(stepOn(steps, "2024-01-01")?.amountCents).toBe(1);
+    expect(stepOn(steps, "2024-05-31")?.amountCents).toBe(1);
+    expect(stepOn(steps, "2024-06-01")?.amountCents).toBe(2);
+    expect(stepOn(steps, "2030-01-01")?.amountCents).toBe(2);
+  });
+});
+
+describe("counted months and due dates", () => {
+  it("counts from a mid-month start and dues that month on the start date", () => {
+    const a = account([termsLease("l", "2024-03-20", "2025-03-19")]);
+    expect(months2024(a)).toHaveLength(10);
+    expect(months2024(a)[0]).toBe("2024-03");
+    expect(dueDate(a, "2024-03")).toBe("2024-03-20");
+    expect(dueDate(a, "2024-04")).toBe("2024-04-01");
+    expect(isCounted(a, "2024-02", "2024-01-01")).toBe(false);
+  });
+
+  it("keeps counting in holdover at the lease's last amounts", () => {
+    const a = account([
+      termsLease("l", "2024-01-01", "2024-09-30", {
+        rent: [
+          ["2024-01-01", 100_000],
+          ["2024-06-01", 110_000],
+        ],
+      }),
+    ]);
+    expect(months2024(a)).toHaveLength(12);
+    expect(monthlyExpected(a, "2024-10")).toBe(110_000);
+    expect(monthlyExpected(a, "2024-12")).toBe(110_000);
+    expect(isHoldover(a, "2024-10-01")).toBe(true);
+  });
+
+  it("counts the move-out month", () => {
+    const a = account([
+      termsLease("l", "2022-09-01", "2025-08-31", {
+        moveOutDate: "2024-08-01",
+      }),
+    ]);
+    expect(months2024(a)).toHaveLength(8);
+    expect(months2024(a).at(-1)).toBe("2024-08");
+  });
+
+  it("starts at the tracking start date", () => {
+    const a = account([termsLease("l", "2023-01-01", "2027-12-31")]);
+    expect(months2024(a, "2024-04-01")).toHaveLength(9);
+    expect(isCounted(a, "2024-03", "2024-04-01")).toBe(false);
+  });
+
+  it("bills a mid-month renewal from the next month", () => {
+    const a = account([
+      termsLease("old", "2023-06-15", "2024-06-14", {
+        rent: [["2023-06-15", 100_000]],
+      }),
+      termsLease("new", "2024-06-15", "2025-06-14", {
+        rent: [["2024-06-15", 120_000]],
+      }),
+    ]);
+    expect(months2024(a)).toHaveLength(12);
+    expect(leaseForMonth(a, "2024-06").leaseId).toBe("old");
+    expect(monthlyExpected(a, "2024-06")).toBe(100_000);
+    expect(leaseForMonth(a, "2024-07").leaseId).toBe("new");
+    expect(monthlyExpected(a, "2024-07")).toBe(120_000);
+  });
+
+  it("bills a gap month at the old lease's last amounts", () => {
+    const a = account([
+      termsLease("old", "2023-06-01", "2024-05-31", {
+        rent: [
+          ["2023-06-01", 100_000],
+          ["2024-01-01", 105_000],
+        ],
+      }),
+      termsLease("new", "2024-07-01", "2025-06-30", {
+        rent: [["2024-07-01", 120_000]],
+      }),
+    ]);
+    expect(months2024(a)).toHaveLength(12);
+    expect(monthlyExpected(a, "2024-06")).toBe(105_000);
+    expect(monthlyExpected(a, "2024-07")).toBe(120_000);
+  });
+
+  it("counts a pool from its first step on or before the due date", () => {
+    const fromFirst = account([
+      termsLease("l", "2023-01-01", "2027-12-31", {
+        estimates: [["water", "2024-07-01", 15_000]],
+      }),
+    ]);
+    const midMonth = account([
+      termsLease("l", "2023-01-01", "2027-12-31", {
+        estimates: [["water", "2024-07-15", 15_000]],
+      }),
+    ]);
+    expect(months2024(fromFirst)).toHaveLength(12);
+    expect(poolMonths2024(fromFirst, "water")).toBe(6);
+    expect(poolMonths2024(midMonth, "water")).toBe(5);
+  });
+
+  it("dues a mid-month account start on the start date", () => {
+    const a = account([termsLease("l", "2024-02-15", "2025-02-14")]);
+    expect(dueDate(a, "2024-02")).toBe("2024-02-15");
+    expect(isCounted(a, "2024-02", "2024-01-01")).toBe(true);
+  });
+});
+
+describe("monthCharges", () => {
+  it("adds base rent and each estimate in effect on the due date", () => {
+    const a = account([
+      termsLease("l", "2023-01-01", "2027-12-31", {
+        rent: [["2023-01-01", 250_000]],
+        estimates: [
+          ["cam", "2023-01-01", 26_861],
+          ["tax", "2023-01-01", 77_761],
+          ["ins", "2023-01-01", 10_860],
+          ["water", "2024-07-01", 5_000],
+        ],
+      }),
+    ]);
+
+    const june = monthCharges(a, "2024-06");
+    expect(june.rentCents).toBe(250_000);
+    expect(june.estimates.map((e) => e.poolId)).toEqual(["cam", "tax", "ins"]);
+    expect(june.totalCents).toBe(365_482);
+    expect(monthlyExpected(a, "2024-07")).toBe(370_482);
+  });
+
+  it("looks up rent and estimates by date", () => {
+    const l = termsLease("l", "2024-01-01", "2024-12-31", {
+      rent: [
+        ["2024-01-01", 100],
+        ["2024-07-01", 200],
+      ],
+      estimates: [
+        ["cam", "2024-03-01", 10],
+        ["cam", "2024-09-01", 20],
+      ],
+    });
+    expect(rentOn(l, "2024-06-30")).toBe(100);
+    expect(rentOn(l, "2024-07-01")).toBe(200);
+    expect(estimateOn(l, "cam", "2024-02-01")).toBeNull();
+    expect(estimateOn(l, "cam", "2024-03-01")).toBe(10);
+    expect(estimateOn(l, "cam", "2024-12-01")).toBe(20);
+    expect(paysOn(l, "cam", "2024-02-29")).toBe(false);
   });
 });
