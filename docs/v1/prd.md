@@ -25,7 +25,7 @@ The target is a dry run in mid-November 2026 on January to October data, then fi
 
 - The 2026 letters and statements come out of the app, matching what the spreadsheet would have produced.
 - At any point in the year, the owner can see who's behind and by how much.
-- Every expense used in the reconciliation is a bank transaction or a cash expense the owner entered.
+- Every expense used in the reconciliation is a bank transaction, a cash expense the owner entered, or a bill amount with a note.
 - Rent increases and expiring insurance certificates show up before they're due.
 
 ## Not in v1
@@ -38,7 +38,7 @@ The target is a dry run in mid-November 2026 on January to October data, then fi
 - Unit area or pool membership changes during a year, and combining or splitting units. The current values apply to the whole year.
 - Prorating a month a lease covers only part of. Leases almost always start and end on month boundaries.
 - Lease terms like caps, admin fees, or excluded costs. None of the current leases have them.
-- Locking a year after it's reconciled. The only limit is that a new fee or adjustment that would be dated inside a finalized year is dated the day it's saved instead.
+- Locking everything in a year after it's reconciled. A finalized year's letter date and bill amounts can't change, and its true-ups can't be removed. Fees and adjustments dated on or before December 31 of the latest finalized year can't be edited or removed, and new ones are dated the day they're saved. Other data can still change, and the year shows the differences.
 
 ## Concepts
 
@@ -124,7 +124,7 @@ New transactions land in a "To sort" list.
 
 A table of accounts with expected so far, received so far, balance, last payment date, and a status. Accounts that are behind are listed first.
 
-- **Due.** A month's rent counts as owed from the 1st. Until the lease's late-fee day, or the 5th if it has no late fee, a balance from this month alone shows as Due.
+- **Due.** A month's rent counts as owed from the 1st, or from the move-in day when the tenant moves in mid-month. Until the lease's late-fee day, or the 5th if it has no late fee, a balance from this month alone shows as Due.
 - **Behind.** A balance left after that day, or left over from an earlier month.
 
 Each account has a history of what makes up its balance: opening balance, each month's expected amount, payments, fees, adjustments, and true-ups.
@@ -193,13 +193,17 @@ The Reconciliation page lists each year. Opening a year shows:
 - A checklist. These block finalizing:
   - Transactions dated in the year are still waiting to be sorted.
   - A pool a lease pays has no units.
+  - A lease pays a pool its unit isn't in.
   - A pool's actual cost is negative.
   - Letter details or a tenant's mailing address are missing.
+  - A statement can't be computed.
+- Finalizing also needs a letter date in the next year, today to be after December 31, and the previous year to be finalized, unless this is the first year reconciled in the app.
 - These only warn:
   - The newest bank data is before December 31.
   - A pool used a bill amount last year but has none this year.
   - An account is past its lease's end date.
   - Pool members or unit sqft changed during the year.
+  - A pool the tenant paid in December has no estimate on the lease that covers January 1. Finalize adds it.
 - One card per pool with the actual cost and the transactions behind it. When a bill amount is entered, the card shows the bill and the payments side by side.
 - One statement per account that pays at least one pool, including tenants who moved out during the year.
 - A preview of each PDF before finalizing.
@@ -208,9 +212,9 @@ The Reconciliation page lists each year. Opening a year shows:
 
 Each account gets one PDF with a letter and a statement, following the owner's current versions.
 
-The letter has the letter date, the tenant's mailing address, the year and unit address, the true-up, the new monthly rent from January 1, the balance on account, and the owner's signature details. If no insurance certificate on file covers January 1 of the next year, it asks the tenant to send one. It names the pools the tenant pays, such as "CAM, tax, insurance, and water". A tenant who moved out gets the letter without the new rent, the revised rent block, or the insurance request.
+The letter has the letter date, the tenant's mailing address, the year and unit address, the true-up, the new monthly rent from January 1, the balance on account, and the owner's signature details. If no insurance certificate on file covers January 1 of the next year, it asks the tenant to send one. The paragraph about the new rent names the pools it covers, such as "CAM, tax, insurance, and water". It is the only place the letter names pools. A tenant who isn't continuing into the next year, such as one who moved out, gets the letter without that paragraph, the revised rent block, or the insurance request.
 
-The letter date is set by the owner on the year, and defaults to the day they open finalize.
+The owner sets the letter date on the year, and it must be in the next year. No date is saved until the owner sets one. The field suggests January 1 of the next year.
 
 The statement shows the building area and the area of each other pool the tenant pays, each pool's actual cost and cost per sqft per year and per month, the table above with a months column for partial years, the new monthly rent, and the balance on account. It uses the owner's column labels.
 
@@ -220,7 +224,7 @@ Finalizing a year:
 
 - Saves each account's PDF for download, and a copy of each statement's numbers.
 - Adds each true-up to its account's balance, dated the letter date.
-- Sets new estimates from January 1 of the next year on the lease covering January 1 for each account that has a statement.
+- Sets new estimates from January 1 of the next year for each account that has a statement. They go on the lease covering January 1, for every pool the tenant paid in December if the unit is still in it, and every pool that lease has estimates for.
 
 It runs once per year. If data in a finalized year changes later, the year shows how each statement differs from what was saved. A mistake is fixed with an adjustment on the account.
 
@@ -229,7 +233,7 @@ It runs once per year. If data in a finalized year changes later, the year shows
 1. The owner can enter the property, units, pools, tenants, accounts, and leases, including base rent steps, estimates, late fee, insurance date, and opening balance.
 2. Each unit's share in a pool equals its sqft divided by the total sqft of the pool's units, and vacant units count in the total.
 3. Importing the same CSV twice, or two overlapping ones, creates no duplicates.
-4. Every transaction can be categorized or split, and every deposit can be matched to an account. Suggestions never apply without the owner confirming.
+4. Every bank transaction can be categorized or split, and every deposit can be matched to an account. A cash expense has one category and isn't split. Suggestions never apply without the owner confirming.
 5. An account's balance equals its opening balance plus expected amounts, fees, adjustments, and true-ups, minus payments.
 6. A late fee is only added when the owner approves it.
 7. The home page shows accounts behind, transactions to sort, rent changes in 90 days, insurance certificates missing or expiring in 60 days, leases ending in 90 days, and accounts past their end date.
