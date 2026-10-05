@@ -7,7 +7,7 @@ import { requirePropertyContext } from "../_lib/require-operator-context";
 export default async function AccessPage() {
   const { context, propertyId } = await requirePropertyContext();
   if (context.mode !== "property" || context.role !== "admin") {
-    redirect("/setup");
+    redirect("/home");
   }
   prefetch(trpc.access.list.queryOptions({ propertyId }));
 
