@@ -47,6 +47,7 @@ import {
   descriptionKey,
   DuplicateLedgerEntryError,
 } from "@moonship/billing";
+import { attachmentDisposition } from "@moonship/blob-storage";
 import { Account, StaleAccountError } from "@moonship/lease-mgmt";
 
 import type {
@@ -711,7 +712,10 @@ export class FakeStatementRenderer implements StatementRenderer {
 }
 
 export class FakeBlobStorage implements BlobStorage {
-  objects = new Map<string, { body: Uint8Array; contentType: string }>();
+  objects = new Map<
+    string,
+    { body: Uint8Array; contentType: string; contentDisposition?: string }
+  >();
   puts: string[] = [];
   signed: { key: string; options: SignedDownloadOptions | undefined }[] = [];
   uploads: { key: string; options: SignedUploadOptions }[] = [];
@@ -742,7 +746,12 @@ export class FakeBlobStorage implements BlobStorage {
     this.uploads.push({ key, options });
     return Promise.resolve({
       url: `https://blob/${key}?upload`,
-      headers: { "Content-Type": options.contentType },
+      headers: {
+        "Content-Type": options.contentType,
+        ...(options.fileName
+          ? { "Content-Disposition": attachmentDisposition(options.fileName) }
+          : {}),
+      },
     });
   }
 
@@ -753,7 +762,11 @@ export class FakeBlobStorage implements BlobStorage {
     const object = this.objects.get(key);
     return Promise.resolve(
       object
-        ? { sizeBytes: object.body.byteLength, contentType: object.contentType }
+        ? {
+            sizeBytes: object.body.byteLength,
+            contentType: object.contentType,
+            contentDisposition: object.contentDisposition ?? null,
+          }
         : null,
     );
   }

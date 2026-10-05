@@ -93,6 +93,9 @@ export class S3BlobStorage implements BlobStorage {
     key: string,
     options: SignedUploadOptions,
   ): Promise<SignedUpload> {
+    const disposition = options.fileName
+      ? attachmentDisposition(options.fileName)
+      : undefined;
     const url = await getSignedUrl(
       this.client,
       new PutObjectCommand({
@@ -100,13 +103,20 @@ export class S3BlobStorage implements BlobStorage {
         Key: key,
         ContentType: options.contentType,
         ContentLength: options.contentLength,
+        ContentDisposition: disposition,
       }),
       {
         expiresIn: options.expiresInSeconds ?? 900,
-        signableHeaders: new Set(["content-type"]),
+        signableHeaders: new Set(["content-type", "content-disposition"]),
       },
     );
-    return { url, headers: { "Content-Type": options.contentType } };
+    return {
+      url,
+      headers: {
+        "Content-Type": options.contentType,
+        ...(disposition ? { "Content-Disposition": disposition } : {}),
+      },
+    };
   }
 
   async headObject(key: string): Promise<ObjectInfo | null> {
@@ -117,6 +127,7 @@ export class S3BlobStorage implements BlobStorage {
       return {
         sizeBytes: head.ContentLength ?? 0,
         contentType: head.ContentType ?? null,
+        contentDisposition: head.ContentDisposition ?? null,
       };
     } catch (error) {
       if (

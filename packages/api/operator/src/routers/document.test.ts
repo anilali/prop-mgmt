@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
+import { attachmentDisposition } from "@moonship/blob-storage";
+
 import type { TestCaller } from "../test-setup-stores";
 import { STORAGE_UNAVAILABLE_MESSAGE } from "../errors";
 import {
@@ -16,6 +18,7 @@ import {
 
 const ID = "77777777-7777-4777-8777-777777777777";
 const PDF = "application/pdf";
+const DISPOSITION = attachmentDisposition("Lease 2024.pdf");
 
 async function setup() {
   const app = createTestApp();
@@ -55,9 +58,16 @@ function putFromBrowser(
   app: App,
   key: string,
   sizeBytes: number,
-  contentType = PDF,
+  headers: { contentType?: string; contentDisposition?: string | null } = {},
 ) {
-  app.blob.objects.set(key, { body: new Uint8Array(sizeBytes), contentType });
+  app.blob.objects.set(key, {
+    body: new Uint8Array(sizeBytes),
+    contentType: headers.contentType ?? PDF,
+    contentDisposition:
+      headers.contentDisposition === null
+        ? undefined
+        : (headers.contentDisposition ?? DISPOSITION),
+  });
 }
 
 async function upload(
@@ -127,7 +137,7 @@ describe("document.createUpload", () => {
     expect(result).toEqual({
       documentId: result.documentId,
       uploadUrl: `https://blob/${key}?upload`,
-      headers: { "Content-Type": PDF },
+      headers: { "Content-Type": PDF, "Content-Disposition": DISPOSITION },
       expiresInSeconds: 900,
     });
     expect(app.blob.uploads).toEqual([
@@ -136,6 +146,7 @@ describe("document.createUpload", () => {
         options: {
           contentType: PDF,
           contentLength: 7_800_000,
+          fileName: "Lease 2024.pdf",
           expiresInSeconds: 900,
         },
       },
@@ -257,7 +268,9 @@ describe("document.confirmUpload", () => {
 
     const wrongType = await caller.document.createUpload(input);
     const typeKey = `documents/${PROPERTY_ID}/${accountId}/${wrongType.documentId}.pdf`;
-    putFromBrowser(app, typeKey, input.sizeBytes, "text/html");
+    putFromBrowser(app, typeKey, input.sizeBytes, {
+      contentType: "text/html",
+    });
     const error = await errorOf(
       caller.document.confirmUpload({
         ...input,
@@ -281,6 +294,44 @@ describe("document.confirmUpload", () => {
 
     expect(app.blob.deleted).toEqual([sizeKey, typeKey, bigKey]);
     expect(app.blob.objects.size).toBe(0);
+    expect(app.documents.documents.size).toBe(0);
+  });
+
+  it("rejects and deletes an object stored without the file name", async () => {
+    const { app, caller, accountId } = await setup();
+    const input = { accountId, ...file() };
+
+    const missing = await caller.document.createUpload(input);
+    const missingKey = `documents/${PROPERTY_ID}/${accountId}/${missing.documentId}.pdf`;
+    putFromBrowser(app, missingKey, input.sizeBytes, {
+      contentDisposition: null,
+    });
+    const error = await errorOf(
+      caller.document.confirmUpload({
+        ...input,
+        documentId: missing.documentId,
+      }),
+    );
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(error.message).toBe(
+      "The upload did not keep the file name. Try again.",
+    );
+
+    const other = await caller.document.createUpload(input);
+    const otherKey = `documents/${PROPERTY_ID}/${accountId}/${other.documentId}.pdf`;
+    putFromBrowser(app, otherKey, input.sizeBytes, {
+      contentDisposition: attachmentDisposition("Other.pdf"),
+    });
+    expect(
+      await codeOf(
+        caller.document.confirmUpload({
+          ...input,
+          documentId: other.documentId,
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+
+    expect(app.blob.deleted).toEqual([missingKey, otherKey]);
     expect(app.documents.documents.size).toBe(0);
   });
 

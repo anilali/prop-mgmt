@@ -12,6 +12,7 @@ export interface SignedDownloadOptions {
 export interface SignedUploadOptions {
   contentType: string;
   contentLength?: number;
+  fileName?: string;
   expiresInSeconds?: number;
 }
 
@@ -23,6 +24,7 @@ export interface SignedUpload {
 export interface ObjectInfo {
   sizeBytes: number;
   contentType: string | null;
+  contentDisposition: string | null;
 }
 
 export interface BlobStorage {

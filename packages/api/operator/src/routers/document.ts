@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import type { BlobStorage } from "@moonship/blob-storage";
+import type { BlobStorage, ObjectInfo } from "@moonship/blob-storage";
 import type {
   AccountQueries,
   LeaseDocument,
   LeaseDocumentStore,
 } from "@moonship/lease-mgmt";
+import { attachmentDisposition } from "@moonship/blob-storage";
 import {
   LEASE_DOCUMENT_CONTENT_TYPE,
   leaseDocumentFileProblem,
@@ -47,6 +48,21 @@ function toView(document: LeaseDocument) {
     sizeBytes: document.sizeBytes,
     uploadedAt: document.uploadedAt,
   };
+}
+
+function storedFileProblem(
+  stored: ObjectInfo,
+  input: { fileName: string; sizeBytes: number },
+): string | null {
+  const fileProblem = leaseDocumentFileProblem(stored);
+  if (fileProblem) return fileProblem;
+  if (stored.sizeBytes !== input.sizeBytes) {
+    return "The uploaded file is not the size that was expected. Try again.";
+  }
+  if (stored.contentDisposition !== attachmentDisposition(input.fileName)) {
+    return "The upload did not keep the file name. Try again.";
+  }
+  return null;
 }
 
 async function withStorage<T>(call: () => Promise<T>): Promise<T> {
@@ -113,6 +129,7 @@ export function documentRouter(deps: DocumentRouterDeps) {
             {
               contentType: LEASE_DOCUMENT_CONTENT_TYPE,
               contentLength: input.sizeBytes,
+              fileName: input.fileName,
               expiresInSeconds: UPLOAD_URL_SECONDS,
             },
           ),
@@ -145,11 +162,7 @@ export function documentRouter(deps: DocumentRouterDeps) {
         if (!stored) {
           throw badRequest("The upload did not finish. Try again.");
         }
-        const problem =
-          leaseDocumentFileProblem(stored) ??
-          (stored.sizeBytes === input.sizeBytes
-            ? null
-            : "The uploaded file is not the size that was expected. Try again.");
+        const problem = storedFileProblem(stored, input);
         if (problem) {
           await withStorage(() => deps.blobStorage.deleteObject(storageKey));
           throw badRequest(problem);

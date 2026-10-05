@@ -63,4 +63,21 @@ describe("S3BlobStorage.getSignedUploadUrl", () => {
     );
     expect(upload.headers).toEqual({ "Content-Type": "application/pdf" });
   });
+
+  it("signs and returns the attachment disposition when given a file name", async () => {
+    const upload = await storage.getSignedUploadUrl("documents/p/a/d.pdf", {
+      contentType: "application/pdf",
+      contentLength: 3_400_000,
+      fileName: "Café Lease.pdf",
+    });
+    const url = new URL(upload.url);
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe(
+      "content-disposition;content-length;content-type;host",
+    );
+    expect(upload.headers).toEqual({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": attachmentDisposition("Café Lease.pdf"),
+    });
+  });
 });
