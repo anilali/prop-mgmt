@@ -16,6 +16,7 @@ import { Label } from "@moonship/ui/label";
 
 import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
+import { formatDate } from "../../leases/_lib/format";
 import { AddressFields, toAddress, toAddressDraft } from "./address-fields";
 import { TimeZoneSelect } from "./time-zone-select";
 
@@ -92,7 +93,7 @@ function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Property</h2>
         <p className="text-muted-foreground text-sm">
-          Today at the property is {property.today}.
+          Today at the property is {formatDate(property.today)}.
         </p>
       </div>
       <form

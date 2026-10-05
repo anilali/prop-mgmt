@@ -4,7 +4,11 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { poolShareTable } from "@moonship/billing";
+import {
+  formatPercentBps,
+  formatSqft,
+  poolShareTable,
+} from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
 import { Checkbox } from "@moonship/ui/checkbox";
 import { Label } from "@moonship/ui/label";
@@ -21,7 +25,6 @@ import {
 import type { PoolView } from "./pool-dialog";
 import type { UnitView } from "./unit-dialog";
 import { useTRPC } from "~/trpc/react";
-import { formatShare, formatSqft } from "./format";
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -148,7 +151,7 @@ export function PoolCard({
                     {formatSqft(unit.sqft)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {row ? formatShare(row.shareBps) : "—"}
+                    {row ? formatPercentBps(row.shareBps) : "-"}
                   </TableCell>
                 </TableRow>
               );

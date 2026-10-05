@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { formatSqft } from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
 import {
   Table,
@@ -22,7 +23,6 @@ import type { UnitView } from "./unit-dialog";
 import { useTRPC } from "~/trpc/react";
 import { formatStreet } from "./address-fields";
 import { ConfirmDialog } from "./confirm-dialog";
-import { formatSqft } from "./format";
 import { UnitDialog } from "./unit-dialog";
 
 export function UnitsSection() {

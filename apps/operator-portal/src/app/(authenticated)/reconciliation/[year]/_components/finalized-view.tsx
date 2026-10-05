@@ -5,7 +5,6 @@ import { useMutation } from "@tanstack/react-query";
 import { CircleCheck, Download, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatAccounting } from "@moonship/billing";
 import { formatCents } from "@moonship/shared";
 import { cn } from "@moonship/ui";
 import { Badge } from "@moonship/ui/badge";
@@ -205,7 +204,7 @@ function SnapshotRow({
         {formatCents(snapshot.trueUpCents)}
       </TableCell>
       <TableCell className="text-right tabular-nums">
-        {formatAccounting(snapshot.balanceOnAccountCents)}
+        {formatCents(snapshot.balanceOnAccountCents)}
       </TableCell>
       <TableCell className="text-right tabular-nums">
         {continuing ? formatCents(continuing.newMonthlyRentCents) : "-"}

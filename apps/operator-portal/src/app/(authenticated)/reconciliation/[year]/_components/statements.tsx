@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { FileDown } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatAccounting, formatPercentBps } from "@moonship/billing";
+import { formatPercentBps } from "@moonship/billing";
 import { formatCents } from "@moonship/shared";
 import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
@@ -204,7 +204,7 @@ function StatementCard({
           <dd className="font-medium tabular-nums">
             {statement.balanceOnAccountCents === null
               ? "-"
-              : formatAccounting(statement.balanceOnAccountCents)}
+              : formatCents(statement.balanceOnAccountCents)}
           </dd>
         </div>
       </dl>
