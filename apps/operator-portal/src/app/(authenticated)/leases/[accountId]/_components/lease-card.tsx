@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
 
 import { formatCents } from "@moonship/shared";
 import { Badge } from "@moonship/ui/badge";
@@ -17,18 +16,16 @@ import {
 
 import type { Lease, PoolOption } from "../../_lib/lease-form";
 import { useTRPC } from "~/trpc/react";
-import { formatDate } from "../../_lib/format";
-import { useAccountUpdated } from "./use-account-updated";
-
-const notifiedFormat = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
+import { formatDate, notifiedDateFormat } from "../../_lib/format";
+import {
+  useAccountUpdated,
+  useAccountUpdateFailed,
+} from "./use-account-updated";
 
 export function LeaseCard({
   accountId,
   version,
+  timeZone,
   lease,
   pools,
   isNewest,
@@ -38,6 +35,7 @@ export function LeaseCard({
 }: {
   accountId: string;
   version: number;
+  timeZone: string;
   lease: Lease;
   pools: readonly PoolOption[];
   isNewest: boolean;
@@ -47,13 +45,15 @@ export function LeaseCard({
 }) {
   const trpc = useTRPC();
   const accountUpdated = useAccountUpdated(accountId);
+  const accountUpdateFailed = useAccountUpdateFailed(accountId);
+  const notifiedFormat = notifiedDateFormat(timeZone);
 
   const setNotified = useMutation(
     trpc.lease.setRentStepNotified.mutationOptions({
       onSuccess: async (detail) => {
         await accountUpdated(detail);
       },
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
 

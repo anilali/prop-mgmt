@@ -2,8 +2,11 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
+import {
+  useIsMutating,
+  useMutation,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 
 import type { RouterOutputs } from "@moonship/api-operator";
 import { formatCents } from "@moonship/shared";
@@ -13,9 +16,16 @@ import { PageHeader } from "@moonship/ui/page-header";
 import { Switch } from "@moonship/ui/switch";
 
 import { useTRPC } from "~/trpc/react";
-import { ACCOUNT_STATE_LABELS, formatDate } from "../../leases/_lib/format";
-import { useAccountUpdated } from "../../leases/[accountId]/_components/use-account-updated";
-import { LateFeeSuggestionItem } from "../../rent/_components/late-fee-suggestion";
+import {
+  ACCOUNT_STATE_LABELS,
+  formatDate,
+  notifiedDateFormat,
+} from "../../leases/_lib/format";
+import {
+  useAccountUpdated,
+  useAccountUpdateFailed,
+} from "../../leases/[accountId]/_components/use-account-updated";
+import { LateFeeSuggestionList } from "../../rent/_components/late-fee-suggestion";
 import { RENT_STATUS_LABELS, RENT_STATUS_VARIANTS } from "../../rent/_lib/rent";
 
 type ComingUp = RouterOutputs["home"]["comingUp"];
@@ -23,12 +33,6 @@ type BehindRow = ComingUp["behind"][number];
 type RentChange = ComingUp["rentChanges"][number];
 type InsuranceItem = ComingUp["insurance"][number];
 type LeaseEndItem = ComingUp["leasesEnding"][number];
-
-const notifiedFormat = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
 
 export function HomePageContent() {
   const trpc = useTRPC();
@@ -41,8 +45,9 @@ export function HomePageContent() {
         description={`What needs attention, as of ${formatDate(data.today)}.`}
       />
       <BehindCard data={data} />
+      <LateFeesCard items={data.lateFees} />
       <ToSortCard count={data.toSortCount} />
-      <RentChangesCard items={data.rentChanges} />
+      <RentChangesCard items={data.rentChanges} timeZone={data.timeZone} />
       <InsuranceCard items={data.insurance} />
       <LeasesEndingCard
         ending={data.leasesEnding}
@@ -141,41 +146,48 @@ function BehindCard({ data }: { data: ComingUp }) {
 
 function BehindItem({ row }: { row: BehindRow }) {
   return (
-    <li className="space-y-2 py-3 first:pt-0 last:pb-0">
-      <div className="flex items-start justify-between gap-4">
-        <AccountName
-          href={`/rent/${row.accountId}`}
-          tenant={row.tenant}
-          unit={row.unit}
-          badge={
-            <>
-              <Badge
-                variant={RENT_STATUS_VARIANTS[row.status]}
-                className="ml-2"
-              >
-                {RENT_STATUS_LABELS[row.status]}
+    <li className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+      <AccountName
+        href={`/rent/${row.accountId}`}
+        tenant={row.tenant}
+        unit={row.unit}
+        badge={
+          <>
+            <Badge variant={RENT_STATUS_VARIANTS[row.status]} className="ml-2">
+              {RENT_STATUS_LABELS[row.status]}
+            </Badge>
+            {row.state === "open" ? null : (
+              <Badge variant="outline" className="ml-2">
+                {ACCOUNT_STATE_LABELS[row.state]}
               </Badge>
-              {row.state === "open" ? null : (
-                <Badge variant="outline" className="ml-2">
-                  {ACCOUNT_STATE_LABELS[row.state]}
-                </Badge>
-              )}
-            </>
-          }
-        />
-        <div className="text-right">
-          <p className="font-medium tabular-nums">
-            {formatCents(row.balanceCents)}
-          </p>
-          <p className="text-muted-foreground text-xs">
-            Last payment {formatDate(row.lastPaymentOn)}
-          </p>
-        </div>
+            )}
+          </>
+        }
+      />
+      <div className="text-right">
+        <p className="font-medium tabular-nums">
+          {formatCents(row.balanceCents)}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          Last payment {formatDate(row.lastPaymentOn)}
+        </p>
       </div>
-      {row.suggestions.map((suggestion) => (
-        <LateFeeSuggestionItem key={suggestion.month} suggestion={suggestion} />
-      ))}
     </li>
+  );
+}
+
+function LateFeesCard({ items }: { items: ComingUp["lateFees"] }) {
+  return (
+    <HomeCard
+      title="Late fees to decide"
+      description="This month's rent was not paid in full by the late fee date. Tenants who have caught up since are listed too."
+    >
+      {items.length === 0 ? (
+        <Empty>No late fees to decide.</Empty>
+      ) : (
+        <LateFeeSuggestionList items={items} />
+      )}
+    </HomeCard>
   );
 }
 
@@ -198,7 +210,14 @@ function ToSortCard({ count }: { count: number }) {
   );
 }
 
-function RentChangesCard({ items }: { items: RentChange[] }) {
+function RentChangesCard({
+  items,
+  timeZone,
+}: {
+  items: RentChange[];
+  timeZone: string;
+}) {
+  const notifiedFormat = notifiedDateFormat(timeZone);
   return (
     <HomeCard
       title="Rent changes"
@@ -209,7 +228,11 @@ function RentChangesCard({ items }: { items: RentChange[] }) {
       ) : (
         <ul className="divide-y">
           {items.map((item) => (
-            <RentChangeItem key={item.stepId} item={item} />
+            <RentChangeItem
+              key={item.stepId}
+              item={item}
+              notifiedFormat={notifiedFormat}
+            />
           ))}
         </ul>
       )}
@@ -217,17 +240,31 @@ function RentChangesCard({ items }: { items: RentChange[] }) {
   );
 }
 
-function RentChangeItem({ item }: { item: RentChange }) {
+function RentChangeItem({
+  item,
+  notifiedFormat,
+}: {
+  item: RentChange;
+  notifiedFormat: Intl.DateTimeFormat;
+}) {
   const trpc = useTRPC();
   const accountUpdated = useAccountUpdated(item.accountId);
+  const accountUpdateFailed = useAccountUpdateFailed(item.accountId);
   const setNotified = useMutation(
     trpc.lease.setRentStepNotified.mutationOptions({
       onSuccess: async (detail) => {
         await accountUpdated(detail);
       },
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
+  const accountPending =
+    useIsMutating({
+      mutationKey: trpc.lease.setRentStepNotified.mutationKey(),
+      predicate: (mutation) =>
+        (mutation.state.variables as { accountId?: string } | undefined)
+          ?.accountId === item.accountId,
+    }) > 0;
   const switchId = `notified-${item.stepId}`;
 
   return (
@@ -254,7 +291,7 @@ function RentChangeItem({ item }: { item: RentChange }) {
         <Switch
           id={switchId}
           checked={item.tenantNotifiedAt !== null}
-          disabled={setNotified.isPending}
+          disabled={accountPending}
           onCheckedChange={(checked) =>
             setNotified.mutate({
               accountId: item.accountId,

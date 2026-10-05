@@ -16,6 +16,15 @@ export function formatDate(date: IsoDate | null | undefined): string {
   return dateFormat.format(new Date(Date.UTC(year, month - 1, day)));
 }
 
+export function notifiedDateFormat(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone,
+  });
+}
+
 export function centsToInput(cents: number): string {
   const abs = Math.abs(cents);
   const dollars = Math.floor(abs / 100);

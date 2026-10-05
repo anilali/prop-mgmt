@@ -19,7 +19,10 @@ import { Label } from "@moonship/ui/label";
 import { useTRPC } from "~/trpc/react";
 import { centsToInput } from "../../_lib/format";
 import { parseSignedAmount } from "../../_lib/lease-form";
-import { useAccountUpdated } from "./use-account-updated";
+import {
+  useAccountUpdated,
+  useAccountUpdateFailed,
+} from "./use-account-updated";
 
 export function OpeningBalanceDialog({
   accountId,
@@ -67,6 +70,7 @@ function OpeningBalanceForm({
 }) {
   const trpc = useTRPC();
   const accountUpdated = useAccountUpdated(accountId);
+  const accountUpdateFailed = useAccountUpdateFailed(accountId);
   const [amount, setAmount] = useState(centsToInput(openingBalanceCents));
   const [expectedVersion] = useState(version);
 
@@ -77,7 +81,7 @@ function OpeningBalanceForm({
         toast.success("Opening balance saved");
         onDone();
       },
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
 
