@@ -176,6 +176,7 @@ describe("6.1 Super Lucky, full year", () => {
   it("sets new estimates and rent from January 1 with the insurance request", () => {
     expect(statement.continuing).toEqual({
       leaseId: "lease-super-lucky",
+      leaseStartDate: "2023-01-01",
       effectiveDate: "2025-01-01",
       baseRentCents: 250_000,
       newEstimates: [
@@ -184,23 +185,34 @@ describe("6.1 Super Lucky, full year", () => {
           name: "CAM",
           letterName: "CAM",
           amountCents: 28_724,
+          carriedOver: false,
         },
         {
           poolId: POOLS.taxes,
           name: "Taxes",
           letterName: "tax",
           amountCents: 74_738,
+          carriedOver: false,
         },
         {
           poolId: POOLS.insurance,
           name: "Insurance",
           letterName: "insurance",
           amountCents: 14_002,
+          carriedOver: false,
         },
       ],
       newMonthlyRentCents: 367_464,
       insuranceExpiresOn: "2024-11-30",
       insuranceRequest: true,
+      leaseOnJanuary1: {
+        estimates: [
+          { poolId: POOLS.cam, name: "CAM", amountCents: 26_861 },
+          { poolId: POOLS.taxes, name: "Taxes", amountCents: 77_761 },
+          { poolId: POOLS.insurance, name: "Insurance", amountCents: 10_860 },
+        ],
+        monthlyRentCents: 365_482,
+      },
     });
   });
 
@@ -645,6 +657,7 @@ describe("checklist (5.10)", () => {
     expect(result.checklist).toEqual([]);
     expect(result.gates).toEqual({
       draft: true,
+      previousYearFinalized: true,
       letterDateAfterYearEnd: true,
       todayAfterYearEnd: true,
     });
@@ -860,6 +873,35 @@ describe("checklist (5.10)", () => {
     });
     expect(finalized.gates.draft).toBe(false);
     expect(finalized.canFinalize).toBe(false);
+  });
+
+  it("needs the previous year finalized unless the year is the first one", () => {
+    const record = reconciliationInput().record;
+    if (!record) throw new Error("missing record");
+    const nextYear = {
+      year: 2025,
+      today: "2026-01-08",
+      record: {
+        ...record,
+        id: "year-2025",
+        year: 2025,
+        letterDate: "2026-01-02",
+      },
+    };
+    const waiting = workspace(nextYear);
+    expect(waiting.gates.previousYearFinalized).toBe(false);
+    expect(waiting.canFinalize).toBe(false);
+    expect(finalizeBlockers(waiting)).toContain("Finalize 2024 first.");
+
+    const ready = workspace({ ...nextYear, finalizedYears: [2024] });
+    expect(ready.gates.previousYearFinalized).toBe(true);
+    expect(finalizeBlockers(ready)).not.toContain("Finalize 2024 first.");
+
+    const firstYear = workspace({
+      ...nextYear,
+      trackingStart: "2024-04-01",
+    });
+    expect(firstYear.gates.previousYearFinalized).toBe(true);
   });
 
   it("keeps all section 6 accounts in ACCOUNTS", () => {
@@ -1121,6 +1163,164 @@ describe("finalize plan (5.11)", () => {
     ]);
   });
 
+  function renewalFromJanuary1(estimateSteps: LeaseTerms["estimateSteps"]) {
+    const b2 = tenantB.leases[1];
+    if (!b2) throw new Error("missing lease");
+    return {
+      ...tenantB,
+      leases: [
+        ...tenantB.leases.slice(0, 1),
+        { ...b2, endDate: "2024-12-31" },
+        {
+          ...b2,
+          leaseId: "lease-b3",
+          startDate: "2025-01-01",
+          endDate: "2027-12-31",
+          rentSteps: [
+            {
+              id: "b3-rent",
+              startsOn: "2025-01-01",
+              amountCents: 330_000,
+              tenantNotifiedAt: null,
+            },
+          ],
+          estimateSteps,
+        },
+      ],
+    };
+  }
+
+  it("carries every pool paid in December onto a January 1 renewal entered with no estimates", () => {
+    const accounts = [renewalFromJanuary1([])];
+    const result = workspace({ accounts });
+    expect(result.canFinalize).toBe(true);
+    expect(
+      result.checklist.map((item) => [item.severity, item.code, item.message]),
+    ).toEqual([
+      [
+        "warning",
+        "estimate_carried_over",
+        "Tenant B Inc's lease from January 1, 2025 has no CAM estimate; finalize will add $229.79.",
+      ],
+      [
+        "warning",
+        "estimate_carried_over",
+        "Tenant B Inc's lease from January 1, 2025 has no Taxes estimate; finalize will add $597.90.",
+      ],
+      [
+        "warning",
+        "estimate_carried_over",
+        "Tenant B Inc's lease from January 1, 2025 has no Insurance estimate; finalize will add $112.01.",
+      ],
+      [
+        "warning",
+        "estimate_carried_over",
+        "Tenant B Inc's lease from January 1, 2025 has no Water estimate; finalize will add $72.00.",
+      ],
+    ]);
+
+    const plan = planFor({ accounts });
+    expect(
+      plan.statements[0]?.estimateSteps.map((step) => [
+        step.leaseId,
+        step.poolId,
+        step.startsOn,
+        step.amountCents,
+      ]),
+    ).toEqual([
+      ["lease-b3", POOLS.cam, "2025-01-01", 22_979],
+      ["lease-b3", POOLS.taxes, "2025-01-01", 59_790],
+      ["lease-b3", POOLS.insurance, "2025-01-01", 11_201],
+      ["lease-b3", POOLS.water, "2025-01-01", 7_200],
+    ]);
+    expect(plan.statements[0]?.data.continuing).toMatchObject({
+      baseRentCents: 330_000,
+      newMonthlyRentCents: 431_170,
+    });
+    expect(
+      plan.statements[0]?.data.continuing?.newEstimates.map((e) => e.name),
+    ).toEqual(["CAM", "Taxes", "Insurance", "Water"]);
+  });
+
+  it("carries only the pools a January 1 renewal leaves out", () => {
+    const accounts = [
+      renewalFromJanuary1([
+        {
+          id: "b3-cam",
+          poolId: POOLS.cam,
+          startsOn: "2025-01-01",
+          amountCents: 23_500,
+        },
+      ]),
+    ];
+    const statement = workspace({ accounts }).statements[0];
+    expect(
+      statement?.continuing?.newEstimates.map((e) => [e.name, e.carriedOver]),
+    ).toEqual([
+      ["CAM", false],
+      ["Taxes", true],
+      ["Insurance", true],
+      ["Water", true],
+    ]);
+    expect(planFor({ accounts }).statements[0]?.estimateSteps).toHaveLength(4);
+  });
+
+  it("does not carry a pool whose units no longer include the unit", () => {
+    const accounts = [renewalFromJanuary1([])];
+    const pools = POOL_LIST.map((pool) =>
+      pool.id === POOLS.water
+        ? { ...pool, unitIds: pool.unitIds.filter((id) => id !== "unit-b") }
+        : pool,
+    );
+    const statement = workspace({ accounts, pools }).statements[0];
+    expect(statement?.continuing?.newEstimates.map((e) => e.name)).toEqual([
+      "CAM",
+      "Taxes",
+      "Insurance",
+    ]);
+  });
+
+  it("replaces a January 1 step the owner already typed without adding one", () => {
+    const typed: AccountTerms = {
+      ...superLucky,
+      leases: superLucky.leases.map((lease) => ({
+        ...lease,
+        estimateSteps: [
+          ...lease.estimateSteps,
+          {
+            id: "typed-cam-2025",
+            poolId: POOLS.cam,
+            startsOn: "2025-01-01",
+            amountCents: 30_000,
+          },
+        ],
+      })),
+    };
+    const input = reconciliationInput({ accounts: [typed] });
+    const typedPlan = planFor({ accounts: [typed] });
+    expect(
+      typedPlan.statements[0]?.estimateSteps.map((step) => [
+        step.poolId,
+        step.startsOn,
+        step.amountCents,
+      ]),
+    ).toEqual([
+      [POOLS.cam, "2025-01-01", 28_724],
+      [POOLS.taxes, "2025-01-01", 74_738],
+      [POOLS.insurance, "2025-01-01", 14_002],
+    ]);
+    const after = applyPlan(input, typedPlan).accounts[0]?.leases[0];
+    expect(after?.estimateSteps).toHaveLength(6);
+    expect(
+      after?.estimateSteps
+        .filter((step) => step.poolId === POOLS.cam)
+        .map((step) => [step.startsOn, step.amountCents]),
+    ).toEqual([
+      ["2023-01-01", 26_861],
+      ["2025-01-01", 28_724],
+    ]);
+  });
+
   it("lists every gate and blocker that stops finalize", () => {
     const input = reconciliationInput();
     if (!input.record) throw new Error("missing record");
@@ -1237,7 +1437,7 @@ describe("finalized year: snapshots against current data (5.11)", () => {
     expect(result.filter((c) => c.matches)).toHaveLength(2);
   });
 
-  it("lists pool lines, true-up, new estimates, and new rent when a cost changes", () => {
+  it("lists pool lines and the true-up when a cost changes, keeping the January 1 estimates finalize wrote", () => {
     const result = comparisons({
       transactions: [
         ...TRANSACTIONS,
@@ -1263,9 +1463,93 @@ describe("finalized year: snapshots against current data (5.11)", () => {
       "CAM balance due: $223.52, now $473.52 (+$250.00)",
       "True-up: $237.74, now $487.74 (+$250.00)",
       "Balance on account: $651.48, now $901.48 (+$250.00)",
-      "New CAM estimate: $287.24, now $308.07 (+$20.83)",
-      "New monthly rent: $3,674.64, now $3,695.47 (+$20.83)",
     ]);
+  });
+
+  function editSuperLucky(edit: (lease: LeaseTerms) => LeaseTerms) {
+    return finalizedInput.accounts.map((account) =>
+      account.accountId === superLucky.accountId
+        ? { ...account, leases: account.leases.map(edit) }
+        : account,
+    );
+  }
+
+  function superLuckyMessages(accounts: AccountTerms[]) {
+    const result = comparisons({ accounts }).find(
+      (c) => c.accountId === superLucky.accountId,
+    );
+    expect(result?.matches).toBe(false);
+    return result?.differences.map((d) => d.message);
+  }
+
+  it("flags a lease edit to an estimate step inside the year", () => {
+    const messages = superLuckyMessages(
+      editSuperLucky((lease) => ({
+        ...lease,
+        estimateSteps: [
+          ...lease.estimateSteps,
+          {
+            id: "cam-july",
+            poolId: POOLS.cam,
+            startsOn: "2024-07-01",
+            amountCents: 30_000,
+          },
+        ],
+      })),
+    );
+    expect(messages).toEqual([
+      "CAM estimates billed: $3,223.32, now $3,411.66 (+$188.34)",
+      "CAM balance due: $223.52, now $35.18 (-$188.34)",
+      "True-up: $237.74, now $49.40 (-$188.34)",
+      "Rent balance: $413.74, now $602.08 (+$188.34)",
+    ]);
+  });
+
+  it("flags a base rent change on January 1", () => {
+    const messages = superLuckyMessages(
+      editSuperLucky((lease) => ({
+        ...lease,
+        rentSteps: [
+          ...lease.rentSteps,
+          {
+            id: "rent-2025",
+            startsOn: "2025-01-01",
+            amountCents: 260_000,
+            tenantNotifiedAt: null,
+          },
+        ],
+      })),
+    );
+    expect(messages).toEqual([
+      "New monthly rent: $3,674.64, now $3,774.64 (+$100.00)",
+    ]);
+  });
+
+  it("flags January 1 estimate steps that were removed or never saved", () => {
+    const messages = superLuckyMessages(
+      editSuperLucky((lease) => ({
+        ...lease,
+        estimateSteps: lease.estimateSteps.filter(
+          (step) => step.startsOn !== "2025-01-01",
+        ),
+      })),
+    );
+    expect(messages).toEqual([
+      "New CAM estimate: $287.24, now $268.61 (-$18.63)",
+      "New Taxes estimate: $747.38, now $777.61 (+$30.23)",
+      "New Insurance estimate: $140.02, now $108.60 (-$31.42)",
+      "New monthly rent: $3,674.64, now $3,654.82 (-$19.82)",
+    ]);
+  });
+
+  it("flags a change to the insurance request", () => {
+    const messages = superLuckyMessages(
+      editSuperLucky((lease) => ({
+        ...lease,
+        insuranceExpiresOn: "2025-11-30",
+      })),
+    );
+    expect(messages).toEqual(["Insurance request: yes, now no"]);
   });
 
   it("flags an account whose statement is gone and a statement with no snapshot", () => {

@@ -71,6 +71,7 @@ export interface ReconciliationInput {
   transactions: readonly Txn[];
   entries: readonly LedgerEntry[];
   overrides: readonly PoolBillOverride[];
+  finalizedYears: readonly number[];
 }
 
 export interface PoolCostLine {
@@ -116,16 +117,30 @@ export interface NewEstimate {
   name: string;
   letterName: string;
   amountCents: number | null;
+  carriedOver: boolean;
+}
+
+export interface LeaseEstimate {
+  poolId: string;
+  name: string;
+  amountCents: number;
+}
+
+export interface LeaseOnJanuary1 {
+  estimates: LeaseEstimate[];
+  monthlyRentCents: number;
 }
 
 export interface ContinuingTerms {
   leaseId: string;
+  leaseStartDate: IsoDate;
   effectiveDate: IsoDate;
   baseRentCents: number;
   newEstimates: NewEstimate[];
   newMonthlyRentCents: number | null;
   insuranceExpiresOn: IsoDate | null;
   insuranceRequest: boolean;
+  leaseOnJanuary1: LeaseOnJanuary1;
 }
 
 export interface AccountStatement {
@@ -158,7 +173,8 @@ export type ChecklistCode =
   | "holdover"
   | "bank_data_through"
   | "pool_members_changed"
-  | "unit_sqft_changed";
+  | "unit_sqft_changed"
+  | "estimate_carried_over";
 
 export interface ChecklistItem {
   severity: "blocker" | "warning";
@@ -175,6 +191,7 @@ export interface ChecklistItem {
 
 export interface FinalizeGates {
   draft: boolean;
+  previousYearFinalized: boolean;
   letterDateAfterYearEnd: boolean;
   todayAfterYearEnd: boolean;
 }
@@ -366,21 +383,38 @@ export function accountStatement(input: {
   const jan1 = nextJanuary1(year);
   const nextLease = openOn(account, jan1) ? coveringLease(account, jan1) : null;
   let continuing: ContinuingTerms | null = null;
-  if (nextLease) {
-    const newEstimates: NewEstimate[] = input.pools
-      .filter((pool) => paysOn(nextLease, pool.poolId, jan1))
-      .map((pool) => ({
-        poolId: pool.poolId,
-        name: pool.name,
-        letterName: pool.letterName,
-        amountCents:
-          pool.poolSqft > 0
-            ? prorate(pool.actualCents, [unit.sqft], [pool.poolSqft, 12])
-            : null,
-      }));
+  const lastMonth = months[months.length - 1];
+  if (nextLease && lastMonth) {
+    const newEstimates: NewEstimate[] = input.pools.flatMap((pool) => {
+      const onLease = paysOn(nextLease, pool.poolId, jan1);
+      const carriedOver =
+        !onLease &&
+        paying(lastMonth, pool.poolId) &&
+        pool.unitIds.includes(unit.id);
+      if (!onLease && !carriedOver) return [];
+      return [
+        {
+          poolId: pool.poolId,
+          name: pool.name,
+          letterName: pool.letterName,
+          amountCents:
+            pool.poolSqft > 0
+              ? prorate(pool.actualCents, [unit.sqft], [pool.poolSqft, 12])
+              : null,
+          carriedOver,
+        },
+      ];
+    });
     const baseRentCents = rentOn(nextLease, jan1);
+    const leaseEstimates: LeaseEstimate[] = input.pools.flatMap((pool) => {
+      const amountCents = estimateOn(nextLease, pool.poolId, jan1);
+      return amountCents === null
+        ? []
+        : [{ poolId: pool.poolId, name: pool.name, amountCents }];
+    });
     continuing = {
       leaseId: nextLease.leaseId,
+      leaseStartDate: nextLease.startDate,
       effectiveDate: jan1,
       baseRentCents,
       newEstimates,
@@ -391,6 +425,11 @@ export function accountStatement(input: {
       insuranceRequest:
         nextLease.insuranceExpiresOn === null ||
         nextLease.insuranceExpiresOn < jan1,
+      leaseOnJanuary1: {
+        estimates: leaseEstimates,
+        monthlyRentCents:
+          baseRentCents + sum(leaseEstimates.map((e) => e.amountCents)),
+      },
     };
   }
 
@@ -639,6 +678,25 @@ export function reconciliationChecklist(input: {
   }
 
   for (const statement of input.statements) {
+    const continuing = statement.continuing;
+    if (!continuing) continue;
+    for (const estimate of continuing.newEstimates) {
+      if (!estimate.carriedOver) continue;
+      const amount =
+        estimate.amountCents === null
+          ? "a new estimate"
+          : formatCents(estimate.amountCents);
+      items.push({
+        severity: "warning",
+        code: "estimate_carried_over",
+        poolId: estimate.poolId,
+        accountId: statement.accountId,
+        message: `${statement.businessName}'s lease from ${longDate(continuing.leaseStartDate)} has no ${estimate.name} estimate; finalize will add ${amount}.`,
+      });
+    }
+  }
+
+  for (const statement of input.statements) {
     if (statement.holdover) {
       items.push({
         severity: "warning",
@@ -768,6 +826,9 @@ export function reconciliationWorkspace(
   const letterDate = input.record?.letterDate ?? null;
   const gates: FinalizeGates = {
     draft: status === "draft",
+    previousYearFinalized:
+      year <= firstReconciliationYear(input.trackingStart) ||
+      input.finalizedYears.includes(year - 1),
     letterDateAfterYearEnd: letterDate !== null && letterDate > yearEnd(year),
     todayAfterYearEnd: today > yearEnd(year),
   };
@@ -788,6 +849,7 @@ export function reconciliationWorkspace(
     canFinalize:
       checklist.every((item) => item.severity !== "blocker") &&
       gates.draft &&
+      gates.previousYearFinalized &&
       gates.letterDateAfterYearEnd &&
       gates.todayAfterYearEnd,
   };
@@ -830,6 +892,9 @@ export function finalizeBlockers(workspace: ReconciliationWorkspace): string[] {
   const reasons: string[] = [];
   if (!workspace.gates.draft) {
     reasons.push(`${year} is already finalized.`);
+  }
+  if (!workspace.gates.previousYearFinalized) {
+    reasons.push(`Finalize ${year - 1} first.`);
   }
   if (workspace.letterDate === null) {
     reasons.push("Set the letter date.");
@@ -945,7 +1010,7 @@ export function finalizePlan(input: {
   return { year: workspace.year, letterDate, statements };
 }
 
-export type DifferenceUnit = "cents" | "months";
+export type DifferenceUnit = "cents" | "months" | "yes_no";
 
 export interface SnapshotDifference {
   label: string;
@@ -989,6 +1054,7 @@ interface ComparableStatement {
   balanceOnAccountCents: number | null;
   newEstimates: readonly ComparableEstimate[];
   newMonthlyRentCents: number | null;
+  insuranceRequest: boolean | null;
 }
 
 function comparableSnapshot(data: StatementData): ComparableStatement {
@@ -999,22 +1065,31 @@ function comparableSnapshot(data: StatementData): ComparableStatement {
     balanceOnAccountCents: data.balanceOnAccountCents,
     newEstimates: data.continuing?.newEstimates ?? [],
     newMonthlyRentCents: data.continuing?.newMonthlyRentCents ?? null,
+    insuranceRequest: data.continuing?.insuranceRequest ?? null,
   };
 }
 
 function comparableStatement(statement: AccountStatement): ComparableStatement {
+  const continuing = statement.continuing;
   return {
     rows: statement.rows,
     trueUpCents: statement.trueUpCents,
     priorBalanceCents: statement.priorBalanceCents,
     balanceOnAccountCents: statement.balanceOnAccountCents,
-    newEstimates: statement.continuing?.newEstimates ?? [],
-    newMonthlyRentCents: statement.continuing?.newMonthlyRentCents ?? null,
+    newEstimates: continuing?.leaseOnJanuary1.estimates ?? [],
+    newMonthlyRentCents: continuing?.leaseOnJanuary1.monthlyRentCents ?? null,
+    insuranceRequest: continuing?.insuranceRequest ?? null,
   };
+}
+
+function flag(value: boolean | null): number | null {
+  if (value === null) return null;
+  return value ? 1 : 0;
 }
 
 function formatValue(value: number | null, unit: DifferenceUnit): string {
   if (value === null) return "none";
+  if (unit === "yes_no") return value === 1 ? "yes" : "no";
   return unit === "cents" ? formatCents(value) : String(value);
 }
 
@@ -1030,7 +1105,10 @@ function difference(
   now: number | null,
 ): SnapshotDifference | null {
   if (snapshot === now) return null;
-  const change = snapshot !== null && now !== null ? now - snapshot : null;
+  const change =
+    snapshot !== null && now !== null && unit !== "yes_no"
+      ? now - snapshot
+      : null;
   const changeText = change === null ? "" : ` (${formatChange(change, unit)})`;
   return {
     label,
@@ -1145,6 +1223,12 @@ function statementDifferences(
       "cents",
       before?.newMonthlyRentCents ?? null,
       after?.newMonthlyRentCents ?? null,
+    ),
+    difference(
+      "Insurance request",
+      "yes_no",
+      flag(before?.insuranceRequest ?? null),
+      flag(after?.insuranceRequest ?? null),
     ),
   ].filter((item): item is SnapshotDifference => item !== null);
 }

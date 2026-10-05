@@ -347,6 +347,7 @@ export function reconciliationInput(
     transactions: [...TRANSACTIONS, ...EXPENSES],
     entries: [],
     overrides: [],
+    finalizedYears: [],
     ...overrides,
   };
 }

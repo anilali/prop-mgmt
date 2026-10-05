@@ -77,6 +77,10 @@ export interface BillingStore {
   updateLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry | null>;
   deleteLedgerEntry(propertyId: string, id: string): Promise<boolean>;
   lockYear(propertyId: string, year: number): Promise<ReconciliationYear>;
+  lockExistingYear(
+    propertyId: string,
+    year: number,
+  ): Promise<ReconciliationYear | null>;
   saveYear(year: ReconciliationYear): Promise<ReconciliationYear>;
   saveBillOverride(override: PoolBillOverride): Promise<PoolBillOverride>;
   deleteBillOverride(

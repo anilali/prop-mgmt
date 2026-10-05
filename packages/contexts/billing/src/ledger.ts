@@ -64,7 +64,8 @@ export function isInFinalizedYear(
   date: IsoDate,
   finalizedYears: readonly number[],
 ): boolean {
-  return finalizedYears.includes(Number(date.slice(0, 4)));
+  if (finalizedYears.length === 0) return false;
+  return date <= `${Math.max(...finalizedYears)}-12-31`;
 }
 
 export function entryDateFor(

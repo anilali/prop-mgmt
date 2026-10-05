@@ -101,4 +101,15 @@ describe("entryDateFor", () => {
       movedFrom: "2026-12-31",
     });
   });
+
+  it("locks every date on or before December 31 of the latest finalized year", () => {
+    expect(isInFinalizedYear("2024-06-01", [2026])).toBe(true);
+    expect(isInFinalizedYear("2025-12-31", [2025, 2026])).toBe(true);
+    expect(isInFinalizedYear("2027-01-01", [2026])).toBe(false);
+    expect(isInFinalizedYear("2024-06-01", [])).toBe(false);
+    expect(entryDateFor("2025-04-01", "2027-01-12", [2026])).toEqual({
+      entryDate: "2027-01-12",
+      movedFrom: "2025-04-01",
+    });
+  });
 });
