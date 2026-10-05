@@ -39,6 +39,7 @@ describe.skipIf(!databaseUrl)("PGPropertyRepository", () => {
 
   it("saves and loads a property by id", async () => {
     const id = randomUUID();
+    propertyIds.push(id);
     const property = Property.create({
       id,
       name: "Integration Test Property",
