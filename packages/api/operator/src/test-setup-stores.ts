@@ -29,6 +29,8 @@ import { loadRequestAccess } from "./operator-context";
 import { createTRPCRouter } from "./root";
 import { InMemoryAccessStore, seedAccess } from "./test-access-store";
 import {
+  FakeBlobStorage,
+  FakeStatementRenderer,
   InMemoryAccountStore,
   InMemoryBillingStore,
   InMemoryUnitOfWork,
@@ -260,6 +262,7 @@ export function createTestApp(
   const tenants = new InMemoryTenantStore();
   const accounts = new InMemoryAccountStore();
   const billing = new InMemoryBillingStore();
+  const renderer = new FakeStatementRenderer();
   const seeds = seedPropertySetup({
     propertyId: PROPERTY_ID,
     unitIds: [],
@@ -269,12 +272,18 @@ export function createTestApp(
   for (const category of seeds.categories) {
     billing.categories.set(category.id, category);
   }
+  const blob = new FakeBlobStorage();
   const unitOfWork = new InMemoryUnitOfWork(
     {
       billing,
       accountRepository: accounts,
       unitRepository: units,
       propertyRepository: properties,
+      billingQueries: billing,
+      accountQueries: accounts,
+      tenantQueries: tenants,
+      unitQueries: units,
+      propertyQueries: properties,
     },
     [billing, accounts, units, properties],
   );
@@ -293,11 +302,8 @@ export function createTestApp(
     billingStore: billing,
     billingQueries: billing,
     unitOfWork,
-    blobStorage: {
-      putObject: (input) => Promise.resolve({ key: input.key }),
-      getSignedDownloadUrl: (key) => Promise.resolve(`https://blob/${key}`),
-      deleteObject: () => Promise.resolve(),
-    },
+    blobStorage: blob,
+    statementRenderer: renderer,
   });
 
   async function callerFor(
@@ -315,7 +321,17 @@ export function createTestApp(
     return createCallerFactory(appRouter)({ access: requestAccess });
   }
 
-  return { access, properties, units, tenants, accounts, billing, callerFor };
+  return {
+    access,
+    properties,
+    units,
+    tenants,
+    accounts,
+    billing,
+    renderer,
+    blob,
+    callerFor,
+  };
 }
 
 export async function codeOf(promise: Promise<unknown>): Promise<string> {

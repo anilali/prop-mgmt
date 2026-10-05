@@ -277,6 +277,14 @@ export function poolRouter(deps: PoolRouterDeps) {
         ) {
           throw conflict(`Transactions are sorted to ${pool.name}`);
         }
+        const overrides = await deps.billingQueries.listBillOverrides(
+          ctx.propertyId,
+        );
+        if (overrides.some((override) => override.poolId === pool.id)) {
+          throw conflict(
+            `A reconciliation year has a ${pool.name} bill amount`,
+          );
+        }
         await deps.billingStore.deletePool(ctx.propertyId, pool.id);
         return { ok: true as const };
       }),

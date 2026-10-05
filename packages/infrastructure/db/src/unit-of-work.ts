@@ -1,4 +1,9 @@
 import type { DatabaseClient, DbExecutor } from "./client";
+import { PGBillingQueries } from "./queries/billing/billing-queries";
+import { PGAccountQueries } from "./queries/lease-mgmt/account-queries";
+import { PGPropertyQueries } from "./queries/property/property-queries";
+import { PGUnitQueries } from "./queries/property/unit-queries";
+import { PGTenantQueries } from "./queries/tenant-mgmt/tenant-queries";
 import { PGBillingStore } from "./repositories/billing/billing-store";
 import { PGAccountRepository } from "./repositories/lease-mgmt/account-repository";
 import { PGPropertyRepository } from "./repositories/property/property-repository";
@@ -9,6 +14,11 @@ export interface PGTransactionalStores {
   accountRepository: PGAccountRepository;
   unitRepository: PGUnitRepository;
   propertyRepository: PGPropertyRepository;
+  billingQueries: PGBillingQueries;
+  accountQueries: PGAccountQueries;
+  tenantQueries: PGTenantQueries;
+  unitQueries: PGUnitQueries;
+  propertyQueries: PGPropertyQueries;
 }
 
 export interface PGUnitOfWork {
@@ -21,6 +31,11 @@ function storesFor(db: DbExecutor): PGTransactionalStores {
     accountRepository: new PGAccountRepository(db),
     unitRepository: new PGUnitRepository(db),
     propertyRepository: new PGPropertyRepository(db),
+    billingQueries: new PGBillingQueries(db),
+    accountQueries: new PGAccountQueries(db),
+    tenantQueries: new PGTenantQueries(db),
+    unitQueries: new PGUnitQueries(db),
+    propertyQueries: new PGPropertyQueries(db),
   };
 }
 

@@ -9,6 +9,9 @@ import type {
   ImportBatchSummary,
   LedgerEntry,
   Pool,
+  PoolBillOverride,
+  ReconciliationYear,
+  StatementSnapshot,
   Txn,
 } from "@moonship/billing";
 
@@ -25,8 +28,15 @@ import {
 } from "../../repositories/billing/billing-rows";
 import { loadLedgerEntries } from "../../repositories/billing/ledger-rows";
 import {
+  loadBillOverrides,
+  loadReconciliationYears,
+  loadStatementSnapshots,
+} from "../../repositories/billing/reconciliation-rows";
+import {
   accountLedgerEntries,
   bankAccounts,
+  reconciliationStatements,
+  reconciliationYears,
   transactionAllocations,
   transactions,
 } from "../../schemas/billing/schema";
@@ -103,7 +113,18 @@ export class PGBillingQueries implements BillingQueries {
         ),
       )
       .limit(1);
-    return entries.length > 0;
+    if (entries.length > 0) return true;
+    const statements = await this.db
+      .select({ id: reconciliationStatements.id })
+      .from(reconciliationStatements)
+      .where(
+        and(
+          eq(reconciliationStatements.propertyId, propertyId),
+          eq(reconciliationStatements.accountId, accountId),
+        ),
+      )
+      .limit(1);
+    return statements.length > 0;
   }
 
   async getBankAccount(propertyId: string): Promise<BankAccount | null> {
@@ -149,7 +170,28 @@ export class PGBillingQueries implements BillingQueries {
     return entry ?? null;
   }
 
-  listFinalizedYears(_propertyId: string): Promise<number[]> {
-    return Promise.resolve([]);
+  async listFinalizedYears(propertyId: string): Promise<number[]> {
+    const rows = await this.db
+      .select({ year: reconciliationYears.year })
+      .from(reconciliationYears)
+      .where(
+        and(
+          eq(reconciliationYears.propertyId, propertyId),
+          eq(reconciliationYears.status, "finalized"),
+        ),
+      );
+    return rows.map((row) => row.year);
+  }
+
+  listReconciliationYears(propertyId: string): Promise<ReconciliationYear[]> {
+    return loadReconciliationYears(this.db, propertyId);
+  }
+
+  listBillOverrides(propertyId: string): Promise<PoolBillOverride[]> {
+    return loadBillOverrides(this.db, propertyId);
+  }
+
+  listStatementSnapshots(propertyId: string): Promise<StatementSnapshot[]> {
+    return loadStatementSnapshots(this.db, propertyId);
   }
 }

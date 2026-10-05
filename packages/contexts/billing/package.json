@@ -6,6 +6,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./fixtures/2024": {
+      "types": "./dist/fixtures/2024.d.ts",
+      "default": "./src/fixtures/2024.ts"
     }
   },
   "license": "MIT",

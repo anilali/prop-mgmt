@@ -22,7 +22,7 @@
     "lint:ws": "pnpm dlx sherif@latest",
     "postinstall": "pnpm lint:ws",
     "test": "turbo run test",
-    "test:integration": "pnpm -F @moonship/db test:integration",
+    "test:integration": "pnpm -F @moonship/db -F @moonship/api-operator --workspace-concurrency=1 test:integration",
     "typecheck": "turbo run typecheck",
     "ui-add": "turbo run ui-add"
   },

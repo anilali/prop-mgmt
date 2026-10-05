@@ -1,5 +1,7 @@
 import type { IsoDate, YearMonth } from "@moonship/shared";
 
+import type { StatementData } from "./statement-document";
+
 export interface LeaseTerms {
   leaseId: string;
   startDate: IsoDate;
@@ -157,4 +159,41 @@ export interface LedgerEntry {
   note: string | null;
   feeMonth: YearMonth | null;
   reconciliationYearId: string | null;
+}
+
+export const RECONCILIATION_STATUSES = ["draft", "finalized"] as const;
+
+export type ReconciliationStatus = (typeof RECONCILIATION_STATUSES)[number];
+
+export interface ReconciliationYear {
+  id: string;
+  propertyId: string;
+  year: number;
+  status: ReconciliationStatus;
+  letterDate: IsoDate | null;
+  finalizedAt: Date | null;
+}
+
+export interface PoolBillOverride {
+  id: string;
+  propertyId: string;
+  reconciliationYearId: string;
+  year: number;
+  poolId: string;
+  amountCents: number;
+  note: string;
+}
+
+export interface StatementSnapshot {
+  id: string;
+  propertyId: string;
+  reconciliationYearId: string;
+  year: number;
+  accountId: string;
+  tenantId: string;
+  data: StatementData;
+  trueUpCents: number;
+  balanceOnAccountCents: number;
+  pdfStorageKey: string;
+  createdAt: Date;
 }
