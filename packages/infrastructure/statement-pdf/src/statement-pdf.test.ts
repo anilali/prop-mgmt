@@ -161,6 +161,7 @@ describe("ReactPdfStatementRenderer", () => {
       "is a credit of",
       "$834.54",
       "CAM, tax, insurance, and water",
+      "Per your lease, your base rent will increase from $3,150.00 to $3,244.50 effective June 1, 2025, making your total monthly rent $4,256.20.",
       "$4,161.70",
       "WATER SERVICE AREA:",
       "4,350",

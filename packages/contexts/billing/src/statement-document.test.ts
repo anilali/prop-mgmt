@@ -133,11 +133,15 @@ describe("letter for 6.3 (credit true-up and credit balance)", () => {
       expect.stringContaining("2024 expense reconciliation"),
       "Based upon the reconciliation, the balance of your pro rata share of the 2024 expenses for the center results in a credit of $1,084.54, which has been applied to your account.",
       "The monthly charges for CAM, tax, insurance, and water for the year 2025 will change to reflect the 2024 actual expense. Effective January 1, 2025, the monthly rent will be changed to $4,161.70.",
+      "Per your lease, your base rent will increase from $3,150.00 to $3,244.50 effective June 1, 2025, making your total monthly rent $4,256.20.",
       "The current balance on your account is a credit of $834.54. If you have any questions, please call me at (555)\u00a0010-2000.",
     ]);
     expect(boldRuns(letter.paragraphs)).toEqual([
       "$1,084.54",
       "$4,161.70",
+      "$3,150.00",
+      "$3,244.50",
+      "June 1, 2025",
       "$834.54",
     ]);
   });
@@ -432,6 +436,55 @@ describe("statement for 6.2 and 6.3", () => {
     expect(doc.rentBlock.lines.at(-3)?.value).toBe("$4,161.70");
     expect(doc.rentBlock.lines.at(-2)?.value).toBe("$250.00");
     expect(doc.rentBlock.lines.at(-1)?.value).toBe("($834.54)");
+  });
+});
+
+describe("letter with base rent steps in the next year", () => {
+  it("has no increase paragraph without a step", () => {
+    const paragraphs = letterDocument(lucky).paragraphs.map(text);
+    expect(paragraphs.some((p) => p.includes("Per your lease"))).toBe(false);
+  });
+
+  it("has no increase paragraph for a tenant who moved out", () => {
+    const paragraphs = letterDocument(movedOut).paragraphs.map(text);
+    expect(paragraphs.some((p) => p.includes("Per your lease"))).toBe(false);
+  });
+
+  it("puts one sentence per step right after the new monthly rent", () => {
+    const continuing = lucky.continuing;
+    if (!continuing) throw new Error("Super Lucky should be continuing");
+    const letter = letterDocument({
+      ...lucky,
+      continuing: {
+        ...continuing,
+        rentIncreases: [
+          {
+            effectiveOn: "2025-04-01",
+            fromCents: 250_000,
+            toCents: 255_000,
+            newMonthlyRentCents: 372_464,
+          },
+          {
+            effectiveOn: "2025-10-01",
+            fromCents: 255_000,
+            toCents: 252_000,
+            newMonthlyRentCents: 369_464,
+          },
+        ],
+      },
+    });
+    expect(text(letter.paragraphs[3])).toBe(
+      "Per your lease, your base rent will increase from $2,500.00 to $2,550.00 effective April 1, 2025, making your total monthly rent $3,724.64. Per your lease, your base rent will decrease from $2,550.00 to $2,520.00 effective October 1, 2025, making your total monthly rent $3,694.64.",
+    );
+    expect(boldRuns([letter.paragraphs[3] ?? []])).toEqual([
+      "$2,500.00",
+      "$2,550.00",
+      "April 1, 2025",
+      "$2,550.00",
+      "$2,520.00",
+      "October 1, 2025",
+    ]);
+    expect(text(letter.paragraphs[4])).toContain("We don't have a copy");
   });
 });
 

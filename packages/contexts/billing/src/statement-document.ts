@@ -13,6 +13,13 @@ export interface StatementRowData {
   balanceCents: number;
 }
 
+export interface RentIncrease {
+  effectiveOn: IsoDate;
+  fromCents: number;
+  toCents: number;
+  newMonthlyRentCents: number;
+}
+
 export interface StatementData {
   year: number;
   letterDate: IsoDate;
@@ -44,6 +51,7 @@ export interface StatementData {
       amountCents: number;
     }[];
     newMonthlyRentCents: number;
+    rentIncreases?: RentIncrease[];
     insuranceRequest: boolean;
   } | null;
 }
@@ -251,6 +259,24 @@ export function letterDocument(data: StatementData): LetterDocument {
       bold(formatCents(data.continuing.newMonthlyRentCents)),
       plain("."),
     ]);
+    const increases = data.continuing.rentIncreases ?? [];
+    if (increases.length > 0) {
+      paragraphs.push(
+        increases.flatMap((increase, index) => [
+          plain(
+            `${index === 0 ? "" : " "}Per your lease, your base rent will ${increase.toCents > increase.fromCents ? "increase" : "decrease"} from `,
+          ),
+          bold(formatCents(increase.fromCents)),
+          plain(" to "),
+          bold(formatCents(increase.toCents)),
+          plain(" effective "),
+          bold(longDate(increase.effectiveOn)),
+          plain(
+            `, making your total monthly rent ${formatCents(increase.newMonthlyRentCents)}.`,
+          ),
+        ]),
+      );
+    }
     if (data.continuing.insuranceRequest) {
       paragraphs.push([
         plain(

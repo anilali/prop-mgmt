@@ -1,12 +1,13 @@
 import type { Address, IsoDate, YearMonth } from "@moonship/shared";
-import { formatCents, monthOf, prorate } from "@moonship/shared";
+import { addDays, formatCents, monthOf, prorate } from "@moonship/shared";
 
 import type { AccountLedger } from "./balance";
 import type { FixedChargeAmount } from "./lease-calendar";
-import type { StatementData } from "./statement-document";
+import type { RentIncrease, StatementData } from "./statement-document";
 import type {
   AccountTerms,
   Category,
+  LeaseTerms,
   LedgerEntry,
   Pool,
   PoolBillOverride,
@@ -131,6 +132,7 @@ export interface LeaseEstimate {
 export interface LeaseOnJanuary1 {
   estimates: LeaseEstimate[];
   monthlyRentCents: number;
+  rentIncreases: RentIncrease[];
 }
 
 export interface ContinuingTerms {
@@ -141,6 +143,7 @@ export interface ContinuingTerms {
   fixedCharges: FixedChargeAmount[];
   newEstimates: NewEstimate[];
   newMonthlyRentCents: number | null;
+  rentIncreases: RentIncrease[] | null;
   insuranceExpiresOn: IsoDate | null;
   insuranceRequest: boolean;
   leaseOnJanuary1: LeaseOnJanuary1;
@@ -324,6 +327,33 @@ const EMPTY_ADDRESS: Address = {
   country: "",
 };
 
+function rentIncreases(
+  lease: LeaseTerms,
+  year: number,
+  estimatesOn: (date: IsoDate) => number,
+): RentIncrease[] {
+  const jan1 = nextJanuary1(year);
+  const yearEndNext = yearEnd(year + 1);
+  return lease.rentSteps
+    .filter((step) => step.startsOn > jan1 && step.startsOn <= yearEndNext)
+    .sort((a, b) => (a.startsOn < b.startsOn ? -1 : 1))
+    .flatMap((step) => {
+      const fromCents = rentOn(lease, addDays(step.startsOn, -1));
+      if (fromCents === step.amountCents) return [];
+      return [
+        {
+          effectiveOn: step.startsOn,
+          fromCents,
+          toCents: step.amountCents,
+          newMonthlyRentCents:
+            step.amountCents +
+            estimatesOn(step.startsOn) +
+            sum(fixedChargesOn(lease, step.startsOn).map((c) => c.amountCents)),
+        },
+      ];
+    });
+}
+
 export function accountStatement(input: {
   year: number;
   today: IsoDate;
@@ -426,6 +456,10 @@ export function accountStatement(input: {
         ? []
         : [{ poolId: pool.poolId, name: pool.name, amountCents }];
     });
+    const newEstimatesComplete = newEstimates.every(
+      (e) => e.amountCents !== null,
+    );
+    const newEstimatesCents = sum(newEstimates.map((e) => e.amountCents ?? 0));
     continuing = {
       leaseId: nextLease.leaseId,
       leaseStartDate: nextLease.startDate,
@@ -433,10 +467,11 @@ export function accountStatement(input: {
       baseRentCents,
       fixedCharges,
       newEstimates,
-      newMonthlyRentCents: newEstimates.every((e) => e.amountCents !== null)
-        ? baseRentCents +
-          fixedCents +
-          sum(newEstimates.map((e) => e.amountCents ?? 0))
+      newMonthlyRentCents: newEstimatesComplete
+        ? baseRentCents + fixedCents + newEstimatesCents
+        : null,
+      rentIncreases: newEstimatesComplete
+        ? rentIncreases(nextLease, year, () => newEstimatesCents)
         : null,
       insuranceExpiresOn: nextLease.insuranceExpiresOn,
       insuranceRequest:
@@ -448,6 +483,13 @@ export function accountStatement(input: {
           baseRentCents +
           fixedCents +
           sum(leaseEstimates.map((e) => e.amountCents)),
+        rentIncreases: rentIncreases(nextLease, year, (date) =>
+          sum(
+            input.pools.map(
+              (pool) => estimateOn(nextLease, pool.poolId, date) ?? 0,
+            ),
+          ),
+        ),
       },
     };
   }
@@ -509,7 +551,8 @@ export function statementData(input: {
   let continuing: StatementData["continuing"] = null;
   if (statement.continuing) {
     const newMonthlyRentCents = statement.continuing.newMonthlyRentCents;
-    if (newMonthlyRentCents === null) return null;
+    const increases = statement.continuing.rentIncreases;
+    if (newMonthlyRentCents === null || increases === null) return null;
     continuing = {
       effectiveDate: statement.continuing.effectiveDate,
       baseRentCents: statement.continuing.baseRentCents,
@@ -523,6 +566,7 @@ export function statementData(input: {
         amountCents: estimate.amountCents ?? 0,
       })),
       newMonthlyRentCents,
+      rentIncreases: increases.map((increase) => ({ ...increase })),
       insuranceRequest: statement.continuing.insuranceRequest,
     };
   }
@@ -1073,6 +1117,7 @@ interface ComparableEstimate {
 }
 
 interface ComparableStatement {
+  rentIncreases: readonly RentIncrease[];
   rows: readonly ComparableRow[];
   trueUpCents: number | null;
   priorBalanceCents: number;
@@ -1090,6 +1135,7 @@ function comparableSnapshot(data: StatementData): ComparableStatement {
     balanceOnAccountCents: data.balanceOnAccountCents,
     newEstimates: data.continuing?.newEstimates ?? [],
     newMonthlyRentCents: data.continuing?.newMonthlyRentCents ?? null,
+    rentIncreases: data.continuing?.rentIncreases ?? [],
     insuranceRequest: data.continuing?.insuranceRequest ?? null,
   };
 }
@@ -1103,6 +1149,7 @@ function comparableStatement(statement: AccountStatement): ComparableStatement {
     balanceOnAccountCents: statement.balanceOnAccountCents,
     newEstimates: continuing?.leaseOnJanuary1.estimates ?? [],
     newMonthlyRentCents: continuing?.leaseOnJanuary1.monthlyRentCents ?? null,
+    rentIncreases: continuing?.leaseOnJanuary1.rentIncreases ?? [],
     insuranceRequest: continuing?.insuranceRequest ?? null,
   };
 }
@@ -1215,6 +1262,33 @@ function estimateDifferences(
   });
 }
 
+function rentIncreaseDifferences(
+  before: readonly RentIncrease[],
+  after: readonly RentIncrease[],
+): (SnapshotDifference | null)[] {
+  const dates = [
+    ...new Set([...before, ...after].map((increase) => increase.effectiveOn)),
+  ].sort();
+  return dates.flatMap((date) => {
+    const old = before.find((increase) => increase.effectiveOn === date);
+    const now = after.find((increase) => increase.effectiveOn === date);
+    return [
+      difference(
+        `Base rent from ${longDate(date)}`,
+        "cents",
+        old?.toCents ?? null,
+        now?.toCents ?? null,
+      ),
+      difference(
+        `Monthly rent from ${longDate(date)}`,
+        "cents",
+        old?.newMonthlyRentCents ?? null,
+        now?.newMonthlyRentCents ?? null,
+      ),
+    ];
+  });
+}
+
 function statementDifferences(
   before: ComparableStatement | null,
   after: ComparableStatement | null,
@@ -1248,6 +1322,10 @@ function statementDifferences(
       "cents",
       before?.newMonthlyRentCents ?? null,
       after?.newMonthlyRentCents ?? null,
+    ),
+    ...rentIncreaseDifferences(
+      before?.rentIncreases ?? [],
+      after?.rentIncreases ?? [],
     ),
     difference(
       "Insurance request",

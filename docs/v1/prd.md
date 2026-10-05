@@ -226,7 +226,7 @@ The Reconciliation page lists each year. Opening a year shows:
 
 Each account gets one PDF with a letter and a statement, following the owner's current versions.
 
-The letter has the letter date, the tenant's mailing address, the year and unit address, the true-up, the new monthly rent from January 1, the balance on account, and the owner's signature details. If no insurance certificate on file covers January 1 of the next year, it asks the tenant to send one. The paragraph about the new rent names the pools it covers, such as "CAM, tax, insurance, and water". It is the only place the letter names pools. A tenant who isn't continuing into the next year, such as one who moved out, gets the letter without that paragraph, the revised rent block, or the insurance request.
+The letter has the letter date, the tenant's mailing address, the year and unit address, the true-up, the new monthly rent from January 1, the balance on account, and the owner's signature details. If no insurance certificate on file covers January 1 of the next year, it asks the tenant to send one. The paragraph about the new rent names the pools it covers, such as "CAM, tax, insurance, and water". It is the only place the letter names pools. When the lease has a base rent step later in the next year, the letter adds one sentence per step with the old and new base rent, the date, and the new total monthly rent. A tenant who isn't continuing into the next year, such as one who moved out, gets the letter without that paragraph, the revised rent block, or the insurance request.
 
 The owner sets the letter date on the year, and it must be in the next year. No date is saved until the owner sets one. The field suggests January 1 of the next year.
 

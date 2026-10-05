@@ -1147,6 +1147,7 @@ export interface StatementData {
     fixedCharges: { name: string; amountCents: number }[];
     newEstimates: { poolId: string; name: string; letterName: string; amountCents: number }[];
     newMonthlyRentCents: number;
+    rentIncreases?: { effectiveOn: IsoDate; fromCents: number; toCents: number; newMonthlyRentCents: number }[];
     insuranceRequest: boolean;
   } | null;
 }
@@ -1165,7 +1166,7 @@ US Letter, built-in Helvetica, 11 pt. One PDF per account: page 1 is the letter,
 3. `Re:` block: "{year} Expense Reconciliation", business name, unit street with suite, unit city, state, zip.
 4. P1: "In accordance with the lease for the above-referenced location, enclosed for your review and reimbursement is the {year} expense reconciliation. Copies of tax and insurance receipts are also enclosed."
 5. P2, true-up 0 or more: "Based upon the reconciliation, the balance of your pro rata share of the {year} expenses for the center totals **{true-up}**." True-up below 0: "Based upon the reconciliation, the balance of your pro rata share of the {year} expenses for the center results in a credit of **{absolute true-up}**, which has been applied to your account."
-6. P3, continuing accounts only: "The monthly charges for {letter names} for the year {year+1} will change to reflect the {year} actual expense. Effective January 1, {year+1}, the monthly rent will be changed to **{new monthly rent}**." Letter names are the `letter_name` of each pool in `continuingPools` (5.9), including pools carried over from December, joined as "CAM", "CAM and tax", or "CAM, tax, and insurance". P3 is the only place the letter names pools. When `continuingPools` is empty, P3 is only the "Effective January 1" sentence.
+6. P3, continuing accounts only: "The monthly charges for {letter names} for the year {year+1} will change to reflect the {year} actual expense. Effective January 1, {year+1}, the monthly rent will be changed to **{new monthly rent}**." Letter names are the `letter_name` of each pool in `continuingPools` (5.9), including pools carried over from December, joined as "CAM", "CAM and tax", or "CAM, tax, and insurance". P3 is the only place the letter names pools. When `continuingPools` is empty, P3 is only the "Effective January 1" sentence. After P3, each base rent step on `J` dated after January 1 and through December 31 of {year+1} adds one sentence, stored in `continuing.rentIncreases` and compared after finalize: "Per your lease, your base rent will increase from **{old base}** to **{new base}** effective **{date}**, making your total monthly rent {new base + new estimates + fixed charges on that date}."
 7. P4, only when `insuranceRequest`: "We don't have a copy of your insurance on file for the year {year+1}. Could you please send us a copy at your earliest convenience. The copy can be emailed to {owner email}."
 8. P5: "The current balance on your account is **{balance on account}**. If you have any questions, please call me at {owner phone}." The phone uses non-breaking spaces so it stays on one line. When negative: "is a credit of **{absolute amount}**".
 9. "Sincerely," then owner name, title, company.

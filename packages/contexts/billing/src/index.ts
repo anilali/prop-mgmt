@@ -242,6 +242,7 @@ export {
 export type {
   LetterDocument,
   Paragraph,
+  RentIncrease,
   StatementArea,
   StatementCostLine,
   StatementData,

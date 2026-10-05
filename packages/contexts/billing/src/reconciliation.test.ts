@@ -204,6 +204,7 @@ describe("6.1 Super Lucky, full year", () => {
         },
       ],
       newMonthlyRentCents: 367_464,
+      rentIncreases: [],
       insuranceExpiresOn: "2024-11-30",
       insuranceRequest: true,
       leaseOnJanuary1: {
@@ -213,6 +214,7 @@ describe("6.1 Super Lucky, full year", () => {
           { poolId: POOLS.insurance, name: "Insurance", amountCents: 10_860 },
         ],
         monthlyRentCents: 365_482,
+        rentIncreases: [],
       },
     });
   });
@@ -299,6 +301,56 @@ describe("fixed monthly charges", () => {
     expect(statement.priorBalanceCents).toBe(41_374 + 12 * 8_500);
   });
 
+  it("lists a rent step after January 1 with the charges in effect then", () => {
+    const steps: AccountTerms = {
+      ...withCharges,
+      leases: withCharges.leases.map((l) => ({
+        ...l,
+        rentSteps: [
+          ...l.rentSteps,
+          {
+            id: "r2",
+            startsOn: "2025-01-01",
+            amountCents: 251_000,
+            tenantNotifiedAt: null,
+          },
+          {
+            id: "r3",
+            startsOn: "2025-04-01",
+            amountCents: 255_000,
+            tenantNotifiedAt: null,
+          },
+          {
+            id: "r4",
+            startsOn: "2026-01-01",
+            amountCents: 260_000,
+            tenantNotifiedAt: null,
+          },
+        ],
+      })),
+    };
+    const result = statementFor(superLucky.accountId, {
+      accounts: [steps, tenantB, tenantD],
+    });
+    expect(result.continuing?.baseRentCents).toBe(251_000);
+    expect(result.data?.continuing?.rentIncreases).toEqual([
+      {
+        effectiveOn: "2025-04-01",
+        fromCents: 251_000,
+        toCents: 255_000,
+        newMonthlyRentCents: 255_000 + 117_464 + 9_500,
+      },
+    ]);
+    expect(result.continuing?.leaseOnJanuary1.rentIncreases).toEqual([
+      {
+        effectiveOn: "2025-04-01",
+        fromCents: 251_000,
+        toCents: 255_000,
+        newMonthlyRentCents: 255_000 + 115_482 + 9_500,
+      },
+    ]);
+  });
+
   it("adds the charges in effect on January 1 to the new monthly rent", () => {
     expect(statement.continuing?.fixedCharges).toEqual([
       { name: "Sign", amountCents: 3_500 },
@@ -370,6 +422,17 @@ describe("6.3 Tenant B, a renewal on one account, with a credit", () => {
     expect(statement.continuing?.baseRentCents).toBe(315_000);
     expect(statement.continuing?.newMonthlyRentCents).toBe(416_170);
     expect(statement.continuing?.insuranceRequest).toBe(false);
+  });
+
+  it("lists the June 2025 base rent step with the new monthly rent", () => {
+    expect(statement.data?.continuing?.rentIncreases).toEqual([
+      {
+        effectiveOn: "2025-06-01",
+        fromCents: 315_000,
+        toCents: 324_450,
+        newMonthlyRentCents: 416_170 + 9_450,
+      },
+    ]);
   });
 
   it("shows the building and water areas", () => {
@@ -1555,6 +1618,48 @@ describe("finalized year: snapshots against current data (5.11)", () => {
       "CAM balance due: $223.52, now $473.52 (+$250.00)",
       "True-up: $237.74, now $487.74 (+$250.00)",
       "Balance on account: $651.48, now $901.48 (+$250.00)",
+    ]);
+  });
+
+  it("flags a change to a base rent step later in the next year", () => {
+    const accounts = finalizedInput.accounts.map((account) =>
+      account.accountId === tenantB.accountId
+        ? {
+            ...account,
+            leases: account.leases.map((lease) => ({
+              ...lease,
+              rentSteps: lease.rentSteps.map((step) =>
+                step.startsOn === "2025-06-01"
+                  ? { ...step, amountCents: 330_000 }
+                  : step,
+              ),
+            })),
+          }
+        : account,
+    );
+    const result = comparisons({ accounts }).find(
+      (c) => c.accountId === tenantB.accountId,
+    );
+    expect(result?.differences.map((d) => d.message)).toEqual([
+      "Base rent from June 1, 2025: $3,244.50, now $3,300.00 (+$55.50)",
+      "Monthly rent from June 1, 2025: $4,256.20, now $4,311.70 (+$55.50)",
+    ]);
+  });
+
+  it("reads a snapshot saved before rent increases were stored as having none", () => {
+    const snapshots = snapshotsOf(plan).map((snapshot) => {
+      const continuing = snapshot.data.continuing;
+      if (!continuing) return snapshot;
+      const { rentIncreases: _dropped, ...rest } = continuing;
+      return { ...snapshot, data: { ...snapshot.data, continuing: rest } };
+    });
+    const result = compareSnapshots(
+      snapshots,
+      reconciliationWorkspace(finalizedInput).statements,
+    ).find((c) => c.accountId === tenantB.accountId);
+    expect(result?.differences.map((d) => d.message)).toEqual([
+      "Base rent from June 1, 2025: none, now $3,244.50",
+      "Monthly rent from June 1, 2025: none, now $4,256.20",
     ]);
   });
 
