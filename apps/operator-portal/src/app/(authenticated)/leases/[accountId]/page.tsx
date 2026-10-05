@@ -25,6 +25,7 @@ export default async function AccountPage({
     ),
   );
   prefetch(trpc.property.get.queryOptions());
+  prefetch(trpc.document.list.queryOptions({ accountId }));
 
   return (
     <HydrateClient>

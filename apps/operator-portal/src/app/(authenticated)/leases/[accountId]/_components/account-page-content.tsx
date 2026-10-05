@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -36,6 +36,7 @@ import {
 } from "../../_lib/format";
 import { leaseToForm, newestLease, renewalForm } from "../../_lib/lease-form";
 import { useLedgerChanged } from "../../../_lib/use-ledger-changed";
+import { DocumentsSection } from "./documents-section";
 import { LeaseCard } from "./lease-card";
 import { LeaseDialog } from "./lease-dialog";
 import { OpeningBalanceDialog } from "./opening-balance-dialog";
@@ -192,6 +193,20 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
         ))}
       </div>
 
+      <Suspense
+        fallback={
+          <p className="text-muted-foreground rounded-lg border p-4 text-sm">
+            Loading documents...
+          </p>
+        }
+      >
+        <DocumentsSection
+          accountId={accountId}
+          leases={leases}
+          timeZone={property.timeZone}
+        />
+      </Suspense>
+
       <LeaseDialog
         accountId={accountId}
         version={account.version}
@@ -249,7 +264,8 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
             <AlertDialogTitle>Remove this account?</AlertDialogTitle>
             <AlertDialogDescription>
               The account and all its leases will be deleted. An account with
-              payments, balance entries, or statements cannot be removed.
+              payments, balance entries, statements, or documents cannot be
+              removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
