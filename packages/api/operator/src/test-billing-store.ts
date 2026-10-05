@@ -15,6 +15,10 @@ import type {
   LedgerEntry,
   NewBankTransaction,
   Pool,
+  PoolBillOverride,
+  ReconciliationYear,
+  StatementData,
+  StatementRenderer,
   Txn,
 } from "@moonship/billing";
 import type {
@@ -53,6 +57,8 @@ export class InMemoryBillingStore
   transactions = new Map<string, Txn>();
   ledgerEntries = new Map<string, LedgerEntry>();
   finalizedYears: number[] = [];
+  reconciliationYears = new Map<string, ReconciliationYear>();
+  billOverrides = new Map<string, PoolBillOverride>();
 
   listPools(propertyId: string): Promise<Pool[]> {
     return Promise.resolve(
@@ -380,8 +386,97 @@ export class InMemoryBillingStore
     );
   }
 
-  listFinalizedYears(_propertyId: string): Promise<number[]> {
-    return Promise.resolve([...this.finalizedYears]);
+  listFinalizedYears(propertyId: string): Promise<number[]> {
+    const stored = [...this.reconciliationYears.values()]
+      .filter((y) => y.propertyId === propertyId && y.status === "finalized")
+      .map((y) => y.year);
+    return Promise.resolve([...new Set([...this.finalizedYears, ...stored])]);
+  }
+
+  listReconciliationYears(propertyId: string): Promise<ReconciliationYear[]> {
+    return Promise.resolve(
+      [...this.reconciliationYears.values()]
+        .filter((y) => y.propertyId === propertyId)
+        .sort((a, b) => a.year - b.year)
+        .map((y) => structuredClone(y)),
+    );
+  }
+
+  listBillOverrides(propertyId: string): Promise<PoolBillOverride[]> {
+    return Promise.resolve(
+      [...this.billOverrides.values()]
+        .filter((o) => o.propertyId === propertyId)
+        .sort((a, b) => a.year - b.year)
+        .map((o) => structuredClone(o)),
+    );
+  }
+
+  lockYear(propertyId: string, year: number): Promise<ReconciliationYear> {
+    const existing = [...this.reconciliationYears.values()].find(
+      (y) => y.propertyId === propertyId && y.year === year,
+    );
+    const record = existing ?? {
+      id: randomUUID(),
+      propertyId,
+      year,
+      status: "draft" as const,
+      letterDate: null,
+      finalizedAt: null,
+    };
+    this.reconciliationYears.set(record.id, record);
+    return Promise.resolve(structuredClone(record));
+  }
+
+  saveYear(year: ReconciliationYear): Promise<ReconciliationYear> {
+    const existing = this.reconciliationYears.get(year.id);
+    if (existing?.propertyId !== year.propertyId) {
+      return Promise.reject(
+        new Error(`Reconciliation year ${year.year} not found`),
+      );
+    }
+    if (
+      year.status === "finalized" &&
+      (year.finalizedAt === null || year.letterDate === null)
+    ) {
+      return Promise.reject(new Error("A finalized year needs a letter date"));
+    }
+    const saved = { ...existing, ...structuredClone(year) };
+    this.reconciliationYears.set(saved.id, saved);
+    return Promise.resolve(structuredClone(saved));
+  }
+
+  saveBillOverride(override: PoolBillOverride): Promise<PoolBillOverride> {
+    if (override.amountCents < 0 || override.note.trim() === "") {
+      return Promise.reject(new Error("Invalid bill amount"));
+    }
+    const existing = [...this.billOverrides.values()].find(
+      (o) =>
+        o.reconciliationYearId === override.reconciliationYearId &&
+        o.poolId === override.poolId,
+    );
+    const saved = {
+      ...structuredClone(override),
+      id: existing?.id ?? override.id,
+      note: override.note.trim(),
+    };
+    this.billOverrides.set(saved.id, saved);
+    return Promise.resolve(structuredClone(saved));
+  }
+
+  deleteBillOverride(
+    propertyId: string,
+    reconciliationYearId: string,
+    poolId: string,
+  ): Promise<boolean> {
+    const existing = [...this.billOverrides.values()].find(
+      (o) =>
+        o.propertyId === propertyId &&
+        o.reconciliationYearId === reconciliationYearId &&
+        o.poolId === poolId,
+    );
+    if (!existing) return Promise.resolve(false);
+    this.billOverrides.delete(existing.id);
+    return Promise.resolve(true);
   }
 
   insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry> {
@@ -433,7 +528,11 @@ export class InMemoryBillingStore
     const importBatches = structuredClone(this.importBatches);
     const transactions = structuredClone(this.transactions);
     const ledgerEntries = structuredClone(this.ledgerEntries);
+    const reconciliationYears = structuredClone(this.reconciliationYears);
+    const billOverrides = structuredClone(this.billOverrides);
     return () => {
+      this.reconciliationYears = reconciliationYears;
+      this.billOverrides = billOverrides;
       this.pools = pools;
       this.categories = categories;
       this.bankAccounts = bankAccounts;
@@ -498,6 +597,17 @@ export class InMemoryAccountStore
     return () => {
       this.accounts = accounts;
     };
+  }
+}
+
+export class FakeStatementRenderer implements StatementRenderer {
+  rendered: StatementData[] = [];
+
+  render(data: StatementData): Promise<Uint8Array> {
+    this.rendered.push(structuredClone(data));
+    return Promise.resolve(
+      new TextEncoder().encode(`%PDF-fake ${data.tenant.businessName}`),
+    );
   }
 }
 

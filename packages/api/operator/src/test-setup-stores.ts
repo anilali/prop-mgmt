@@ -29,6 +29,7 @@ import { loadRequestAccess } from "./operator-context";
 import { createTRPCRouter } from "./root";
 import { InMemoryAccessStore, seedAccess } from "./test-access-store";
 import {
+  FakeStatementRenderer,
   InMemoryAccountStore,
   InMemoryBillingStore,
   InMemoryUnitOfWork,
@@ -260,6 +261,7 @@ export function createTestApp(
   const tenants = new InMemoryTenantStore();
   const accounts = new InMemoryAccountStore();
   const billing = new InMemoryBillingStore();
+  const renderer = new FakeStatementRenderer();
   const seeds = seedPropertySetup({
     propertyId: PROPERTY_ID,
     unitIds: [],
@@ -298,6 +300,7 @@ export function createTestApp(
       getSignedDownloadUrl: (key) => Promise.resolve(`https://blob/${key}`),
       deleteObject: () => Promise.resolve(),
     },
+    statementRenderer: renderer,
   });
 
   async function callerFor(
@@ -315,7 +318,16 @@ export function createTestApp(
     return createCallerFactory(appRouter)({ access: requestAccess });
   }
 
-  return { access, properties, units, tenants, accounts, billing, callerFor };
+  return {
+    access,
+    properties,
+    units,
+    tenants,
+    accounts,
+    billing,
+    renderer,
+    callerFor,
+  };
 }
 
 export async function codeOf(promise: Promise<unknown>): Promise<string> {

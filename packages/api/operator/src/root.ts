@@ -1,5 +1,9 @@
 import type { AccessQueries, PropertyAccessRepository } from "@moonship/access";
-import type { BillingQueries, BillingStore } from "@moonship/billing";
+import type {
+  BillingQueries,
+  BillingStore,
+  StatementRenderer,
+} from "@moonship/billing";
 import type { BlobStorage } from "@moonship/blob-storage";
 import type { AccountQueries, AccountRepository } from "@moonship/lease-mgmt";
 import type {
@@ -19,6 +23,7 @@ import { categoryRouter } from "./routers/category";
 import { leaseRouter } from "./routers/lease";
 import { poolRouter } from "./routers/pool";
 import { propertyRouter } from "./routers/property";
+import { reconciliationRouter } from "./routers/reconciliation";
 import { rentRouter } from "./routers/rent";
 import { tenantRouter } from "./routers/tenant";
 import { transactionRouter } from "./routers/transaction";
@@ -40,6 +45,7 @@ export interface OperatorRouterDeps {
   billingQueries: BillingQueries;
   unitOfWork: UnitOfWork;
   blobStorage: BlobStorage;
+  statementRenderer: StatementRenderer;
 }
 
 export function createTRPCRouter(deps: OperatorRouterDeps) {
@@ -108,6 +114,15 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
       tenantQueries: deps.tenantQueries,
       unitQueries: deps.unitQueries,
       propertyQueries: deps.propertyQueries,
+    }),
+    reconciliation: reconciliationRouter({
+      billingQueries: deps.billingQueries,
+      accountQueries: deps.accountQueries,
+      tenantQueries: deps.tenantQueries,
+      unitQueries: deps.unitQueries,
+      propertyQueries: deps.propertyQueries,
+      unitOfWork: deps.unitOfWork,
+      statementRenderer: deps.statementRenderer,
     }),
   });
 

@@ -19,6 +19,7 @@ import {
   PGUnitRepository,
 } from "@moonship/db";
 import { InMemoryEventDispatcher } from "@moonship/events";
+import { ReactPdfStatementRenderer } from "@moonship/statement-pdf";
 
 import type { Operator } from "./operator";
 import { loadRequestAccess } from "./operator-context";
@@ -87,6 +88,7 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
       billingQueries,
       unitOfWork,
       blobStorage,
+      statementRenderer: new ReactPdfStatementRenderer(),
     });
 
   return {
