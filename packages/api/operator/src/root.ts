@@ -19,6 +19,7 @@ import { categoryRouter } from "./routers/category";
 import { leaseRouter } from "./routers/lease";
 import { poolRouter } from "./routers/pool";
 import { propertyRouter } from "./routers/property";
+import { rentRouter } from "./routers/rent";
 import { tenantRouter } from "./routers/tenant";
 import { transactionRouter } from "./routers/transaction";
 import { unitRouter } from "./routers/unit";
@@ -99,6 +100,14 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
       accountQueries: deps.accountQueries,
       propertyQueries: deps.propertyQueries,
       unitOfWork: deps.unitOfWork,
+    }),
+    rent: rentRouter({
+      billingStore: deps.billingStore,
+      billingQueries: deps.billingQueries,
+      accountQueries: deps.accountQueries,
+      tenantQueries: deps.tenantQueries,
+      unitQueries: deps.unitQueries,
+      propertyQueries: deps.propertyQueries,
     }),
   });
 

@@ -26,7 +26,7 @@ export interface AccountBalance {
   lastPaymentOn: IsoDate | null;
 }
 
-interface HistoryRowBase {
+export interface HistoryRowBase {
   date: IsoDate;
   amountCents: number;
   balanceCents: number;

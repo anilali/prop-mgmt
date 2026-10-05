@@ -99,6 +99,7 @@ export type {
   AccountLedger,
   AccountPayment,
   HistoryRow,
+  HistoryRowBase,
 } from "./balance";
 export {
   accountBalance,
