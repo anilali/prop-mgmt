@@ -47,3 +47,6 @@ dist/
 # tanstack
 .tanstack
 .neon
+
+# agent worktrees
+.muse/
