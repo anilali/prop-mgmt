@@ -118,9 +118,15 @@ importers:
       '@moonship/api-operator':
         specifier: workspace:*
         version: link:../../packages/api/operator
+      '@moonship/billing':
+        specifier: workspace:*
+        version: link:../../packages/contexts/billing
       '@moonship/db':
         specifier: workspace:*
         version: link:../../packages/infrastructure/db
+      '@moonship/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@moonship/ui':
         specifier: workspace:*
         version: link:../../packages/ui
