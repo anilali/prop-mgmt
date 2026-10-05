@@ -34,7 +34,7 @@ The target is a dry run in mid-November 2026 on January to October data, then fi
 - Sending letters from the app. The owner prints and emails them.
 - Charging late fees automatically.
 - More than one bank account, and transfers between accounts.
-- Storing lease documents, insurance certificate files, or receipts. The owner sends tax and insurance receipts separately from the PDF.
+- Storing insurance certificate files or receipts. The owner sends tax and insurance receipts separately from the PDF.
 - Unit area or pool membership changes during a year, and combining or splitting units. The current values apply to the whole year.
 - Prorating a month a lease covers only part of. Leases almost always start and end on month boundaries.
 - Lease terms like caps, admin fees, or excluded costs. None of the current leases have them.
@@ -98,6 +98,15 @@ An account expects rent every month it's active for at least one day, counting f
 If the newest lease passes its end date with no move-out date, the account keeps expecting that lease's last rent and estimates until the owner adds a renewal or a move-out date.
 
 A tenant moving to another unit gets a new account. The remaining balance moves with an adjustment on each account.
+
+### Lease documents
+
+Each account page has a Documents list for signed leases and other PDFs.
+
+- The owner uploads a PDF of up to 25 MB and can tie it to one of the account's leases.
+- Each document shows its name, upload date, and size. The owner can download it or remove it after confirming.
+- An account with documents can't be deleted until its documents are removed.
+- If file storage isn't set up, the list says so and uploads are turned off.
 
 ## Bank activity
 

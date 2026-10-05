@@ -219,6 +219,8 @@ Add `@moonship/billing` and `@moonship/statement-pdf` to `transpilePackages` in 
 
 `BlobStorage.getSignedDownloadUrl(key, expiresInSeconds?)` becomes `getSignedDownloadUrl(key, options?: { expiresInSeconds?: number; fileName?: string })`. When `fileName` is set, `S3BlobStorage` passes `ResponseContentDisposition: attachment; filename="..."` to `GetObjectCommand`, so the download keeps a readable name. `putObject` already takes `{ key, body, contentType }` and needs no change.
 
+For lease documents (3.3), `BlobStorage` also gets `getSignedUploadUrl(key, { contentType, contentLength?, expiresInSeconds? })`, which returns `{ url, headers }` for a presigned PUT. The signature covers `Content-Type` and `Content-Length`, so the browser must send exactly the declared type and size. A presigned PUT can pin an exact length but not a maximum, so the server also checks the stored object. `headObject(key)` returns `{ sizeBytes, contentType }` or null when the key is missing. `isAvailable()` sends a HeadBucket with a 5 second timeout and returns false on any error.
+
 ## 3. Data model
 
 Conventions for every new table: `id uuid primary key default gen_random_uuid()`, `property_id uuid not null`, `created_at` and `updated_at timestamp not null default now()` unless noted. Every query filters by `property_id`. Foreign keys exist only inside a schema.
@@ -281,6 +283,21 @@ The old `unit_id`, `tenant_id`, `rent_cents`, `deposit_cents`, `status`, and `do
 **`lease_mgmt.lease_estimate_steps`** (new): `id`, `lease_id` (cascade), `pool_id uuid not null`, `starts_on date not null`, `amount_cents integer not null check >= 0`. Unique `(lease_id, pool_id, starts_on)`. A lease pays a pool from its first step for that pool (5.2).
 
 Lease and step tables have no `property_id`; they are always read through their account.
+
+**`lease_mgmt.lease_documents`** (new): uploaded PDFs for an account. It lives in `lease_mgmt` so both links can be real foreign keys.
+
+| Column | Type | Notes |
+|---|---|---|
+| `property_id` | `uuid not null` | Index `(property_id, account_id)`. Every query filters by it. |
+| `account_id` | `uuid not null references accounts on delete cascade` | |
+| `lease_id` | `uuid null references leases on delete set null` | Index. Optional. Removing the lease keeps the document on the account. |
+| `file_name` | `varchar(255) not null` | The name the owner uploaded. Used for the download name. |
+| `content_type` | `varchar(100) not null` | Always `application/pdf`. |
+| `size_bytes` | `integer not null` | Check `> 0`. Up to 25,000,000. |
+| `storage_key` | `text not null` | `documents/{propertyId}/{accountId}/{documentId}.pdf`. |
+| `uploaded_at` | `timestamp not null default now()` | |
+
+A row exists only after the file is in storage. There is no pending status.
 
 ### 3.4 `billing` schema: setup
 
@@ -402,7 +419,7 @@ Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a 
 | `unit.remove` checks for an active lease | Checks for any account on the unit. Also deletes the unit's pool member rows. |
 | `Lease` aggregate and `LeaseRepository` | Replaced by the `Account` aggregate and `AccountRepository` (section 4). |
 | Existing lease rows | Dropped with the old table. The owner enters every account and lease in M1. An earlier migration already cleared tenants and leases, so little or nothing is lost. |
-| Lease document upload (`attachDocument`, `documentDownloadUrl`, `LeaseDocument`, `LeaseDocumentAttached`, `document_*` columns) | Removed. Objects under the `leases/` key prefix stay in the bucket; nothing reads them. `BlobStorage` stays for PDFs. |
+| Lease document upload (`attachDocument`, `documentDownloadUrl`, `LeaseDocument`, `LeaseDocumentAttached`, `document_*` columns) | Removed. Objects under the `leases/` key prefix stay in the bucket; nothing reads them. `BlobStorage` stays for PDFs. Documents come back later in v1 as `lease_documents` (3.3) under the `documents/` prefix. |
 | Lease status lifecycle (`draft`, `active`, `ended`, `activate`, `end`, `LeaseActivated`, `LeaseEnded`, `status` filter) | Removed. State comes from dates (5.1). |
 | One active lease per unit check (`listActiveByUnitId`) | Replaced by the account overlap rule in section 4. |
 | `deposit_cents` | Gone with the old table. Security deposits are bank deposits sorted to the Security deposit category. |
@@ -428,10 +445,11 @@ Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a 
 | 7 | M4 | `billing`: `reconciliation_years`, `pool_bill_overrides`; add the foreign key from `account_ledger_entries.reconciliation_year_id`. |
 | 8 | M5 | `billing`: `reconciliation_statements`. |
 | 9 | v1 | `billing`: add `import_batches.format` and `import_batches.account_last4`. |
+| 10 | v1 | `lease_mgmt`: `lease_documents`. |
 
 ## 4. Account aggregate
 
-`Account` in `lease-mgmt` is the aggregate. It owns its leases, and each lease owns its rent and estimate steps. `PGAccountRepository.save` upserts the account row, upserts its leases, deletes leases that were removed, and deletes and reinserts every lease's steps, all inside `this.db.transaction`. It keeps step ids and `tenant_notified_at`. Nothing outside the aggregate refers to a lease id, so leases can be rewritten freely. Events: `AccountOpened`, `LeaseAdded`, `LeaseUpdated`, `LeaseRemoved`.
+`Account` in `lease-mgmt` is the aggregate. It owns its leases, and each lease owns its rent and estimate steps. `PGAccountRepository.save` upserts the account row, upserts its leases, deletes leases that were removed, and deletes and reinserts every lease's steps, all inside `this.db.transaction`. It keeps step ids and `tenant_notified_at`. Leases keep their ids across saves. Only `lease_documents.lease_id` refers to a lease from outside the aggregate, and it becomes null when the lease is removed. Events: `AccountOpened`, `LeaseAdded`, `LeaseUpdated`, `LeaseRemoved`.
 
 Methods: `open(props, firstLease)` (static), `assertVersion(expected)`, `setOpeningBalance(cents)`, `addLease(terms)`, `updateLease(leaseId, terms)` (dates, move-out, late fee, insurance date, both step lists), `removeLease(leaseId)`, `setEstimateStep(leaseId, poolId, startsOn, amountCents)` (used by finalize; replaces a step on the same date), `markRentStepNotified(leaseId, stepId, at | null)`.
 
@@ -449,7 +467,7 @@ Rules the router checks, because they span aggregates or contexts:
 7. The account's unit and tenant belong to the property; the tenant is active when the account opens. The opening balance is 0 when the account starts after the tracking start date.
 8. Accounts on the same unit do not overlap. Each account covers `[accountStart, accountEnd ?? forever]` (5.1). An account in holdover blocks a new account on that unit until the owner enters a move-out date.
 9. Every pool a lease pays contains the account's unit.
-10. An account can be deleted only when it has no allocation lines, ledger entries, or statement snapshots. A lease can be removed when the account has another lease.
+10. An account can be deleted only when it has no allocation lines, ledger entries, statement snapshots, or lease documents. A lease can be removed when the account has another lease.
 
 Saves use the account's `version`. `save` writes `version + 1` only where the stored version still equals the version the account was loaded with, and throws `StaleAccountError` otherwise. `lease.add`, `lease.update`, `lease.remove`, `lease.setRentStepNotified`, and `account.setOpeningBalance` take the `expectedVersion` the page loaded with `account.get`, and both a mismatch on load and a failed save return CONFLICT "This account changed since you opened it. Reload and try again." Finalize saves new estimate steps through the same check, so a lease page opened before finalize cannot write its old steps back.
 
@@ -994,6 +1012,11 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | | `update` | accountId, expectedVersion, leaseId, `LeaseInput` | account |
 | | `remove` | accountId, expectedVersion, leaseId | account; rule 10 |
 | | `setRentStepNotified` | accountId, expectedVersion, leaseId, stepId, notified | account |
+| `document` | `list` | accountId | `storageReady` and the account's documents, newest first: id, leaseId, fileName, sizeBytes, uploadedAt |
+| | `createUpload` | accountId, leaseId?, fileName, sizeBytes, contentType | `{ documentId, uploadUrl, headers, expiresInSeconds }`, signed for 15 minutes; no row yet |
+| | `confirmUpload` | the `createUpload` input plus documentId | document; checks the stored object, then saves the row |
+| | `downloadUrl` | documentId | `{ url, fileName }`, signed for one hour with the file name in Content-Disposition |
+| | `remove` | documentId | ok; deletes the object, then the row |
 | `bankImport` | `getMapping` | none | `CsvMapping` or null |
 | | `preview` | fileText (max 2 MB), format?, mapping?, headerRow? | `format`. CSV: header row used, headers, first 10 raw rows, mapping. OFX: account last 4, date range, ledger balance, account warning. Both: first 10 parsed rows, counts, not-a-transaction rows, errors |
 | | `commit` | fileText, fileName, format?, mapping (CSV only), headerRow?, skipRows? | batch summary with format and account last 4; rejected if an error row is not in skipRows |
@@ -1026,6 +1049,16 @@ Removed: the old `lease` procedures (`list`, `get`, `create`, `update`, `activat
 
 Writes to a finalized year (`setLetterDate`, bill overrides) are rejected. Transactions and lease data stay editable after finalize; the mismatch flag shows the effect.
 
+**Lease document uploads.** The browser sends the file straight to storage. Vercel limits a function request body to 4.5 MB, and the owner's lease PDFs are 3.4 MB, 3.9 MB, and 7.8 MB, so the file never passes through the app server.
+
+1. `document.createUpload` checks that the account belongs to the property, the lease (if given) is on the account, the type is `application/pdf`, and the size is from 1 byte to 25 MB. It picks a document id and returns a presigned PUT for `documents/{propertyId}/{accountId}/{documentId}.pdf`. The key is built on the server from the property in context.
+2. The browser PUTs the file with the returned headers and shows upload progress.
+3. `document.confirmUpload` runs the same checks, then HEADs the object. A missing object is rejected. An object with the wrong type, a size over the limit, or a size other than the declared one is deleted and rejected. Otherwise it inserts the row.
+
+A file whose confirm never runs stays in storage with no row. Nothing lists it. The bucket must allow a cross-origin PUT with a `Content-Type` header from the portal's origin.
+
+When storage can't be reached, `document.list` still returns the rows with `storageReady: false`, and the other procedures return SERVICE_UNAVAILABLE "File storage isn't set up yet or can't be reached. Try again later." `document.remove` keeps the row when the object can't be deleted, so it can be retried.
+
 ## 8. Pages
 
 ### 8.1 Routes
@@ -1043,7 +1076,7 @@ All routes are under `apps/operator-portal/src/app/(authenticated)` and call `re
 | `/reconciliation/[year]` | Loads only for a year in the list. Letter date (starts at January 1 of the next year and only allows dates in that year), checklist, pool cards (actual, transactions, bill amount form, bill next to payments), statements (table starts closed, or open when a row has a problem; Preview PDF), Finalize. When finalized: snapshots, Download PDF, mismatch flags, January table. |
 | `/tenants` | Tenant list and dialog. |
 | `/leases` | Accounts grouped by unit, each with its state and leases. Open account button. |
-| `/leases/[accountId]` | Account page: tenant, unit, opening balance, its leases in order, Add lease (pre-fills the start as the day after the newest lease ends and copies its steps' current amounts). Each lease opens a form: dates, move-out (newest lease only), base rent steps with Add increase (date plus percent or new amount), per-pool Pays checkbox with estimate steps, late fee, insurance date. |
+| `/leases/[accountId]` | Account page: tenant, unit, opening balance, its leases in order, Add lease (pre-fills the start as the day after the newest lease ends and copies its steps' current amounts). Each lease opens a form: dates, move-out (newest lease only), base rent steps with Add increase (date plus percent or new amount), per-pool Pays checkbox with estimate steps, late fee, insurance date. A Documents section lists name, lease, upload date, and size ("7.8 MB"), with Upload PDF (a lease picker, then a file input that accepts PDFs and shows progress), Download, and Remove with confirmation. When storage is not ready it shows "File storage isn't set up yet" and turns off upload. |
 | `/setup` | Property and letter details, tracking start, time zone; units table and dialog; pools with a share table that updates as units are checked; categories with add, rename, archive. |
 | `/access` | Unchanged. |
 
@@ -1179,6 +1212,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 - `category`: archiving a shared-cost category rejected.
 - `account` and `lease`: a stale `expectedVersion` returns CONFLICT on every account save; overlapping accounts on one unit rejected; overlapping leases on one account rejected; lease after a move-out rejected; pool the unit is not in rejected; non-zero opening balance on an account starting after tracking start rejected; one tenant can hold accounts on two units.
 - `bankImport`: `removeBatch` rejected when a row is sorted, accepted otherwise.
+- `document` (with a fake `BlobStorage` that signs uploads, answers HEAD from its objects, and can be switched off): `createUpload` rejects a non-PDF, an empty file, a file over 25 MB, an unknown account, and a lease from another account, and saves no row; `confirmUpload` rejects a missing object and deletes and rejects one with the wrong size or type; a second confirm is CONFLICT; another property's account and document are NOT_FOUND everywhere; `remove` deletes the object and the row; storage that is off gives SERVICE_UNAVAILABLE and `storageReady: false`; `account.remove` is CONFLICT while the account has documents.
 - `transaction`: `listToSort` returns suggestions and leaves every transaction unsorted; `allocate` rejects lines that do not add up, and a line with both or neither target; a split across two accounts is accepted.
 - `rent`: `status` writes nothing; `approveLateFee` with no current suggestion is rejected; approve posts the covering lease's fee amount; an adjustment dated in a finalized year is saved with today's date; every ledger write locks the entry's reconciliation year.
 - `home`: `comingUp` with a fixed today and one item just inside and just outside each window in 5.12.
@@ -1190,6 +1224,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 |---|---|---|
 | `transactions.integration.test.ts` | M2 | Commit the same CSV twice: second run inserts 0. Overlapping CSV: inserts only new rows. Two equal rows in one day: both stored once. Remove a batch, then commit the same file: rows come back. Commit a QuickBooks file, an overlapping one, and the first again: only new transaction ids are stored, and each batch records its format and the account's last 4 digits. |
 | `allocations.integration.test.ts` | M2 | Replacing lines is atomic; a bad sum leaves the old lines in place; two `allocate` calls for one transaction at the same time end with one set of lines. |
+| `lease-document-store.integration.test.ts` | v1 | Documents round-trip newest first; another property sees none and cannot delete them; an empty file is rejected; removing the tagged lease sets `lease_id` to null; deleting the account deletes its documents. |
 | `account-repository.integration.test.ts` | M1 | Leases and step rows round-trip with ids and `tenant_notified_at`; a removed lease is deleted with its steps; each save bumps `version` and a stale copy throws `StaleAccountError`. |
 | `balance.integration.test.ts` | M3 | Load the 6.3 account through `PGBillingQueries`, compute the balance, and compare it with a plain SQL sum of opening balance, entries, and payments plus the computed months. |
 | `finalize.integration.test.ts` | M5 | Force a failure after the snapshot inserts (a stub account repository that throws): no snapshot, entry, or step rows remain, and the year is still draft. Two finalize calls at once: one CONFLICT, one set of snapshots, uploads only from the winner. The stored snapshot data equals what the renderer received. A lease save from before finalize returns CONFLICT. |
