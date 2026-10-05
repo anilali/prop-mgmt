@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { addDays } from "@moonship/shared";
+
 import type { AccountTerms, LeaseTerms, Txn } from "./types";
 import {
   comingUp,
@@ -131,6 +133,34 @@ describe("rentChanges", () => {
     ).toEqual([["renewing", "2027-01-01", 262_500, 250_000]]);
   });
 
+  it("skips a step that keeps the same rent", () => {
+    const accounts = [
+      account("same", [
+        lease("s1", {
+          startDate: "2024-01-01",
+          endDate: "2027-12-31",
+          steps: [
+            ["2024-01-01", 250_000],
+            ["2026-11-01", 250_000],
+            ["2026-12-01", 260_000],
+          ],
+        }),
+      ]),
+      account("renewal", [
+        lease("r1", { startDate: "2024-01-01", endDate: "2026-10-25" }),
+        lease("r2", { startDate: "2026-10-26", endDate: "2027-12-31" }),
+      ]),
+    ];
+    expect(
+      rentChanges(accounts, TODAY).map((c) => [
+        c.accountId,
+        c.startsOn,
+        c.previousAmountCents,
+        c.amountCents,
+      ]),
+    ).toEqual([["same", "2026-12-01", 250_000, 260_000]]);
+  });
+
   it("skips a step after the move-out date", () => {
     const accounts = [
       account("leaving", [
@@ -150,7 +180,7 @@ describe("rentChanges", () => {
 });
 
 describe("insuranceItems", () => {
-  it("flags missing, past, and expiring certificates on the lease covering today", () => {
+  it("flags missing, past, and expiring certificates, using a renewal that starts in the next 60 days", () => {
     const accounts = [
       account("missing", [
         lease("m1", {
@@ -208,18 +238,63 @@ describe("insuranceItems", () => {
         problem: "expired",
       },
       {
-        accountId: "renewing",
-        leaseId: "r1",
-        insuranceExpiresOn: "2026-10-31",
-        problem: "expiring",
-      },
-      {
         accountId: "edge",
         leaseId: "g1",
         insuranceExpiresOn: "2026-12-04",
         problem: "expiring",
       },
     ]);
+  });
+
+  it("uses the renewal's certificate when it starts in the next 60 days", () => {
+    const renewal = (id: string, startDate: string, expiresOn: string | null) =>
+      account(id, [
+        lease(`${id}1`, {
+          startDate: "2024-01-01",
+          endDate: addDays(startDate, -1),
+          insuranceExpiresOn: "2026-10-20",
+        }),
+        lease(`${id}2`, {
+          startDate,
+          endDate: "2029-12-31",
+          insuranceExpiresOn: expiresOn,
+        }),
+      ]);
+    expect(
+      insuranceItems(
+        [
+          renewal("onFile", "2026-10-26", "2027-10-31"),
+          renewal("missing", "2026-12-04", null),
+          renewal("later", "2026-12-05", "2027-12-31"),
+        ],
+        TODAY,
+      ).map((i) => [i.accountId, i.leaseId, i.problem]),
+    ).toEqual([
+      ["missing", "missing2", "missing"],
+      ["later", "later1", "expiring"],
+    ]);
+  });
+
+  it("skips an account that moves out on or before the expiry date", () => {
+    const leaving = (id: string, moveOutDate: string) =>
+      account(id, [
+        lease(id, {
+          startDate: "2024-01-01",
+          endDate: "2026-12-31",
+          moveOutDate,
+          insuranceExpiresOn: "2026-10-25",
+        }),
+      ]);
+    expect(
+      insuranceItems(
+        [
+          leaving("sameDay", "2026-10-25"),
+          leaving("before", "2026-10-20"),
+          leaving("after", "2026-10-26"),
+        ],
+        TODAY,
+      ).map((i) => [i.accountId, i.problem]),
+    ).toEqual([["after", "expiring"]]);
   });
 
   it("checks accounts opening in the next 60 days and holdover, not closed or later ones", () => {
@@ -294,7 +369,11 @@ describe("leasesEnding and pastEndDate", () => {
     ]),
     account("renewed", [
       lease("g1", { startDate: "2024-01-01", endDate: "2026-12-31" }),
-      lease("g2", { startDate: "2027-01-01", endDate: "2029-12-31" }),
+      lease("g2", {
+        startDate: "2027-01-01",
+        endDate: "2029-12-31",
+        steps: [["2027-01-01", 262_500]],
+      }),
     ]),
   ];
 
