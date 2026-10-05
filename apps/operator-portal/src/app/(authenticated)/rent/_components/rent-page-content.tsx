@@ -23,7 +23,7 @@ import type { RentStatusData } from "../_lib/rent";
 import { useTRPC } from "~/trpc/react";
 import { RENT_STATUS_LABELS, RENT_STATUS_VARIANTS } from "../_lib/rent";
 import { ACCOUNT_STATE_LABELS, formatDate } from "../../leases/_lib/format";
-import { LateFeeSuggestionItem } from "./late-fee-suggestion";
+import { LateFeeSuggestionList } from "./late-fee-suggestion";
 
 export function RentPageContent() {
   const trpc = useTRPC();
@@ -74,22 +74,7 @@ function LateFees({ data }: { data: RentStatusData }) {
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold">Late fees to decide</h2>
-      {rows.flatMap((row) =>
-        row.suggestions.map((suggestion) => (
-          <LateFeeSuggestionItem
-            key={`${row.accountId}-${suggestion.month}`}
-            suggestion={suggestion}
-            title={
-              <Link
-                className="underline-offset-4 hover:underline"
-                href={`/rent/${row.accountId}`}
-              >
-                {row.tenant.businessName}, unit {row.unit.label}
-              </Link>
-            }
-          />
-        )),
-      )}
+      <LateFeeSuggestionList items={rows} />
     </section>
   );
 }

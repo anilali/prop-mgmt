@@ -22,7 +22,10 @@ import type {
 import { useTRPC } from "~/trpc/react";
 import { LeaseFormFields } from "../../_components/lease-form-fields";
 import { toLeaseInput } from "../../_lib/lease-form";
-import { useAccountUpdated } from "./use-account-updated";
+import {
+  useAccountUpdated,
+  useAccountUpdateFailed,
+} from "./use-account-updated";
 
 export type LeaseDialogTarget =
   | { mode: "add"; initial: LeaseFormState }
@@ -83,6 +86,7 @@ function LeaseForm({
 }) {
   const trpc = useTRPC();
   const accountUpdated = useAccountUpdated(accountId);
+  const accountUpdateFailed = useAccountUpdateFailed(accountId);
   const [form, setForm] = useState(target.initial);
   const [expectedVersion] = useState(version);
 
@@ -95,14 +99,14 @@ function LeaseForm({
   const add = useMutation(
     trpc.lease.add.mutationOptions({
       onSuccess: onSuccess("Lease added"),
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
 
   const update = useMutation(
     trpc.lease.update.mutationOptions({
       onSuccess: onSuccess("Lease updated"),
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
 

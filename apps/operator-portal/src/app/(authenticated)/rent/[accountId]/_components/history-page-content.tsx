@@ -2,11 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  useMutation,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,6 +29,7 @@ import {
   RENT_STATUS_LABELS,
   RENT_STATUS_VARIANTS,
 } from "../../_lib/rent";
+import { useLedgerChanged } from "../../../_lib/use-ledger-changed";
 import {
   ACCOUNT_STATE_LABELS,
   ACCOUNT_STATE_VARIANTS,
@@ -165,7 +162,7 @@ function RowDescription({
 
 export function HistoryPageContent({ accountId }: { accountId: string }) {
   const trpc = useTRPC();
-  const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const { data } = useSuspenseQuery(
     trpc.rent.history.queryOptions({ accountId }),
   );
@@ -179,10 +176,7 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
   const removeEntry = useMutation(
     trpc.rent.removeEntry.mutationOptions({
       onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries(trpc.rent.pathFilter()),
-          queryClient.invalidateQueries(trpc.home.pathFilter()),
-        ]);
+        await ledgerChanged();
       },
       onError: (err) => toast.error(err.message),
     }),

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@moonship/ui/button";
@@ -10,6 +10,10 @@ import { Input } from "@moonship/ui/input";
 import { Label } from "@moonship/ui/label";
 
 import { useTRPC } from "~/trpc/react";
+import {
+  addressProblem,
+  toAddress,
+} from "../../../setup/_components/address-fields";
 
 export function RegisterPropertyForm({ onDone }: { onDone?: () => void }) {
   const trpc = useTRPC();
@@ -39,15 +43,33 @@ export function RegisterPropertyForm({ onDone }: { onDone?: () => void }) {
       className="max-w-xl space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
-        register.mutate({
-          name,
-          address: { street1, city, state, postalCode, country },
-        });
+        if (name.trim() === "") {
+          toast.error("Enter the property name");
+          return;
+        }
+        const draft = {
+          street1,
+          street2: "",
+          city,
+          state,
+          postalCode,
+          country,
+        };
+        const problem = addressProblem(draft);
+        if (problem) {
+          toast.error(problem);
+          return;
+        }
+        register.mutate({ name: name.trim(), address: toAddress(draft) });
       }}
     >
       <div className="space-y-1">
         <Label>Name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} required />
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
       </div>
       <div className="space-y-1">
         <Label>Street</Label>

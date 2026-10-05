@@ -16,7 +16,14 @@ import { Label } from "@moonship/ui/label";
 
 import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
-import { AddressFields, toAddress, toAddressDraft } from "./address-fields";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
+import { formatDate } from "../../leases/_lib/format";
+import {
+  AddressFields,
+  addressProblem,
+  toAddress,
+  toAddressDraft,
+} from "./address-fields";
 import { TimeZoneSelect } from "./time-zone-select";
 
 type PropertyView = RouterOutputs["property"]["get"];
@@ -65,6 +72,7 @@ export function PropertyDetailsForm() {
 function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const [name, setName] = useState(property.name);
   const [address, setAddress] = useState<AddressDraft>(
     toAddressDraft(property.address),
@@ -80,7 +88,10 @@ function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
   const update = useMutation(
     trpc.property.update.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(trpc.property.get.queryFilter());
+        await Promise.all([
+          queryClient.invalidateQueries(trpc.property.get.queryFilter()),
+          ledgerChanged(),
+        ]);
         toast.success("Property saved");
       },
       onError: (err) => toast.error(err.message),
@@ -92,13 +103,22 @@ function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Property</h2>
         <p className="text-muted-foreground text-sm">
-          Today at the property is {property.today}.
+          Today at the property is {formatDate(property.today)}.
         </p>
       </div>
       <form
         className="grid max-w-3xl gap-6"
         onSubmit={(e) => {
           e.preventDefault();
+          if (name.trim() === "") {
+            toast.error("Enter the property name");
+            return;
+          }
+          const problem = addressProblem(address);
+          if (problem) {
+            toast.error(problem);
+            return;
+          }
           const month = trackingMonth.trim();
           if (month && !isYearMonth(month)) {
             toast.error("Enter the tracking start as a month, like 2026-01");

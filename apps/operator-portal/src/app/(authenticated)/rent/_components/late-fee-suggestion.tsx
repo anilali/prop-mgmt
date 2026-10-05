@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { formatCents } from "@moonship/shared";
@@ -10,7 +11,38 @@ import { Button } from "@moonship/ui/button";
 import type { LateFeeSuggestion } from "../_lib/rent";
 import { useTRPC } from "~/trpc/react";
 import { formatMonth } from "../_lib/rent";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { formatDate } from "../../leases/_lib/format";
+
+export interface LateFeeAccount {
+  accountId: string;
+  tenant: { businessName: string };
+  unit: { label: string };
+  suggestions: LateFeeSuggestion[];
+}
+
+export function LateFeeSuggestionList({ items }: { items: LateFeeAccount[] }) {
+  return (
+    <div className="space-y-2">
+      {items.flatMap((item) =>
+        item.suggestions.map((suggestion) => (
+          <LateFeeSuggestionItem
+            key={`${item.accountId}-${suggestion.month}`}
+            suggestion={suggestion}
+            title={
+              <Link
+                className="underline-offset-4 hover:underline"
+                href={`/rent/${item.accountId}`}
+              >
+                {item.tenant.businessName}, unit {item.unit.label}
+              </Link>
+            }
+          />
+        )),
+      )}
+    </div>
+  );
+}
 
 export function LateFeeSuggestionItem({
   suggestion,
@@ -20,12 +52,7 @@ export function LateFeeSuggestionItem({
   title?: ReactNode;
 }) {
   const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const refresh = () =>
-    Promise.all([
-      queryClient.invalidateQueries(trpc.rent.pathFilter()),
-      queryClient.invalidateQueries(trpc.home.pathFilter()),
-    ]);
+  const refresh = useLedgerChanged();
   const onError = (err: { message: string }) => toast.error(err.message);
 
   const approve = useMutation(

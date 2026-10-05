@@ -90,7 +90,7 @@ export function CategoriesSection() {
         </Button>
       </div>
 
-      <div className="grid gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {CATEGORY_KINDS.map((kind) => {
           const rows = categories
             .filter((category) => category.kind === kind)

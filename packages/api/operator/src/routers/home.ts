@@ -1,4 +1,4 @@
-import { comingUp, toSortCount } from "@moonship/billing";
+import { comingUp, lateFeeSuggestions, toSortCount } from "@moonship/billing";
 
 import type { RentDataDeps } from "../rent-data";
 import { toAccountTerms } from "../accounts";
@@ -29,10 +29,28 @@ export function homeRouter(deps: HomeRouterDeps) {
         });
       }
       const lists = comingUp(data.views.map(toAccountTerms), data.today);
+      const lateFees = data.views
+        .map((view) => {
+          const { id, tenant, unit } = data.accountOf(view);
+          return {
+            accountId: id,
+            tenant,
+            unit,
+            suggestions: lateFeeSuggestions(data.ledgerOf(view), data.today),
+          };
+        })
+        .filter((item) => item.suggestions.length > 0)
+        .sort((a, b) =>
+          a.unit.label.localeCompare(b.unit.label, undefined, {
+            numeric: true,
+          }),
+        );
       return {
         today: data.today,
+        timeZone: data.property.timeZone,
         trackingStart: data.property.trackingStartDate,
         behind: rentStatusRows(data).filter((row) => row.status === "behind"),
+        lateFees,
         toSortCount: toSortCount(data.transactions),
         rentChanges: named(lists.rentChanges),
         insurance: named(lists.insurance),

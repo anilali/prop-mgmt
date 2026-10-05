@@ -4,7 +4,11 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { poolShareTable } from "@moonship/billing";
+import {
+  formatPercentBps,
+  formatSqft,
+  poolShareTable,
+} from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
 import { Checkbox } from "@moonship/ui/checkbox";
 import { Label } from "@moonship/ui/label";
@@ -21,7 +25,7 @@ import {
 import type { PoolView } from "./pool-dialog";
 import type { UnitView } from "./unit-dialog";
 import { useTRPC } from "~/trpc/react";
-import { formatShare, formatSqft } from "./format";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -40,6 +44,7 @@ export function PoolCard({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const savedIds = pool.units.map((unit) => unit.unitId);
   const [selectedIds, setSelectedIds] = useState<string[]>(savedIds);
   const table = poolShareTable(selectedIds, units);
@@ -50,6 +55,7 @@ export function PoolCard({
     Promise.all([
       queryClient.invalidateQueries(trpc.pool.list.queryFilter()),
       queryClient.invalidateQueries(trpc.unit.list.queryFilter()),
+      ledgerChanged(),
     ]);
 
   const setUnits = useMutation(
@@ -148,7 +154,7 @@ export function PoolCard({
                     {formatSqft(unit.sqft)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {row ? formatShare(row.shareBps) : "—"}
+                    {row ? formatPercentBps(row.shareBps) : "-"}
                   </TableCell>
                 </TableRow>
               );

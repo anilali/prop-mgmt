@@ -23,7 +23,8 @@
     "./toolbar": "./src/toolbar.tsx",
     "./checkbox": "./src/checkbox.tsx",
     "./switch": "./src/switch.tsx",
-    "./tabs": "./src/tabs.tsx"
+    "./tabs": "./src/tabs.tsx",
+    "./sheet": "./src/sheet.tsx"
   },
   "license": "MIT",
   "scripts": {

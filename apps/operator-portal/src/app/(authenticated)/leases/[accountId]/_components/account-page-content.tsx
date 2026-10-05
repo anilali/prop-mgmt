@@ -35,16 +35,22 @@ import {
   formatDate,
 } from "../../_lib/format";
 import { leaseToForm, newestLease, renewalForm } from "../../_lib/lease-form";
+import { useLedgerChanged } from "../../../_lib/use-ledger-changed";
 import { LeaseCard } from "./lease-card";
 import { LeaseDialog } from "./lease-dialog";
 import { OpeningBalanceDialog } from "./opening-balance-dialog";
-import { useAccountUpdated } from "./use-account-updated";
+import {
+  useAccountUpdated,
+  useAccountUpdateFailed,
+} from "./use-account-updated";
 
 export function AccountPageContent({ accountId }: { accountId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const router = useRouter();
   const accountUpdated = useAccountUpdated(accountId);
+  const accountUpdateFailed = useAccountUpdateFailed(accountId);
   const { data } = useSuspenseQuery(
     trpc.account.get.queryOptions({ id: accountId }),
   );
@@ -69,18 +75,21 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
         await accountUpdated(detail);
         toast.success("Lease removed");
       },
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
 
   const removeAccount = useMutation(
     trpc.account.remove.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(trpc.account.list.queryFilter());
+        await Promise.all([
+          queryClient.invalidateQueries(trpc.account.list.queryFilter()),
+          ledgerChanged(),
+        ]);
         toast.success("Account removed");
         router.push("/leases");
       },
-      onError: (err) => toast.error(err.message),
+      onError: accountUpdateFailed,
     }),
   );
 
@@ -165,6 +174,7 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
             key={lease.id}
             accountId={accountId}
             version={account.version}
+            timeZone={property.timeZone}
             lease={lease}
             pools={unitPools}
             isNewest={lease.id === newest?.id}

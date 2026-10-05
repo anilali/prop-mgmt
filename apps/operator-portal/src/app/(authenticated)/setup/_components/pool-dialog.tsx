@@ -19,6 +19,7 @@ import { Label } from "@moonship/ui/label";
 import { Switch } from "@moonship/ui/switch";
 
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 
 export type PoolView = RouterOutputs["pool"]["list"][number];
 
@@ -59,6 +60,7 @@ function PoolForm({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const [name, setName] = useState(pool?.name ?? "");
   const [letterName, setLetterName] = useState(pool?.letterName ?? "");
   const [addsNewUnits, setAddsNewUnits] = useState(false);
@@ -67,6 +69,7 @@ function PoolForm({
     await Promise.all([
       queryClient.invalidateQueries(trpc.pool.list.queryFilter()),
       queryClient.invalidateQueries(trpc.category.list.queryFilter()),
+      ledgerChanged(),
     ]);
     toast.success(message);
     onDone();
@@ -91,6 +94,14 @@ function PoolForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (name.trim() === "") {
+          toast.error("Enter a pool name");
+          return;
+        }
+        if (letterName.trim() === "") {
+          toast.error("Enter a letter name");
+          return;
+        }
         if (pool) {
           update.mutate({
             id: pool.id,

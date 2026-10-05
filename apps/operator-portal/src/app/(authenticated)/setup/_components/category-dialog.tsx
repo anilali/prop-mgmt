@@ -100,6 +100,10 @@ function CategoryForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (name.trim() === "") {
+          toast.error("Enter a category name");
+          return;
+        }
         if (category) {
           rename.mutate({ id: category.id, name: name.trim() });
         } else {

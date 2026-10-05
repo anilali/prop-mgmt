@@ -210,7 +210,7 @@ describe("home.comingUp", () => {
     expect(notified.rentChanges[0]?.tenantNotifiedAt).toBeInstanceOf(Date);
   });
 
-  it("lists Behind accounts with their late-fee suggestions and counts transactions to sort, writing nothing", async () => {
+  it("lists Behind accounts, every account with a late fee to decide, and counts transactions to sort, writing nothing", async () => {
     useToday("2026-10-12");
     const app = createTestApp();
     const caller = await app.callerFor();
@@ -229,6 +229,11 @@ describe("home.comingUp", () => {
       "C",
       lease("2026-01-01", "2027-12-31"),
     );
+    const caughtUp = await openAccount(
+      caller,
+      "D",
+      lease("2026-01-01", "2027-12-31"),
+    );
     for (const month of [
       "01",
       "02",
@@ -242,6 +247,7 @@ describe("home.comingUp", () => {
     ]) {
       addTransaction(app, `2026-${month}-01`, 200_000, short.id);
       addTransaction(app, `2026-${month}-01`, 200_000, paid.id);
+      addTransaction(app, `2026-${month}-01`, 200_000, caughtUp.id);
       if (month !== "09") {
         addTransaction(app, `2026-${month}-01`, 200_000, oldBalance.id);
       }
@@ -249,6 +255,7 @@ describe("home.comingUp", () => {
     addTransaction(app, "2026-10-02", 150_000, short.id);
     addTransaction(app, "2026-10-02", 200_000, oldBalance.id);
     addTransaction(app, "2026-10-02", 200_000, paid.id);
+    addTransaction(app, "2026-10-11", 200_000, caughtUp.id);
     addTransaction(app, "2026-10-03", 9_999, null);
     addTransaction(app, "2026-10-04", -4_500, null);
     const before = {
@@ -261,6 +268,7 @@ describe("home.comingUp", () => {
     expect(app.billing.transactions).toEqual(before.transactions);
     expect(app.billing.ledgerEntries).toEqual(before.entries);
     expect(result.toSortCount).toBe(2);
+    expect(result.timeZone).toBe("America/Chicago");
     expect(
       result.behind.map((row) => [
         row.unit.label,
@@ -283,6 +291,16 @@ describe("home.comingUp", () => {
           },
         ],
       ],
+    ]);
+    expect(
+      result.lateFees.map((item) => [
+        item.unit.label,
+        item.tenant.businessName,
+        item.suggestions.map((s) => [s.accountId, s.month, s.amountCents]),
+      ]),
+    ).toEqual([
+      ["A", "Tenant A", [[short.id, "2026-10", 5_000]]],
+      ["D", "Tenant D", [[caughtUp.id, "2026-10", 5_000]]],
     ]);
   });
 });

@@ -12,6 +12,7 @@ import { Button } from "@moonship/ui/button";
 
 import type { PoolView } from "./pool-dialog";
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { ConfirmDialog } from "./confirm-dialog";
 import { PoolCard } from "./pool-card";
 import { PoolDialog } from "./pool-dialog";
@@ -19,6 +20,7 @@ import { PoolDialog } from "./pool-dialog";
 export function PoolsSection() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const { data: pools } = useSuspenseQuery(trpc.pool.list.queryOptions());
   const { data: units } = useSuspenseQuery(trpc.unit.list.queryOptions());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -32,6 +34,7 @@ export function PoolsSection() {
           queryClient.invalidateQueries(trpc.pool.list.queryFilter()),
           queryClient.invalidateQueries(trpc.unit.list.queryFilter()),
           queryClient.invalidateQueries(trpc.category.list.queryFilter()),
+          ledgerChanged(),
         ]);
         toast.success("Pool removed");
       },
@@ -62,7 +65,7 @@ export function PoolsSection() {
       {pools.length === 0 ? (
         <p className="text-muted-foreground text-sm">No pools yet.</p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {pools.map((pool) => (
             <PoolCard
               key={`${pool.id}:${pool.units.map((unit) => unit.unitId).join(",")}`}

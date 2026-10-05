@@ -30,8 +30,8 @@ function LetterDateForm({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const [value, setValue] = useState(letterDate ?? previewLetterDate);
-  const yearEnd = `${year}-12-31`;
+  const nextYear = year + 1;
+  const [value, setValue] = useState(letterDate ?? `${nextYear}-01-01`);
 
   const save = useMutation(
     trpc.reconciliation.setLetterDate.mutationOptions({
@@ -60,6 +60,8 @@ function LetterDateForm({
           type="date"
           className="w-44"
           value={value}
+          min={`${nextYear}-01-01`}
+          max={`${nextYear}-12-31`}
           onChange={(e) => setValue(e.target.value)}
           required
         />
@@ -71,9 +73,7 @@ function LetterDateForm({
         {letterDate === null
           ? `Not saved yet. Previews use ${formatDate(previewLetterDate)}. Save a letter date before you finalize.`
           : `Letters and true-ups are dated ${formatDate(letterDate)}.`}{" "}
-        {letterDate !== null && letterDate <= yearEnd
-          ? `To finalize, the letter date must be after ${formatDate(yearEnd)}.`
-          : null}
+        The letter date must be in {nextYear}.
       </p>
     </form>
   );

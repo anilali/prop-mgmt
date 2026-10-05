@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { formatSqft } from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
 import {
   Table,
@@ -20,14 +21,15 @@ import {
 
 import type { UnitView } from "./unit-dialog";
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { formatStreet } from "./address-fields";
 import { ConfirmDialog } from "./confirm-dialog";
-import { formatSqft } from "./format";
 import { UnitDialog } from "./unit-dialog";
 
 export function UnitsSection() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const { data: property } = useSuspenseQuery(trpc.property.get.queryOptions());
   const { data: units } = useSuspenseQuery(trpc.unit.list.queryOptions());
   const { data: pools } = useSuspenseQuery(trpc.pool.list.queryOptions());
@@ -41,6 +43,7 @@ export function UnitsSection() {
         await Promise.all([
           queryClient.invalidateQueries(trpc.unit.list.queryFilter()),
           queryClient.invalidateQueries(trpc.pool.list.queryFilter()),
+          ledgerChanged(),
         ]);
         toast.success("Unit removed");
       },

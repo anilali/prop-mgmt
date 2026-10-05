@@ -128,6 +128,10 @@ function CashExpenseForm({
           toast.error("Enter an amount above 0");
           return;
         }
+        if (description.trim() === "") {
+          toast.error("Enter a description");
+          return;
+        }
         const { categoryId } = targetIds(target);
         if (!categoryId) {
           toast.error("Pick a category");

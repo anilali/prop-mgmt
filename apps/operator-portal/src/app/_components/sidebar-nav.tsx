@@ -54,15 +54,18 @@ const platformItems: NavItem[] = [
 function SidebarNavItem({
   item,
   selected,
+  onNavigate,
 }: {
   item: NavItem;
   selected: boolean;
+  onNavigate?: () => void;
 }) {
   const Icon = item.icon;
   return (
     <Link
       href={item.href}
       aria-current={selected ? "page" : undefined}
+      onClick={onNavigate}
       className={cn(
         "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
         selected
@@ -79,9 +82,11 @@ function SidebarNavItem({
 export function SidebarNav({
   mode,
   role,
+  onNavigate,
 }: {
   mode: "property" | "platform";
   role?: "admin" | "staff";
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
   const groups =
@@ -104,6 +109,7 @@ export function SidebarNav({
               key={item.href}
               item={item}
               selected={isSelected(item)}
+              onNavigate={onNavigate}
             />
           ))}
         </Fragment>
