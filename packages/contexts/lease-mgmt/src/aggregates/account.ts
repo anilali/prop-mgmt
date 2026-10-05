@@ -236,11 +236,14 @@ function buildLease(
   const rentSteps: RentStep[] = inputRentSteps
     .map((step, index) => {
       const previous = matched.get(index);
+      const unchanged =
+        previous?.startsOn === step.startsOn &&
+        previous.amountCents === step.amountCents;
       return {
         id: previous?.id ?? step.id,
         startsOn: step.startsOn,
         amountCents: step.amountCents,
-        tenantNotifiedAt: previous?.tenantNotifiedAt ?? null,
+        tenantNotifiedAt: unchanged ? previous.tenantNotifiedAt : null,
       };
     })
     .sort((a, b) => compareText(a.startsOn, b.startsOn));

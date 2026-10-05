@@ -201,7 +201,7 @@ describe("Account", () => {
         ...buildTerms(),
         rentSteps: [
           { id: "fresh-1", startsOn: "2024-01-01", amountCents: 250_000 },
-          { id: "fresh-2", startsOn: "2024-07-01", amountCents: 265_000 },
+          { id: "fresh-2", startsOn: "2024-07-01", amountCents: 260_000 },
           { id: "fresh-3", startsOn: "2024-10-01", amountCents: 270_000 },
         ],
       });
@@ -209,8 +209,51 @@ describe("Account", () => {
       const steps = account.leases[0]?.rentSteps;
       expect(steps?.map((s) => s.id)).toEqual(["rent-1", "rent-2", "fresh-3"]);
       expect(steps?.[1]?.tenantNotifiedAt).toEqual(notifiedAt);
-      expect(steps?.[1]?.amountCents).toBe(265_000);
       expect(steps?.[2]?.tenantNotifiedAt).toBeNull();
+    });
+
+    it("clears the notified time when a step's amount changes", () => {
+      const account = openAccount();
+      account.markRentStepNotified(
+        "lease-1",
+        "rent-2",
+        new Date("2024-05-01T12:00:00Z"),
+      );
+
+      account.updateLease("lease-1", {
+        ...buildTerms(),
+        rentSteps: [
+          { id: "rent-1", startsOn: "2024-01-01", amountCents: 250_000 },
+          { id: "rent-2", startsOn: "2024-07-01", amountCents: 265_000 },
+        ],
+      });
+
+      const step = account.leases[0]?.rentSteps[1];
+      expect(step?.id).toBe("rent-2");
+      expect(step?.amountCents).toBe(265_000);
+      expect(step?.tenantNotifiedAt).toBeNull();
+    });
+
+    it("clears the notified time when a step's date changes", () => {
+      const account = openAccount();
+      account.markRentStepNotified(
+        "lease-1",
+        "rent-2",
+        new Date("2024-05-01T12:00:00Z"),
+      );
+
+      account.updateLease("lease-1", {
+        ...buildTerms(),
+        rentSteps: [
+          { id: "rent-1", startsOn: "2024-01-01", amountCents: 250_000 },
+          { id: "rent-2", startsOn: "2024-08-01", amountCents: 260_000 },
+        ],
+      });
+
+      const step = account.leases[0]?.rentSteps[1];
+      expect(step?.id).toBe("rent-2");
+      expect(step?.startsOn).toBe("2024-08-01");
+      expect(step?.tenantNotifiedAt).toBeNull();
     });
   });
 

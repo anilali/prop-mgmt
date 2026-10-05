@@ -105,17 +105,20 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
     ).toEqual(notifiedAt);
 
     if (!loaded) throw new Error("missing account");
-    loaded.updateLease(firstLeaseId, {
+    const editedTerms = {
       startDate: "2023-06-15",
       endDate: "2024-06-14",
       moveOutDate: null,
       lateFee: { amountCents: 7500, day: 5 },
       insuranceExpiresOn: null,
+      estimateSteps: [],
+    };
+    loaded.updateLease(firstLeaseId, {
+      ...editedTerms,
       rentSteps: [
         { id: randomUUID(), startsOn: "2023-06-15", amountCents: 300_000 },
-        { id: randomUUID(), startsOn: "2024-01-01", amountCents: 312_000 },
+        { id: randomUUID(), startsOn: "2024-01-01", amountCents: 310_000 },
       ],
-      estimateSteps: [],
     });
     await repo.save(loaded);
 
@@ -123,9 +126,25 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
     const firstLease = reloaded?.findLease(firstLeaseId);
     expect(firstLease?.rentSteps[1]?.id).toBe(notifiedStep.id);
     expect(firstLease?.rentSteps[1]?.tenantNotifiedAt).toEqual(notifiedAt);
-    expect(firstLease?.rentSteps[1]?.amountCents).toBe(312_000);
     expect(firstLease?.lateFee).toEqual({ amountCents: 7500, day: 5 });
     expect(firstLease?.estimateSteps).toEqual([]);
+
+    if (!reloaded) throw new Error("missing account");
+    reloaded.updateLease(firstLeaseId, {
+      ...editedTerms,
+      rentSteps: [
+        { id: randomUUID(), startsOn: "2023-06-15", amountCents: 300_000 },
+        { id: randomUUID(), startsOn: "2024-01-01", amountCents: 312_000 },
+      ],
+    });
+    await repo.save(reloaded);
+
+    const repriced = (await repo.findById(propertyId, accountId))?.findLease(
+      firstLeaseId,
+    );
+    expect(repriced?.rentSteps[1]?.id).toBe(notifiedStep.id);
+    expect(repriced?.rentSteps[1]?.amountCents).toBe(312_000);
+    expect(repriced?.rentSteps[1]?.tenantNotifiedAt).toBeNull();
 
     const view = await queries.getById(propertyId, accountId);
     expect(view?.leases.map((l) => l.id)).toEqual([

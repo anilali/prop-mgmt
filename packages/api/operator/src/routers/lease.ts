@@ -29,6 +29,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       accountId,
     );
     if (!account) throw notFound("Account not found");
+    const storedLeases = account.leases;
     try {
       apply(account);
     } catch (e) {
@@ -38,7 +39,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       throw toBadRequest(e, "Lease change failed");
     }
     if (options.checkRules) {
-      await assertAccountRules(deps, propertyId, account);
+      await assertAccountRules(deps, propertyId, account, storedLeases);
     }
     await deps.accountRepository.save(account);
     return getAccountDetail(deps, propertyId, account.id);
@@ -56,7 +57,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
           (account) =>
             account.addLease({
               id: randomUUID(),
-              ...toLeaseTerms(input.lease),
+              ...toLeaseTerms(input.lease, null),
             }),
           { checkRules: true },
         ),
@@ -75,7 +76,10 @@ export function leaseRouter(deps: LeaseRouterDeps) {
           ctx.propertyId,
           input.accountId,
           (account) =>
-            account.updateLease(input.leaseId, toLeaseTerms(input.lease)),
+            account.updateLease(
+              input.leaseId,
+              toLeaseTerms(input.lease, account.findLease(input.leaseId)),
+            ),
           { checkRules: true },
         ),
       ),

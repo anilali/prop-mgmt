@@ -72,12 +72,12 @@ export function accountRouter(deps: AccountRouterDeps) {
               unitId: input.unitId,
               openingBalanceCents: input.openingBalanceCents,
             },
-            { id: randomUUID(), ...toLeaseTerms(input.lease) },
+            { id: randomUUID(), ...toLeaseTerms(input.lease, null) },
           );
         } catch (e) {
           throw toBadRequest(e, "Open failed");
         }
-        await assertAccountRules(deps, ctx.propertyId, account);
+        await assertAccountRules(deps, ctx.propertyId, account, []);
         await deps.accountRepository.save(account);
         return getAccountDetail(deps, ctx.propertyId, account.id);
       }),
@@ -95,12 +95,13 @@ export function accountRouter(deps: AccountRouterDeps) {
           input.id,
         );
         if (!account) throw notFound("Account not found");
+        const storedLeases = account.leases;
         try {
           account.setOpeningBalance(input.openingBalanceCents);
         } catch (e) {
           throw toBadRequest(e, "Update failed");
         }
-        await assertAccountRules(deps, ctx.propertyId, account);
+        await assertAccountRules(deps, ctx.propertyId, account, storedLeases);
         await deps.accountRepository.save(account);
         return getAccountDetail(deps, ctx.propertyId, account.id);
       }),

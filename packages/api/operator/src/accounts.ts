@@ -64,7 +64,13 @@ export function toAccountTerms(account: AccountView | Account): AccountTerms {
   };
 }
 
-export function toLeaseTerms(input: LeaseInput): LeaseTermsInput {
+export function toLeaseTerms(
+  input: LeaseInput,
+  existing: Lease | null,
+): LeaseTermsInput {
+  const existingStepIds = new Set(
+    existing?.rentSteps.map((step) => step.id) ?? [],
+  );
   return {
     startDate: input.startDate,
     endDate: input.endDate,
@@ -72,7 +78,7 @@ export function toLeaseTerms(input: LeaseInput): LeaseTermsInput {
     lateFee: input.lateFee ?? null,
     insuranceExpiresOn: input.insuranceExpiresOn ?? null,
     rentSteps: input.rentSteps.map((step) => ({
-      id: step.id ?? randomUUID(),
+      id: step.id && existingStepIds.has(step.id) ? step.id : randomUUID(),
       startsOn: step.startsOn,
       amountCents: step.amountCents,
     })),
@@ -87,10 +93,35 @@ export function toLeaseTerms(input: LeaseInput): LeaseTermsInput {
   };
 }
 
+function leaseTermsKey(lease: Lease): string {
+  return JSON.stringify([
+    lease.startDate,
+    lease.endDate,
+    lease.moveOutDate,
+    lease.lateFee?.amountCents ?? null,
+    lease.lateFee?.day ?? null,
+    lease.insuranceExpiresOn,
+    lease.rentSteps.map((step) => [step.startsOn, step.amountCents]),
+    lease.estimateSteps.map((step) => [
+      step.poolId,
+      step.startsOn,
+      step.amountCents,
+    ]),
+  ]);
+}
+
+function addedOrChangedLeases(account: Account, stored: Lease[]): Lease[] {
+  return account.leases.filter((lease) => {
+    const before = stored.find((s) => s.id === lease.id);
+    return !before || leaseTermsKey(before) !== leaseTermsKey(lease);
+  });
+}
+
 export async function assertAccountRules(
   deps: AccountDeps,
   propertyId: string,
   account: Account,
+  storedLeases: Lease[],
 ): Promise<void> {
   const terms = toAccountTerms(account);
   const { property } = await loadProperty(deps.propertyQueries, propertyId);
@@ -120,7 +151,7 @@ export async function assertAccountRules(
 
   const pools = await deps.billingQueries.listPools(propertyId);
   const poolIds = new Set(
-    account.leases.flatMap((lease) =>
+    addedOrChangedLeases(account, storedLeases).flatMap((lease) =>
       lease.estimateSteps.map((step) => step.poolId),
     ),
   );

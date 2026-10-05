@@ -444,15 +444,37 @@ describe("lease procedures", () => {
       leaseId: lease.id,
       lease: {
         ...leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
+        insuranceExpiresOn: "2025-11-30",
         rentSteps: [
-          { id: step.id, startsOn: "2025-01-01", amountCents: 255_000 },
+          { id: step.id, startsOn: "2025-01-01", amountCents: 250_000 },
         ],
       },
     });
     const kept = edited.account.leases[0]?.rentSteps[0];
     expect(kept?.id).toBe(step.id);
-    expect(kept?.amountCents).toBe(255_000);
     expect(kept?.tenantNotifiedAt).toEqual(notifiedAt);
+
+    const repriced = await caller.lease.update({
+      accountId,
+      leaseId: lease.id,
+      lease: {
+        ...leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
+        rentSteps: [
+          { id: step.id, startsOn: "2025-01-01", amountCents: 255_000 },
+        ],
+      },
+    });
+    const changed = repriced.account.leases[0]?.rentSteps[0];
+    expect(changed?.id).toBe(step.id);
+    expect(changed?.amountCents).toBe(255_000);
+    expect(changed?.tenantNotifiedAt).toBeNull();
+
+    await caller.lease.setRentStepNotified({
+      accountId,
+      leaseId: lease.id,
+      stepId: step.id,
+      notified: true,
+    });
 
     const cleared = await caller.lease.setRentStepNotified({
       accountId,
@@ -463,6 +485,143 @@ describe("lease procedures", () => {
     expect(
       cleared.account.leases[0]?.rentSteps[0]?.tenantNotifiedAt,
     ).toBeNull();
+  });
+
+  it("ignores rent step ids that are not on the lease", async () => {
+    const { caller, accountId, opened, b, tenantId } = await openOnA();
+    const lease = opened.account.leases[0];
+    const step = lease?.rentSteps[0];
+    if (!lease || !step) throw new Error("missing step");
+    const other = await caller.account.open({
+      tenantId,
+      unitId: b.id,
+      openingBalanceCents: 0,
+      lease: leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
+    });
+    const otherStepId = other.account.leases[0]?.rentSteps[0]?.id;
+    if (!otherStepId) throw new Error("missing step");
+    const unknownId = "66666666-6666-4666-8666-666666666666";
+
+    const added = await caller.lease.add({
+      accountId,
+      lease: {
+        ...leaseInput({ startDate: "2026-01-01", endDate: "2026-12-31" }),
+        rentSteps: [
+          { id: step.id, startsOn: "2026-01-01", amountCents: 260_000 },
+          { id: unknownId, startsOn: "2026-07-01", amountCents: 270_000 },
+        ],
+      },
+    });
+    const addedIds = added.account.leases[1]?.rentSteps.map((s) => s.id);
+    expect(addedIds).toHaveLength(2);
+    expect(addedIds).not.toContain(step.id);
+    expect(addedIds).not.toContain(unknownId);
+
+    const updated = await caller.lease.update({
+      accountId,
+      leaseId: lease.id,
+      lease: {
+        ...leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
+        rentSteps: [
+          { id: step.id, startsOn: "2025-01-01", amountCents: 250_000 },
+          { id: otherStepId, startsOn: "2025-07-01", amountCents: 255_000 },
+        ],
+      },
+    });
+    const updatedIds = updated.account.leases[0]?.rentSteps.map((s) => s.id);
+    expect(updatedIds?.[0]).toBe(step.id);
+    expect(updatedIds?.[1]).not.toBe(otherStepId);
+    expect(updatedIds?.[1]).not.toBe(unknownId);
+  });
+
+  it("checks pool membership only for leases the call adds or changes", async () => {
+    const { caller, accountId, opened, a, poolId } = await openOnA();
+    const water = poolId("Water");
+    const waterLeaseId = opened.account.leases[0]?.id;
+    if (!waterLeaseId) throw new Error("missing lease");
+    await caller.pool.setUnits({ id: water, unitIds: [a.id] });
+    const waterLease = leaseInput({
+      startDate: "2025-01-01",
+      endDate: "2025-12-31",
+      estimates: [{ poolId: water, startsOn: "2025-01-01", amountCents: 1500 }],
+    });
+    await caller.lease.update({
+      accountId,
+      leaseId: waterLeaseId,
+      lease: waterLease,
+    });
+    const closingLease = leaseInput({
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      moveOutDate: "2026-01-31",
+    });
+    const withClosing = await caller.lease.add({
+      accountId,
+      lease: closingLease,
+    });
+    expect(withClosing.account.state).toBe("closed");
+    const closingLeaseId = withClosing.account.leases[1]?.id;
+    if (!closingLeaseId) throw new Error("missing lease");
+    await caller.pool.setUnits({ id: water, unitIds: [] });
+
+    const balanced = await caller.account.setOpeningBalance({
+      id: accountId,
+      openingBalanceCents: 10_000,
+    });
+    expect(balanced.account.openingBalanceCents).toBe(10_000);
+
+    const edited = await caller.lease.update({
+      accountId,
+      leaseId: closingLeaseId,
+      lease: { ...closingLease, insuranceExpiresOn: "2026-11-30" },
+    });
+    expect(edited.account.leases[1]?.insuranceExpiresOn).toBe("2026-11-30");
+
+    const earlier = await caller.lease.add({
+      accountId,
+      lease: leaseInput({ startDate: "2024-01-01", endDate: "2024-12-31" }),
+    });
+    expect(earlier.account.leases).toHaveLength(3);
+
+    expect(
+      await codeOf(
+        caller.lease.update({
+          accountId,
+          leaseId: waterLeaseId,
+          lease: { ...waterLease, insuranceExpiresOn: "2025-11-30" },
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await codeOf(
+        caller.lease.update({
+          accountId,
+          leaseId: closingLeaseId,
+          lease: leaseInput({
+            startDate: "2026-01-01",
+            endDate: "2026-12-31",
+            moveOutDate: "2026-01-31",
+            estimates: [
+              { poolId: water, startsOn: "2026-01-01", amountCents: 1500 },
+            ],
+          }),
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await codeOf(
+        caller.lease.add({
+          accountId,
+          lease: leaseInput({
+            startDate: "2023-01-01",
+            endDate: "2023-12-31",
+            estimates: [
+              { poolId: water, startsOn: "2023-01-01", amountCents: 1500 },
+            ],
+          }),
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
   });
 
   it("returns NOT_FOUND for an unknown lease or account", async () => {
