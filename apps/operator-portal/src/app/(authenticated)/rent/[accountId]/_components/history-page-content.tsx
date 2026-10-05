@@ -26,6 +26,7 @@ import {
 import type { EntryRow, HistoryRow } from "../../_lib/rent";
 import type { AdjustmentTarget } from "./adjustment-dialog";
 import { useTRPC } from "~/trpc/react";
+import { LateFeeSuggestionItem } from "../../_components/late-fee-suggestion";
 import { Freshness } from "../../_components/rent-page-content";
 import {
   formatMonth,
@@ -65,6 +66,43 @@ function entryTitle(row: EntryRow): string {
       return month ? `Late fee for ${month} dismissed` : "Late fee dismissed";
     case "true_up":
       return "True-up";
+  }
+}
+
+function canRemove(row: HistoryRow): row is EntryRow {
+  return (
+    (row.kind === "adjustment" ||
+      row.kind === "late_fee" ||
+      row.kind === "late_fee_dismissed") &&
+    !row.locked
+  );
+}
+
+function removeText(row: EntryRow): {
+  title: string;
+  description: string;
+  done: string;
+} {
+  const month = formatMonth(row.feeMonth);
+  switch (row.kind) {
+    case "late_fee":
+      return {
+        title: "Remove this late fee?",
+        description: `The ${formatCents(row.amountCents)} late fee${month ? ` for ${month}` : ""} will be removed from the balance. If that month is not over, the fee is suggested again.`,
+        done: "Late fee removed",
+      };
+    case "late_fee_dismissed":
+      return {
+        title: "Remove this dismissal?",
+        description: `If ${month || "that month"} is not over, the late fee is suggested again.`,
+        done: "Dismissal removed",
+      };
+    default:
+      return {
+        title: "Remove this adjustment?",
+        description: `The ${formatCents(Math.abs(row.amountCents))} ${row.amountCents < 0 ? "credit" : "charge"} on ${formatDate(row.date)} will be removed from the balance.`,
+        done: "Adjustment removed",
+      };
   }
 }
 
@@ -141,8 +179,10 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
   const removeEntry = useMutation(
     trpc.rent.removeEntry.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(trpc.rent.pathFilter());
-        toast.success("Adjustment removed");
+        await Promise.all([
+          queryClient.invalidateQueries(trpc.rent.pathFilter()),
+          queryClient.invalidateQueries(trpc.home.pathFilter()),
+        ]);
       },
       onError: (err) => toast.error(err.message),
     }),
@@ -223,6 +263,18 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
         </div>
       </dl>
 
+      {data.suggestions.length > 0 ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold">Late fee to decide</h2>
+          {data.suggestions.map((suggestion) => (
+            <LateFeeSuggestionItem
+              key={suggestion.month}
+              suggestion={suggestion}
+            />
+          ))}
+        </section>
+      ) : null}
+
       {tracking ? (
         <div className="space-y-1">
           <Freshness today={data.today} newestBankDate={data.newestBankDate} />
@@ -273,18 +325,20 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
                   {formatCents(row.balanceCents)}
                 </TableCell>
                 <TableCell className="text-right align-top whitespace-nowrap">
-                  {row.kind === "adjustment" && !row.locked ? (
+                  {canRemove(row) ? (
                     <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setAdjustmentTarget({ mode: "edit", row })
-                        }
-                      >
-                        Edit
-                      </Button>
+                      {row.kind === "adjustment" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setAdjustmentTarget({ mode: "edit", row })
+                          }
+                        >
+                          Edit
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         variant="ghost"
@@ -321,15 +375,16 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
         onOpenChange={(open) => {
           if (!open) setEntryToRemove(null);
         }}
-        title="Remove this adjustment?"
-        description={
-          entryToRemove
-            ? `The ${formatCents(Math.abs(entryToRemove.amountCents))} ${entryToRemove.amountCents < 0 ? "credit" : "charge"} on ${formatDate(entryToRemove.date)} will be removed from the balance.`
-            : ""
-        }
+        title={entryToRemove ? removeText(entryToRemove).title : ""}
+        description={entryToRemove ? removeText(entryToRemove).description : ""}
         confirmLabel="Remove"
         onConfirm={() => {
-          if (entryToRemove) removeEntry.mutate({ id: entryToRemove.entryId });
+          if (!entryToRemove) return;
+          const { done } = removeText(entryToRemove);
+          removeEntry.mutate(
+            { id: entryToRemove.entryId },
+            { onSuccess: () => toast.success(done) },
+          );
         }}
       />
     </div>

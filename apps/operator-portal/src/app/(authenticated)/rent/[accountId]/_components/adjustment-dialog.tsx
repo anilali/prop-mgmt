@@ -110,7 +110,11 @@ function AdjustmentForm({
   );
   const [note, setNote] = useState(row?.note ?? "");
 
-  const refresh = () => queryClient.invalidateQueries(trpc.rent.pathFilter());
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries(trpc.rent.pathFilter()),
+      queryClient.invalidateQueries(trpc.home.pathFilter()),
+    ]);
   const onError = (err: { message: string }) => toast.error(err.message);
 
   const add = useMutation(

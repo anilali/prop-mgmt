@@ -7,6 +7,7 @@ export type RentHistory = RouterOutputs["rent"]["history"];
 export type HistoryRow = RentHistory["rows"][number];
 export type RentStatus = RentStatusRow["status"];
 export type EntryRow = Extract<HistoryRow, { entryId: string }>;
+export type LateFeeSuggestion = RentStatusRow["suggestions"][number];
 
 export const RENT_STATUS_LABELS: Record<RentStatus, string> = {
   behind: "Behind",
