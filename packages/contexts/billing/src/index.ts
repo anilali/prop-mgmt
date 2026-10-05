@@ -127,4 +127,69 @@ export type {
   BillingStore,
   DedupeRange,
   ImportBatchSummary,
+  StatementRenderer,
 } from "./ports";
+
+export type {
+  PoolBillOverride,
+  ReconciliationStatus,
+  ReconciliationYear,
+} from "./types";
+export { RECONCILIATION_STATUSES } from "./types";
+
+export type {
+  AccountStatement,
+  ChecklistCode,
+  ChecklistItem,
+  ContinuingTerms,
+  FinalizeGates,
+  NewEstimate,
+  PoolActual,
+  PoolCostLine,
+  ReconciliationInput,
+  ReconciliationLetterDetails,
+  ReconciliationTenant,
+  ReconciliationUnit,
+  ReconciliationWorkspace,
+  StatementRow,
+} from "./reconciliation";
+export {
+  accountStatement,
+  newestBankDate,
+  nextJanuary1,
+  poolActuals,
+  poolSqft,
+  reconciliationChecklist,
+  reconciliationWorkspace,
+  statementData,
+  yearEnd,
+} from "./reconciliation";
+
+export type {
+  LetterDocument,
+  Paragraph,
+  StatementCostLine,
+  StatementData,
+  StatementDocument,
+  StatementRentLine,
+  StatementRowData,
+  StatementTable,
+  TextRun,
+} from "./statement-document";
+export {
+  costPerSqftMonthHundredths,
+  costPerSqftYearCents,
+  formatAccounting,
+  formatHundredthsOfCent,
+  formatPercentBps,
+  formatSqft,
+  joinNames,
+  letterDocument,
+  longDate,
+  mailingLines,
+  shareBps,
+  statementColumns,
+  statementDocument,
+  statementFileName,
+  streetWithSuite,
+} from "./statement-document";

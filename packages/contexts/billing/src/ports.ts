@@ -1,6 +1,7 @@
 import type { IsoDate } from "@moonship/shared";
 
 import type { DedupeState } from "./csv-import";
+import type { StatementData } from "./statement-document";
 import type {
   AllocationLine,
   BankAccount,
@@ -11,6 +12,8 @@ import type {
   LedgerEntry,
   NewBankTransaction,
   Pool,
+  PoolBillOverride,
+  ReconciliationYear,
   Txn,
 } from "./types";
 
@@ -66,6 +69,14 @@ export interface BillingStore {
   insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry>;
   updateLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry | null>;
   deleteLedgerEntry(propertyId: string, id: string): Promise<boolean>;
+  lockYear(propertyId: string, year: number): Promise<ReconciliationYear>;
+  saveYear(year: ReconciliationYear): Promise<ReconciliationYear>;
+  saveBillOverride(override: PoolBillOverride): Promise<PoolBillOverride>;
+  deleteBillOverride(
+    propertyId: string,
+    reconciliationYearId: string,
+    poolId: string,
+  ): Promise<boolean>;
 }
 
 export interface BillingQueries {
@@ -90,4 +101,10 @@ export interface BillingQueries {
   listLedgerEntries(propertyId: string): Promise<LedgerEntry[]>;
   getLedgerEntry(propertyId: string, id: string): Promise<LedgerEntry | null>;
   listFinalizedYears(propertyId: string): Promise<number[]>;
+  listReconciliationYears(propertyId: string): Promise<ReconciliationYear[]>;
+  listBillOverrides(propertyId: string): Promise<PoolBillOverride[]>;
+}
+
+export interface StatementRenderer {
+  render(data: StatementData): Promise<Uint8Array>;
 }

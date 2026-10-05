@@ -158,3 +158,26 @@ export interface LedgerEntry {
   feeMonth: YearMonth | null;
   reconciliationYearId: string | null;
 }
+
+export const RECONCILIATION_STATUSES = ["draft", "finalized"] as const;
+
+export type ReconciliationStatus = (typeof RECONCILIATION_STATUSES)[number];
+
+export interface ReconciliationYear {
+  id: string;
+  propertyId: string;
+  year: number;
+  status: ReconciliationStatus;
+  letterDate: IsoDate | null;
+  finalizedAt: Date | null;
+}
+
+export interface PoolBillOverride {
+  id: string;
+  propertyId: string;
+  reconciliationYearId: string;
+  year: number;
+  poolId: string;
+  amountCents: number;
+  note: string;
+}
