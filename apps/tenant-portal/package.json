@@ -10,7 +10,7 @@
     "lint": "eslint --flag unstable_native_nodejs_ts_config",
     "start": "pnpm with-env next start -p 3001",
     "typecheck": "tsc --noEmit",
-    "with-env": "dotenv -e ../../.env -e ../../.env.local --"
+    "with-env": "dotenv -e ../../.env --"
   },
   "dependencies": {
     "@moonship/api-tenant": "workspace:*",
