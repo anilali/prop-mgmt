@@ -1,16 +1,29 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, FileText, KeyRound, Settings, Users } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Building2,
+  FileText,
+  KeyRound,
+  Settings,
+  Users,
+} from "lucide-react";
 
 import { cn } from "@moonship/ui";
+import { Separator } from "@moonship/ui/separator";
 
 interface NavItem {
   label: string;
   href: string;
   icon: typeof Users;
 }
+
+const propertyMainItems: NavItem[] = [
+  { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
+];
 
 const propertyItems: NavItem[] = [
   { label: "Tenants", href: "/tenants", icon: Users },
@@ -65,21 +78,29 @@ export function SidebarNav({
   role?: "admin" | "staff";
 }) {
   const pathname = usePathname();
-  const items =
+  const groups =
     mode === "platform"
-      ? platformItems
-      : [...propertyItems, ...(role === "admin" ? [accessItem] : [])];
+      ? [platformItems]
+      : [
+          propertyMainItems,
+          [...propertyItems, ...(role === "admin" ? [accessItem] : [])],
+        ];
   const isSelected = (item: NavItem) =>
     pathname === item.href || pathname.startsWith(`${item.href}/`);
 
   return (
     <nav className="flex flex-col gap-0.5">
-      {items.map((item) => (
-        <SidebarNavItem
-          key={item.href}
-          item={item}
-          selected={isSelected(item)}
-        />
+      {groups.map((items, index) => (
+        <Fragment key={items[0]?.href ?? index}>
+          {index > 0 ? <Separator className="my-2" /> : null}
+          {items.map((item) => (
+            <SidebarNavItem
+              key={item.href}
+              item={item}
+              selected={isSelected(item)}
+            />
+          ))}
+        </Fragment>
       ))}
     </nav>
   );

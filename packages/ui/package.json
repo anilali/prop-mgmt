@@ -22,7 +22,8 @@
     "./empty-state": "./src/empty-state.tsx",
     "./toolbar": "./src/toolbar.tsx",
     "./checkbox": "./src/checkbox.tsx",
-    "./switch": "./src/switch.tsx"
+    "./switch": "./src/switch.tsx",
+    "./tabs": "./src/tabs.tsx"
   },
   "license": "MIT",
   "scripts": {
