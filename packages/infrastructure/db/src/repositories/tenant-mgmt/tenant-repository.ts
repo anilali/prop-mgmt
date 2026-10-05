@@ -45,14 +45,18 @@ export class PGTenantRepository implements TenantRepository {
       notes: tenant.notes ?? null,
       status: tenant.status,
     };
-    await this.db
+    const saved = await this.db
       .insert(tenants)
       .values({ id: tenant.id, propertyId: tenant.propertyId, ...values })
       .onConflictDoUpdate({
         target: tenants.id,
         set: { ...values, updatedAt: new Date() },
         setWhere: eq(tenants.propertyId, tenant.propertyId),
-      });
+      })
+      .returning({ id: tenants.id });
+    if (saved.length === 0) {
+      throw new Error(`Tenant ${tenant.id} belongs to another property`);
+    }
     if (this.eventDispatcher && events.length > 0) {
       await this.eventDispatcher.dispatch(events);
     }

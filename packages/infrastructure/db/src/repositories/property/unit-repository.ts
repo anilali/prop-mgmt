@@ -41,14 +41,18 @@ export class PGUnitRepository implements UnitRepository {
       address: unit.address,
     };
 
-    await this.db
+    const saved = await this.db
       .insert(units)
       .values({ id: unit.id, propertyId: unit.propertyId, ...values })
       .onConflictDoUpdate({
         target: units.id,
         set: { ...values, updatedAt: new Date() },
         setWhere: eq(units.propertyId, unit.propertyId),
-      });
+      })
+      .returning({ id: units.id });
+    if (saved.length === 0) {
+      throw new Error(`Unit ${unit.id} belongs to another property`);
+    }
 
     if (this.eventDispatcher && events.length > 0) {
       await this.eventDispatcher.dispatch(events);
