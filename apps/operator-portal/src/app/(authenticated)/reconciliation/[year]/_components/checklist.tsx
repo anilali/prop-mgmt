@@ -36,6 +36,7 @@ function fixLink(item: ChecklistItem): FixLink | null {
       return item.tenantId ? { href: "/tenants", label: "Open Tenants" } : null;
     case "statement_incomplete":
     case "holdover":
+    case "estimate_carried_over":
       return item.accountId
         ? { href: `/leases/${item.accountId}`, label: "Open the account" }
         : null;

@@ -175,6 +175,7 @@ describe("home.comingUp", () => {
         tenantNotifiedAt: null,
         tenant: { id: a.tenant.id, businessName: "Tenant A" },
         unit: { id: a.unit.id, label: "A" },
+        accountVersion: a.version,
       },
     ]);
     expect(

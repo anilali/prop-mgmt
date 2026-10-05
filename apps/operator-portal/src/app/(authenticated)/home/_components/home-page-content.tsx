@@ -258,6 +258,7 @@ function RentChangeItem({ item }: { item: RentChange }) {
           onCheckedChange={(checked) =>
             setNotified.mutate({
               accountId: item.accountId,
+              expectedVersion: item.accountVersion,
               leaseId: item.leaseId,
               stepId: item.stepId,
               notified: checked,

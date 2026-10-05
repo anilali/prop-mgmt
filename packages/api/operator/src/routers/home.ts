@@ -14,7 +14,7 @@ export function homeRouter(deps: HomeRouterDeps) {
       const accounts = new Map(
         data.views.map((view) => {
           const { tenant, unit } = data.accountOf(view);
-          return [view.id, { tenant, unit }];
+          return [view.id, { tenant, unit, version: view.version }];
         }),
       );
       function named<T extends { accountId: string }>(items: T[]) {
@@ -24,6 +24,7 @@ export function homeRouter(deps: HomeRouterDeps) {
             ...item,
             tenant: account?.tenant ?? { id: "", businessName: "" },
             unit: account?.unit ?? { id: "", label: "" },
+            accountVersion: account?.version ?? 0,
           };
         });
       }
