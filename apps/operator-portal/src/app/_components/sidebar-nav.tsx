@@ -10,6 +10,7 @@ import {
   KeyRound,
   Settings,
   Users,
+  Wallet,
 } from "lucide-react";
 
 import { cn } from "@moonship/ui";
@@ -22,6 +23,7 @@ interface NavItem {
 }
 
 const propertyMainItems: NavItem[] = [
+  { label: "Rent", href: "/rent", icon: Wallet },
   { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
 ];
 
