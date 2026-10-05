@@ -1,6 +1,6 @@
+import type { VariantProps } from "class-variance-authority";
 import type * as React from "react";
-import { cva  } from "class-variance-authority";
-import type {VariantProps} from "class-variance-authority";
+import { cva } from "class-variance-authority";
 
 import { cn } from "@moonship/ui";
 
@@ -11,11 +11,9 @@ const badgeVariants = cva(
       variant: {
         default:
           "bg-primary text-primary-foreground border-transparent shadow-xs",
-        secondary:
-          "bg-secondary text-secondary-foreground border-transparent",
+        secondary: "bg-secondary text-secondary-foreground border-transparent",
         outline: "text-foreground",
-        destructive:
-          "bg-destructive text-white border-transparent shadow-xs",
+        destructive: "bg-destructive border-transparent text-white shadow-xs",
       },
     },
     defaultVariants: {
