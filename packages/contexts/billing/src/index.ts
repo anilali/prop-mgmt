@@ -116,7 +116,6 @@ export {
   expectedOn,
   historyRows,
   monthsDue,
-  paymentsBetween,
   receivedOn,
 } from "./balance";
 

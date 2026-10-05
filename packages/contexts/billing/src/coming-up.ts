@@ -104,7 +104,10 @@ export function rentChanges(
             amountCents: step.amountCents,
             previousAmountCents: previousRent(account, step.startsOn),
             tenantNotifiedAt: step.tenantNotifiedAt,
-          })),
+          }))
+          .filter(
+            (change) => change.amountCents !== change.previousAmountCents,
+          ),
       );
     })
     .sort((a, b) => compareDates(a.startsOn, b.startsOn));
@@ -126,13 +129,24 @@ export function insuranceItems(
 ): InsuranceItem[] {
   return accounts
     .flatMap((account) => {
-      let lease: LeaseTerms | null = null;
-      if (openOn(account, today)) {
-        lease = coveringLease(account, today);
-      } else if (withinNextDays(accountStart(account), today, INSURANCE_DAYS)) {
-        lease = firstLease(account);
+      if (
+        !openOn(account, today) &&
+        !withinNextDays(accountStart(account), today, INSURANCE_DAYS)
+      ) {
+        return [];
       }
-      if (!lease) return [];
+      const newest = newestLease(account);
+      const lease = withinNextDays(newest.startDate, today, INSURANCE_DAYS)
+        ? newest
+        : (coveringLease(account, today) ?? firstLease(account));
+      const end = accountEnd(account);
+      if (
+        end !== null &&
+        lease.insuranceExpiresOn !== null &&
+        end <= lease.insuranceExpiresOn
+      ) {
+        return [];
+      }
       const problem = insuranceProblem(lease.insuranceExpiresOn, today);
       return problem
         ? [

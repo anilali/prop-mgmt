@@ -9,7 +9,6 @@ import {
   expectedOn,
   historyRows,
   monthsDue,
-  paymentsBetween,
   receivedOn,
 } from "./balance";
 import {
@@ -125,7 +124,6 @@ describe("expected, received, and balance", () => {
     ];
     const ledger = ledgerFor(superLucky, { transactions });
     expect(receivedOn(ledger, "2024-01-01")).toBe(365_482);
-    expect(paymentsBetween(ledger, "2024-01-02", "2024-02-01")).toBe(365_482);
   });
 
   it("adds ledger entries on their dates", () => {

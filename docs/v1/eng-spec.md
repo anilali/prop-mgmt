@@ -270,7 +270,7 @@ An account has no status column. It is closed when its newest lease has a move-o
 | `start_date`, `end_date` | `date not null` | |
 | `move_out_date` | `date null` | |
 | `late_fee_cents` | `integer null` | Check `> 0`. |
-| `late_fee_day` | `smallint null` | Check `between 1 and 28`. Check both late-fee columns are null or both are set. |
+| `late_fee_day` | `smallint null` | Check `between 1 and 28`. Check both late-fee columns are null or both are set. The aggregate and the API allow only 1 to 27 (5.5). |
 | `insurance_expires_on` | `date null` | |
 
 The old `unit_id`, `tenant_id`, `rent_cents`, `deposit_cents`, `status`, and `document_*` columns are gone. Unit and tenant are on the account.
@@ -438,7 +438,7 @@ Rules the aggregate checks:
 1. Each lease: `endDate >= startDate`; `moveOutDate` is null or `>= startDate`.
 2. Rent steps: at least one; the first starts on the lease's `startDate`; dates are distinct; amounts `>= 0`. Changing a lease's start date moves the first rent step with it.
 3. Estimate steps, per pool: dates are distinct and on or after the lease's `startDate`; amounts `>= 0`. The first step does not have to be on the start date, so a lease can start paying a pool partway through. Steps after the end date are allowed (holdover and finalize add them).
-4. Late fee: amount `> 0` and day 1 to 28, or neither.
+4. Late fee: amount `> 0` and day 1 to 27, or neither.
 5. An account has at least one lease. Leases on one account do not overlap (`[startDate, endDate]`).
 6. Only the newest lease may have a move-out date. A lease cannot be added after a lease with a move-out date. A tenant who comes back gets a new account.
 
@@ -560,29 +560,50 @@ Each row shows tenant, unit, expected so far, received so far, balance, last pay
 ```text
 lateFeeMonths(today) = [monthOf(today)]
 
+received(A, d1, d2) =
+    payment lines matched to A dated d1 to d2 (a bounce line is negative)
+  + the size of each negative ledger entry on A dated d1 to d2
+  + the size of a negative opening balance, if trackingStart - 1 day is in d1 to d2
+
+rentOnly(A, d) = monthly charges due on or before d
+               - received(A, trackingStart - 1 day, d)
+
 lateFeeSuggestion(A, m, today):
   if not counted(A, m): none
   L = lease(A, m)
   if not L.lateFee: none
   feeDate = maxDate(dateInMonth(m, L.lateFee.day), due(A, m))
-  if today <= feeDate: none
+  if monthOf(today) != m or today <= feeDate: none
   if a late_fee or late_fee_dismissed entry exists for (A, m): none
-  carriedCredit = max(0, -balance(A, addDays(due(A, m), -1)))
-  paid = payments(A, due(A, m), feeDate) + carriedCredit
-  if paid >= monthlyExpected(A, m): none
-  if balance(A, today) <= 0: none
+  carried = max(0, -rentOnly(A, addDays(due(A, m), -1)))
+  paidForMonth = carried + received(A, due(A, m), feeDate)
+  if paidForMonth >= monthlyExpected(A, m): none
   suggest { accountId: A.accountId, month: m, amountCents: L.lateFee.amountCents }
 ```
 
-Suggestions are checked for the current month only. Once the month ends, its suggestion is gone; the owner adds a missed fee by hand as an adjustment.
+The test asks one thing: did the money received by the fee date cover this month's base rent plus estimates?
 
-Old balances and true-ups never cause a suggestion, because only payments against that month's expected amount are tested. A credit carried into the month counts as paid. August 1, 2026 is a Saturday, so an autopay posts Friday, July 31; the balance on July 31 is a credit of the full August amount, and no fee is suggested for August even if some other charge is still open.
+Only monthly charges and money received count. Positive ledger entries are left out: adjustments, earlier late fees, and true-ups the tenant owes. A positive opening balance is left out too. So an old balance never causes a suggestion.
 
-The test looks only at payments up to the fee date. A check that posts on the 3rd and bounces on the 15th counts as paid, so no fee is suggested. The owner adds that fee as an adjustment.
+Money received is payments, plus credits. A credit is any negative ledger entry, such as a credit adjustment or a credit true-up. A negative opening balance counts as money received the day before tracking start.
+
+Money paid ahead carries into the month. `carried` is what the tenant paid beyond all earlier monthly charges. An autopay that posts on the last business day of the previous month counts in full, even when an old adjustment is still unpaid.
+
+A shortfall in an earlier month does not carry forward. If September is $100 short and October is paid in full by the 10th, October gets no suggestion.
+
+The test looks only at money received up to the fee date. A check that posts on the 3rd and bounces on the 8th counts as nothing, unless a replacement arrives by the fee date. A check that bounces after the fee date counts as paid, so no fee is suggested. The owner adds that fee as an adjustment.
+
+The balance on the day the app checks does not matter. A tenant who paid late but has caught up still gets the suggestion. The owner decides whether to charge it.
+
+Suggestions show only while today is in month `m` and after the fee date. Once the month ends, its suggestion is gone; the owner adds a missed fee by hand as an adjustment.
+
+The fee day is 1 to 27. With day 27, February still has a day after the fee date. For a move-in partway through a month, the fee date is the move-in day if that is later than the fee day. A move-in on the last day of a month never gets a fee for that month, because no day of that month comes after the fee date.
 
 Approve writes a `late_fee` entry with the lease's fee amount, dated `feeDate + 1 day`, or the day of approval when that date falls in a finalized year (3.6). Dismiss writes a `late_fee_dismissed` entry. The server recomputes the suggestion before writing and rejects the call if there is none. The owner can delete either entry, which brings the suggestion back while the month lasts. Nothing else writes these entries.
 
-Example. Base rent plus estimates is $3,654.82. The fee is $50.00 after the 10th. Payments dated March 1 to 10 add up to $3,000.00, and the balance on March 15 is $654.82. The app suggests a $50.00 fee for 2026-03 until March 31. If the owner approves, the entry is dated March 11 and the balance becomes $704.82.
+Examples. Base rent plus estimates is $3,654.82. The fee is $50.00 after the 10th. Payments dated March 1 to 10 add up to $3,000.00. The app suggests a $50.00 fee for 2026-03 from March 11 until March 31. If the owner approves, the entry is dated March 11 and the balance goes up by $50.00.
+
+Base rent plus estimates is $3,500.00 and the fee is after the 10th. A year-end credit true-up of $400.00 is dated October 2, and the tenant pays $3,100.00 on October 5. That adds up to $3,500.00, so October gets no suggestion.
 
 ### 5.6 Sorting suggestions
 
@@ -781,8 +802,8 @@ All windows are inclusive and use the property's today. "Next N days" means `tod
 |---|---|
 | Behind | Rent status rows with status Behind, with their late-fee suggestions and Approve and Dismiss buttons. |
 | To sort | Count of transactions with no lines. |
-| Rent changes | Rent steps with `startsOn` in the next 90 days, except the first step of an account's first lease. Each has a "Tenant notified" toggle that sets `tenant_notified_at`. |
-| Insurance | For each account open today or opening in the next 60 days, the lease covering today (or the first lease if not yet open): `insurance_expires_on` is null, already past, or within the next 60 days. |
+| Rent changes | Rent steps with `startsOn` in the next 90 days, except the first step of an account's first lease. A step is skipped when its amount equals the rent the day before it starts, such as a renewal at the same rent. Each has a "Tenant notified" toggle that sets `tenant_notified_at`. |
+| Insurance | For each account open today or opening in the next 60 days, pick one lease. If the newest lease starts in the next 60 days, use it. Otherwise use the lease covering today, or the first lease if the account is not open yet. Flag it when `insurance_expires_on` is null, already past, or within the next 60 days. Skip the account when its move-out date is on or before `insurance_expires_on`. |
 | Leases ending | Accounts with no move-out date whose newest lease has `end_date` in the next 90 days. |
 | Past end date | Accounts in holdover. |
 
@@ -1118,7 +1139,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 | `billing/src/lease-calendar.test.ts` | account start and end, state, covering lease, counted months and pool months (6.4), due dates, step lookup |
 | `billing/src/balance.test.ts` | the three balances in section 6; identity: balance = opening + months + entries - payments; history running balance |
 | `billing/src/rent-status.test.ts` | Paid, Credit, Due on the grace day, Behind the day after, Behind with a balance from last month, default day 5, Due on a mid-month move-in day |
-| `billing/src/late-fee.test.ts` | `lateFeeMonths` returns only the current month, so nothing shows for March on April 1; the 5.5 example; no suggestion when paid by the fee date, when balance is 0, when decided, when the covering lease has no fee; carried-in credit from a July 31 autopay; a check bounced after the fee date gives no suggestion; fee date on a mid-month start; approval date moves to today when the fee date is in a finalized year |
+| `billing/src/late-fee.test.ts` | `lateFeeMonths` returns only the current month, so nothing shows for March on April 1; the 5.5 examples; no suggestion when paid by the fee date, when decided, when the covering lease has no fee, or for old adjustments, fees, owed opening balances, and true-ups; a suggestion still shows after a late catch-up; carried-in credit from an early autopay and a prepaid opening balance; a credit true-up counts as received; a check bounced after the fee date gives no suggestion, and one bounced before it gives one unless replaced; split payments across two accounts; fee date on a mid-month start; no fee for a move-in on the last day of the month; approval date moves to today when the fee date is in a finalized year |
 | `billing/src/suggestions.test.ts` | description key; category from the last single-line match; archived category skipped; account from history; one key on two accounts falls back to amount; ties list choices |
 | `billing/src/csv-import.test.ts` | first-time header detection below preamble lines; header search with a mapping; both amount modes, flip sign; dates `1/5/2026` and `01/05/2026` equal, `2/30/2026` and `1/5/26` are errors; bad date with an amount is an error, and commit succeeds once that row is in skipRows; footer with no amount is a not-a-transaction row; dedupe: same file twice, overlapping files, two equal rows in one day, external ids, rows before tracking start |
 | `billing/src/reconciliation.test.ts` | section 6 in full; bill override; zero actual cost; negative actual blocks; zero-sqft pool does not throw and blocks; every checklist warning, including bank data through a date and pool or sqft changes; which accounts are continuing; `StatementData` for each case; snapshot comparison lists each changed value with its difference; January table for case 6.1 shows 19.82 short |
