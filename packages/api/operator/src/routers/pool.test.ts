@@ -223,4 +223,16 @@ describe("pool procedures", () => {
     expect(await codeOf(caller.pool.remove({ id: taxes.id }))).toBe("CONFLICT");
     expect(await codeOf(caller.pool.remove({ id: cam.id }))).toBe("CONFLICT");
   });
+
+  it("remove is rejected when a reconciliation year has a bill amount for the pool", async () => {
+    const { caller, water } = await setup();
+    await caller.reconciliation.setBillOverride({
+      year: 2026,
+      poolId: water.id,
+      amountCents: 10_000,
+      note: "Water bill",
+    });
+
+    expect(await codeOf(caller.pool.remove({ id: water.id }))).toBe("CONFLICT");
+  });
 });
