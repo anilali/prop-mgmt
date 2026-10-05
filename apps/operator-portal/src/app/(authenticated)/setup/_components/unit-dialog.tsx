@@ -19,6 +19,7 @@ import { Label } from "@moonship/ui/label";
 
 import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { AddressFields, toAddress, toAddressDraft } from "./address-fields";
 
 export type UnitView = RouterOutputs["unit"]["list"][number];
@@ -63,6 +64,7 @@ function UnitForm({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const [label, setLabel] = useState(unit?.label ?? "");
   const [sqft, setSqft] = useState(unit ? String(unit.sqft) : "");
   const [address, setAddress] = useState<AddressDraft>(
@@ -75,6 +77,8 @@ function UnitForm({
     await Promise.all([
       queryClient.invalidateQueries(trpc.unit.list.queryFilter()),
       queryClient.invalidateQueries(trpc.pool.list.queryFilter()),
+      queryClient.invalidateQueries(trpc.account.pathFilter()),
+      ledgerChanged(),
     ]);
     toast.success(message);
     onDone();

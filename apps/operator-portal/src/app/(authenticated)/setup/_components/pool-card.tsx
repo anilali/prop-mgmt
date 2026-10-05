@@ -25,6 +25,7 @@ import {
 import type { PoolView } from "./pool-dialog";
 import type { UnitView } from "./unit-dialog";
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
@@ -43,6 +44,7 @@ export function PoolCard({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const savedIds = pool.units.map((unit) => unit.unitId);
   const [selectedIds, setSelectedIds] = useState<string[]>(savedIds);
   const table = poolShareTable(selectedIds, units);
@@ -53,6 +55,7 @@ export function PoolCard({
     Promise.all([
       queryClient.invalidateQueries(trpc.pool.list.queryFilter()),
       queryClient.invalidateQueries(trpc.unit.list.queryFilter()),
+      ledgerChanged(),
     ]);
 
   const setUnits = useMutation(

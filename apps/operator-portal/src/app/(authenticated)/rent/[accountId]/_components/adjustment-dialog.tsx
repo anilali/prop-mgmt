@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { parseCents } from "@moonship/shared";
@@ -27,6 +27,7 @@ import { Textarea } from "@moonship/ui/textarea";
 
 import type { EntryRow } from "../../_lib/rent";
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../../_lib/use-ledger-changed";
 import { centsToInput, formatDate } from "../../../leases/_lib/format";
 
 export type AdjustmentTarget =
@@ -100,7 +101,7 @@ function AdjustmentForm({
   onDone: () => void;
 }) {
   const trpc = useTRPC();
-  const queryClient = useQueryClient();
+  const refresh = useLedgerChanged();
   const [date, setDate] = useState(row?.date ?? today);
   const [direction, setDirection] = useState<Direction>(
     row && row.amountCents < 0 ? "credit" : "charge",
@@ -110,11 +111,6 @@ function AdjustmentForm({
   );
   const [note, setNote] = useState(row?.note ?? "");
 
-  const refresh = () =>
-    Promise.all([
-      queryClient.invalidateQueries(trpc.rent.pathFilter()),
-      queryClient.invalidateQueries(trpc.home.pathFilter()),
-    ]);
   const onError = (err: { message: string }) => toast.error(err.message);
 
   const add = useMutation(

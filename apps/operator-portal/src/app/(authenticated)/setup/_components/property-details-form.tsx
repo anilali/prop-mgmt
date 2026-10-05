@@ -16,6 +16,7 @@ import { Label } from "@moonship/ui/label";
 
 import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { formatDate } from "../../leases/_lib/format";
 import { AddressFields, toAddress, toAddressDraft } from "./address-fields";
 import { TimeZoneSelect } from "./time-zone-select";
@@ -66,6 +67,7 @@ export function PropertyDetailsForm() {
 function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const [name, setName] = useState(property.name);
   const [address, setAddress] = useState<AddressDraft>(
     toAddressDraft(property.address),
@@ -81,7 +83,10 @@ function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
   const update = useMutation(
     trpc.property.update.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(trpc.property.get.queryFilter());
+        await Promise.all([
+          queryClient.invalidateQueries(trpc.property.get.queryFilter()),
+          ledgerChanged(),
+        ]);
         toast.success("Property saved");
       },
       onError: (err) => toast.error(err.message),

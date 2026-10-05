@@ -18,6 +18,7 @@ import { Label } from "@moonship/ui/label";
 import { Textarea } from "@moonship/ui/textarea";
 
 import { useTRPC } from "~/trpc/react";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 
 export type TenantView = RouterOutputs["tenant"]["list"][number];
 
@@ -51,6 +52,7 @@ function TenantForm({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const [businessName, setBusinessName] = useState(tenant?.businessName ?? "");
   const [contactName, setContactName] = useState(tenant?.contactName ?? "");
   const [email, setEmail] = useState(tenant?.email ?? "");
@@ -71,6 +73,7 @@ function TenantForm({
     await Promise.all([
       queryClient.invalidateQueries(trpc.tenant.list.queryFilter()),
       queryClient.invalidateQueries(trpc.account.pathFilter()),
+      ledgerChanged(),
     ]);
     toast.success(message);
     onDone();

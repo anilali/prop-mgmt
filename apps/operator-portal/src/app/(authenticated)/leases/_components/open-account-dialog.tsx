@@ -36,6 +36,7 @@ import {
   parseSignedAmount,
   toLeaseInput,
 } from "../_lib/lease-form";
+import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { LeaseFormFields } from "./lease-form-fields";
 
 export function OpenAccountDialog({
@@ -63,6 +64,7 @@ export function OpenAccountDialog({
 function OpenAccountForm({ onDone }: { onDone: () => void }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
   const router = useRouter();
   const { data: tenants } = useSuspenseQuery(trpc.tenant.list.queryOptions());
   const { data: units } = useSuspenseQuery(trpc.unit.list.queryOptions());
@@ -84,7 +86,10 @@ function OpenAccountForm({ onDone }: { onDone: () => void }) {
   const openAccount = useMutation(
     trpc.account.open.mutationOptions({
       onSuccess: async (detail) => {
-        await queryClient.invalidateQueries(trpc.account.list.queryFilter());
+        await Promise.all([
+          queryClient.invalidateQueries(trpc.account.list.queryFilter()),
+          ledgerChanged(),
+        ]);
         toast.success("Account opened");
         onDone();
         router.push(`/leases/${detail.account.id}`);
