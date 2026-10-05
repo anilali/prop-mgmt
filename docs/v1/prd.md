@@ -4,7 +4,7 @@
 
 Help the owner of one commercial property with five tenants do two jobs: know who has paid what during the year, and produce the year-end reconciliation letters. The owner enters the leases once and imports the bank account's CSV. The app matches deposits to tenants, sorts expenses into categories, shows who's behind, and at year-end works out each tenant's share of shared costs, prints a statement and letter for each, and sets next year's estimates.
 
-The target is running the 2026 reconciliation in the app in December 2026.
+The target is a dry run in mid-November 2026 on January to October data, then finalizing the 2026 reconciliation in early January 2027, after December's bank activity is imported.
 
 ## How it works today
 
@@ -35,19 +35,20 @@ The target is running the 2026 reconciliation in the app in December 2026.
 - Charging late fees automatically.
 - More than one bank account, and transfers between accounts.
 - Storing lease documents, insurance certificate files, or receipts. The owner sends tax and insurance receipts separately from the PDF.
-- Unit area changes during a year, and combining or splitting units.
+- Unit area or pool membership changes during a year, and combining or splitting units. The current values apply to the whole year.
 - Prorating a month a lease covers only part of. Leases almost always start and end on month boundaries.
 - Lease terms like caps, admin fees, or excluded costs. None of the current leases have them.
-- Locking a year after it's reconciled.
+- Locking a year after it's reconciled. The only limit is that a new fee or adjustment that would be dated inside a finalized year is dated the day it's saved instead.
 
 ## Concepts
 
 - **Unit.** A space in the building with a label, an address, and an area in sqft.
 - **Cost pool.** A shared cost and the units that share it. CAM, taxes, and insurance are shared by every unit in the building. Water is shared by the two units on the shared meter.
 - **Share.** A unit's area divided by the total area of its pool's units. Vacant units stay in the total, so the owner pays for empty space.
-- **Lease.** One tenant in one unit for a date range, with base rent and a monthly estimate for each pool it pays.
-- **Expected.** What a lease should have paid by a date: base rent plus estimates for each month so far, plus approved fees and adjustments.
-- **Balance.** Expected minus payments received. Positive means the tenant is behind.
+- **Account.** One tenant in one unit. The account holds the money: opening balance, payments, fees, adjustments, and true-ups. It gets one statement a year. A tenant who rents two units has two accounts.
+- **Lease.** The terms for an account over a date range: base rent and a monthly estimate for each pool it pays. A renewal is a new lease on the same account.
+- **Expected.** What an account should have paid by a date: base rent plus estimates for each month so far, plus approved fees and adjustments.
+- **Balance.** Expected minus payments received. Positive means the tenant owes money. Negative is a credit.
 - **True-up.** For each pool, the tenant's part of the year's actual cost minus the estimates they were expected to pay.
 
 ## Setup
@@ -56,18 +57,18 @@ Done once, then updated when something changes.
 
 ### Property
 
-- Name, and the date tracking starts. For this property that's January 1, 2026.
-- The details the letters print: owner name, company, phone, and email.
+- Name, time zone, and the date tracking starts. For this property that's January 1, 2026, in Central time. The tracking start is the first of a month and can't change once any transaction or balance entry exists.
+- The details the letters print: owner name, title, company, phone, and email.
 
 ### Units and pools
 
 - Each unit has a label, a street address with an optional suite, and an area in whole sqft.
 - Each cost pool has a name and a list of units. The share table shows each unit's sqft and share, and updates as units are checked and unchecked.
-- New properties start with four pools: CAM, Taxes, and Insurance with every unit, and Water with none.
+- New properties start with four pools: CAM, Taxes, and Insurance, which include every unit and take new units automatically, and Water with none.
 
 ### Categories
 
-Every transaction goes in one category. Each category has a kind, which can't change:
+Every transaction goes in one category, or is split across several. Each category has a kind, which can't change:
 
 | Kind | Used for | Default categories |
 |---|---|---|
@@ -76,30 +77,37 @@ Every transaction goes in one category. Each category has a kind, which can't ch
 | Income | Money in that isn't a tenant payment | Other income |
 | Not counted | Left out of all totals | Security deposit, Not property business |
 
-Tenant payments aren't a category. A deposit is either matched to a lease or put in an income or not-counted category. The owner can add, rename, and archive categories.
+Tenant payments aren't a category. A payment is matched to an account. The owner can add, rename, and archive categories. Shared-cost categories can't be archived.
 
-### Tenants and leases
+### Tenants, accounts, and leases
 
 A tenant has a business name, a contact name, a mailing address, an email, and a phone.
 
-A lease has:
+An account has a tenant, a unit, and an opening balance: what the tenant owed when tracking started, including last year's true-up, with a prepayment entered as a negative amount. Only an account that started on or before the tracking start has one. A later account that needs a starting amount gets an adjustment.
 
-- **Tenant and unit.**
-- **Start date and end date.** A move-out date is added if the tenant leaves early.
+A lease belongs to an account and has:
+
+- **Start date and end date.** A move-out date is added when the tenant leaves, early or as planned.
 - **Base rent.** A list of monthly amounts, each with the date it starts. An "Add increase" helper takes a date and a percentage or a new amount.
-- **Estimates.** For each pool the unit is in, whether the lease pays it, and a monthly estimate with the date it starts. Estimates change each January 1 after the reconciliation.
+- **Estimates.** For each pool the unit is in, a monthly estimate with the date it starts. The lease pays a pool from its first estimate for that pool, which can be partway through the lease. Estimates change each January 1 after the reconciliation.
 - **Late fee.** Optional. A flat amount, and the day of the month after which it applies, such as the 10th.
 - **Insurance certificate.** The date the tenant's current certificate expires, if one is on file.
-- **Opening balance.** What the tenant owed when tracking started, including last year's true-up.
 
-A lease counts every month it's active for at least one day. Each counted month expects the full base rent and estimates.
+An account expects rent every month it's active for at least one day, counting from the later of its start and the tracking start. Each counted month expects the full base rent and estimates in effect on the later of the 1st and the account's start. A renewal that starts mid-month bills that month at the old lease's terms.
+
+If the newest lease passes its end date with no move-out date, the account keeps expecting that lease's last rent and estimates until the owner adds a renewal or a move-out date.
+
+A tenant moving to another unit gets a new account. The remaining balance moves with an adjustment on each account.
 
 ## Bank activity
 
 ### Import
 
-- The owner uploads the bank's CSV. The first time, they match its columns to date, description, and amount, and the app remembers.
+- The owner uploads the bank's CSV. The first time, they match its columns to date, description, and amount, and the app remembers. The amount can be one signed column or separate debit and credit columns.
 - Importing an overlapping date range never creates duplicates.
+- Rows dated before the tracking start are skipped and counted.
+- A row with an amount but a date that can't be read is shown before importing. The owner fixes the column matching or skips the row. Nothing with an amount is left out without the owner seeing it.
+- An import can be removed as long as none of its transactions have been sorted.
 - The owner adds cash expenses by hand with a date, description, amount, and category.
 
 ### Sorting
@@ -107,52 +115,59 @@ A lease counts every month it's active for at least one day. Each counted month 
 New transactions land in a "To sort" list.
 
 - **Money out** gets a category. The app suggests the category last used for the same description.
-- **Money in** is matched to a lease or given a category. The app suggests a lease that paid from the same description before, or whose monthly expected amount equals the deposit. The owner confirms.
+- **Money in** is matched to an account or given a category. The app suggests an account that paid from the same description before, or whose monthly expected amount equals the deposit. The owner confirms.
+- A transaction can be split into parts that add up to its amount, each matched to an account or given a category. For example, one check for two units, or a landscaper bill that's partly CAM and partly a repair.
+- A deposit can go to a shared-cost category, which lowers that pool's cost, such as an insurance refund. A withdrawal can be matched to an account, such as a bounced check or a refund to a tenant.
 - A sorted transaction can be changed later.
 
 ## Rent status
 
-A table of leases with expected so far, received so far, balance, and last payment date. Leases that are behind are listed first.
+A table of accounts with expected so far, received so far, balance, last payment date, and a status. Accounts that are behind are listed first.
 
-Each lease has a history of what makes up its balance: opening balance, each month's expected amount, payments, fees, adjustments, and true-ups.
+- **Due.** A month's rent counts as owed from the 1st. Until the lease's late-fee day, or the 5th if it has no late fee, a balance from this month alone shows as Due.
+- **Behind.** A balance left after that day, or left over from an earlier month.
 
-- **Late fees.** When a lease has a late fee and still has a balance after its day of the month, the app suggests the fee. The owner approves it, which adds it to the balance, or dismisses it for that month.
-- **Adjustments.** The owner can add a credit or charge to a lease with a note, for anything the rules don't cover.
+Each account has a history of what makes up its balance: opening balance, each month's expected amount, payments, fees, adjustments, and true-ups.
+
+- **Late fees.** When a lease has a late fee, the app suggests it if payments from the 1st through the fee day, plus any credit carried into the month, come to less than that month's expected amount. The suggestion shows only during that month. Older balances and true-ups never trigger a fee on their own. The owner approves it, which adds it to the balance dated the day after the fee day, or dismisses it. A missed fee, or a fee for a check that bounced after the fee day, is added by hand as an adjustment.
+- **Adjustments.** The owner can add a credit or charge to an account with a note, for anything the rules don't cover.
 
 ## Coming up
 
 The home page lists:
 
-- Leases that are behind, with any late fees waiting for approval.
+- Accounts that are behind, with any late fees waiting for approval.
 - The number of transactions to sort.
 - Base rent changes in the next 90 days. The owner marks each one "Tenant notified".
 - Insurance certificates that are missing or expire in the next 60 days.
-- Leases ending in the next 90 days.
+- Leases ending in the next 90 days, and accounts past their lease's end date with no renewal or move-out ("Past end date").
 
 ## Year-end reconciliation
 
 ### The math
 
-For each lease and each pool it pays:
+For each account and each pool it pays:
 
 ```text
-months        = months the lease was active in the year
+months        = months in the year the account was active and paid the pool
 share         = unit sqft / total sqft of the pool's units
 their part    = pool's actual cost x share x months / 12
-estimates     = the lease's monthly estimates for those months, added up
+estimates     = the monthly estimates expected for those months, added up
 balance       = their part - estimates
 ```
 
-A pool's actual cost is the year's transactions in its category. When payments don't line up with the year, as with taxes paid in installments, the owner enters the year's bill amount with a note, and the app uses that instead. Amounts round to the cent once, on each line.
+Estimates are what the tenant was expected to pay, not what they actually paid. A short payment stays in the rent balance.
+
+A pool's actual cost is the year's transactions in its category, with refunds subtracting. When payments don't line up with the year, as with taxes paid in installments, the owner enters the year's bill amount with a note, and the app uses that instead. Amounts round to the cent once, on each line.
 
 ```text
 true-up             = the balances for every pool, added up
-balance on account  = true-up + the lease's balance on the letter date
+balance on account  = true-up + the account's balance at the end of December 31
 new monthly estimate, per pool = pool's actual cost x share / 12
 new monthly rent    = base rent on January 1 + the new estimates
 ```
 
-The new estimate uses a full year's share even when the tenant was only there part of the year.
+The December 31 balance counts expected amounts through December only, before the true-up. The new estimate uses a full year's share even when the tenant was only there part of the year.
 
 Example: a 2,500 sqft unit in a 9,350 sqft building, leased all of 2024.
 
@@ -167,44 +182,59 @@ Balance on account                                            651.48
 New monthly rent from Jan 1: 2,500.00 + 287.24 + 747.38 + 140.02 = 3,674.64
 ```
 
-The spreadsheet shows $237.75, $651.49, and $3,674.63 because it adds unrounded amounts. The app rounds each line to the cent first, so every total on the statement equals the sum of the lines printed above it.
+The spreadsheet shows $237.75, $651.49, and $3,674.63 because it adds unrounded amounts. The app rounds each line to the cent first, so every total on the statement equals the sum of the lines printed above it. The share is printed rounded but used unrounded.
+
+A negative true-up is a credit. It goes onto the account's balance, and the letter says it has been applied to the account.
 
 ### The workspace
 
 The Reconciliation page lists each year. Opening a year shows:
 
-- A checklist: no transactions dated in the year are left to sort, and every pool a lease pays has at least one unit.
+- A checklist. These block finalizing:
+  - Transactions dated in the year are still waiting to be sorted.
+  - A pool a lease pays has no units.
+  - A pool's actual cost is negative.
+  - Letter details or a tenant's mailing address are missing.
+- These only warn:
+  - The newest bank data is before December 31.
+  - A pool used a bill amount last year but has none this year.
+  - An account is past its lease's end date.
+  - Pool members or unit sqft changed during the year.
 - One card per pool with the actual cost and the transactions behind it. When a bill amount is entered, the card shows the bill and the payments side by side.
-- One statement per lease that pays at least one pool, including tenants who moved out during the year.
+- One statement per account that pays at least one pool, including tenants who moved out during the year.
+- A preview of each PDF before finalizing.
 
 ### Statement and letter
 
-Each lease gets one PDF with a letter and a statement, following the owner's current versions.
+Each account gets one PDF with a letter and a statement, following the owner's current versions.
 
-The letter has the date, the tenant's mailing address, the year and unit address, the true-up, the new monthly rent from January 1, the balance on account, and the owner's signature details. If no insurance certificate on file covers January 1 of the next year, it asks the tenant to send one.
+The letter has the letter date, the tenant's mailing address, the year and unit address, the true-up, the new monthly rent from January 1, the balance on account, and the owner's signature details. If no insurance certificate on file covers January 1 of the next year, it asks the tenant to send one. It names the pools the tenant pays, such as "CAM, tax, insurance, and water". A tenant who moved out gets the letter without the new rent, the revised rent block, or the insurance request.
 
-The statement shows the building area and each pool's area, each pool's actual cost and cost per sqft, the table above with a months column for partial years, the new monthly rent, and the balance on account.
+The letter date is set by the owner on the year, and defaults to the day they open finalize.
+
+The statement shows the building area and the area of each other pool the tenant pays, each pool's actual cost and cost per sqft per year and per month, the table above with a months column for partial years, the new monthly rent, and the balance on account. It uses the owner's column labels.
 
 ### Finalize
 
 Finalizing a year:
 
-- Saves each lease's PDF for download.
-- Adds each true-up to its lease's balance, dated the letter date.
-- Sets each active lease's new estimates from January 1 of the next year.
+- Saves each account's PDF for download, and a copy of each statement's numbers.
+- Adds each true-up to its account's balance, dated the letter date.
+- Sets new estimates from January 1 of the next year on the lease covering January 1 for each account that has a statement.
 
-It runs once per year. A mistake found later is fixed with an adjustment on the lease.
+It runs once per year. If data in a finalized year changes later, the year shows how each statement differs from what was saved. A mistake is fixed with an adjustment on the account.
 
 ## Acceptance criteria
 
-1. The owner can enter the property, units, pools, tenants, and leases, including base rent steps, estimates, late fee, insurance date, and opening balance.
+1. The owner can enter the property, units, pools, tenants, accounts, and leases, including base rent steps, estimates, late fee, insurance date, and opening balance.
 2. Each unit's share in a pool equals its sqft divided by the total sqft of the pool's units, and vacant units count in the total.
 3. Importing the same CSV twice, or two overlapping ones, creates no duplicates.
-4. Every transaction can be categorized, and every deposit can be matched to a lease. Suggestions never apply without the owner confirming.
-5. A lease's balance equals its opening balance plus expected amounts, fees, adjustments, and true-ups, minus payments.
+4. Every transaction can be categorized or split, and every deposit can be matched to an account. Suggestions never apply without the owner confirming.
+5. An account's balance equals its opening balance plus expected amounts, fees, adjustments, and true-ups, minus payments.
 6. A late fee is only added when the owner approves it.
-7. The home page shows leases behind, transactions to sort, rent changes in 90 days, insurance certificates missing or expiring in 60 days, and leases ending in 90 days.
+7. The home page shows accounts behind, transactions to sort, rent changes in 90 days, insurance certificates missing or expiring in 60 days, leases ending in 90 days, and accounts past their end date.
 8. Running 2024 through the app gives the same line amounts as the spreadsheet. Totals can differ by a cent or two, because the app adds rounded lines.
 9. A tenant who moved out in August gets 8/12 of their share and 8 months of estimates.
 10. A pool's actual cost is the year's transactions in its category, or the bill amount when the owner enters one.
-11. Finalizing produces one PDF per lease, adds each true-up to its balance, and sets next year's estimates.
+11. Finalizing produces one PDF per account, adds each true-up to its balance, and sets next year's estimates.
+12. A renewal on the same account produces one statement for the year, covering both leases.
