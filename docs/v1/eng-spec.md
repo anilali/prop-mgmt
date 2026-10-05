@@ -716,7 +716,7 @@ for each P in paidPools, in pool sort order:
   balanceP  = part - estimates
 
 trueUp           = Σ balanceP
-priorAsOf        = min(Y-12-31, today)
+priorAsOf        = Y-12-31 if today >= Y-12-31, else min(today, newestBank)
 priorBalance     = balance(A, priorAsOf)
 balanceOnAccount = trueUp + priorBalance
 
@@ -735,7 +735,7 @@ Pools with `poolSqft(P) = 0` skip both `prorate` calls (5.8).
 - An account with two leases in the year (a renewal) counts each month once and adds up the estimates expected under each lease.
 - "Estimates" are what the account was expected to pay, not cash received. Short payments stay in `priorBalance`.
 - The true-up for year `Y` is dated in `Y+1` (5.11), so `balance(A, Y-12-31)` never includes it, and January of `Y+1` is not counted.
-- During the November dry run, `priorAsOf` is today. The workspace labels it "Rent balance as of {date}".
+- `newestBank` is the newest imported bank `posted_on` (cash expenses do not count). During the November dry run, `priorAsOf` is the earlier of today and that date, so rent that is due but not yet imported does not show as owed. With no bank rows it is today. The workspace and the preview PDF label it "Rent balance as of {date}".
 - A pool with zero actual cost still gets a row: part 0, balance equal to minus the estimates, new estimate 0.
 - `newEstimate` uses a full year's share even when `monthsP < 12`.
 - A pool the account paid in its last counted month carries over to `J` even when `J` has no step for it, as long as the unit is still in the pool. A renewal starting January 1 that was entered with blank estimates still gets every pool the tenant paid in December. A pool carried over this way gets a checklist warning (5.10).

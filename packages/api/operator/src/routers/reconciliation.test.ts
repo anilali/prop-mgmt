@@ -326,6 +326,19 @@ describe("reconciliation.workspace", () => {
     expect(result.canFinalize).toBe(false);
   });
 
+  it("stops the dry-run balance at the newest bank date", async () => {
+    const { app, caller } = await setup("2024-11-16");
+    for (const txn of [...app.billing.transactions.values()]) {
+      if (txn.postedOn > "2024-10-02") app.billing.transactions.delete(txn.id);
+    }
+    const result = await caller.reconciliation.workspace({ year: 2024 });
+    expect(result.isDryRun).toBe(true);
+    expect(result.priorBalanceAsOf).toBe("2024-10-02");
+    expect(
+      result.statements.map((statement) => statement.priorBalanceAsOf),
+    ).toEqual(result.statements.map(() => "2024-10-02"));
+  });
+
   it("rejects a year outside the tracking start year and this year", async () => {
     const { caller } = await setup();
     expect(await codeOf(caller.reconciliation.workspace({ year: 2023 }))).toBe(

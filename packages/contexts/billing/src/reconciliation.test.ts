@@ -612,6 +612,32 @@ describe("edge cases", () => {
     expect(statement.balanceOnAccountCents).toBe(23_774);
   });
 
+  it("stops the dry-run balance at the newest bank date when it is before today", () => {
+    const transactions = [...TRANSACTIONS, ...EXPENSES].filter(
+      (txn) => txn.postedOn <= "2024-10-02",
+    );
+    const result = workspace({ today: "2024-11-16", transactions });
+    const statement = result.statements.find(
+      (s) => s.accountId === superLucky.accountId,
+    );
+    expect(result.newestBankDate).toBe("2024-10-02");
+    expect(result.priorBalanceAsOf).toBe("2024-10-02");
+    expect(statement?.priorBalanceAsOf).toBe("2024-10-02");
+    expect(statement?.priorBalanceCents).toBe(0);
+  });
+
+  it("uses December 31 for the balance after the year ends, whatever the bank date", () => {
+    const transactions = [...TRANSACTIONS, ...EXPENSES].filter(
+      (txn) => txn.postedOn <= "2024-10-02",
+    );
+    const result = workspace({ today: "2025-01-10", transactions });
+    expect(result.priorBalanceAsOf).toBe("2024-12-31");
+    expect(
+      result.statements.find((s) => s.accountId === superLucky.accountId)
+        ?.priorBalanceAsOf,
+    ).toBe("2024-12-31");
+  });
+
   it("counts ledger entries through December 31 only", () => {
     const statement = statementFor(superLucky.accountId, {
       entries: [

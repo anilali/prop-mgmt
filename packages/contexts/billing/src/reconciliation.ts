@@ -216,6 +216,15 @@ export function yearEnd(year: number): IsoDate {
   return `${year}-12-31`;
 }
 
+function priorBalanceDate(
+  year: number,
+  today: IsoDate,
+  newestBank: IsoDate | null,
+): IsoDate {
+  if (today >= yearEnd(year)) return yearEnd(year);
+  return newestBank !== null && newestBank < today ? newestBank : today;
+}
+
 export function nextJanuary1(year: number): IsoDate {
   return `${year + 1}-01-01`;
 }
@@ -315,6 +324,7 @@ const EMPTY_ADDRESS: Address = {
 export function accountStatement(input: {
   year: number;
   today: IsoDate;
+  priorBalanceAsOf: IsoDate;
   trackingStart: IsoDate;
   account: AccountTerms;
   unit: ReconciliationUnit;
@@ -376,8 +386,7 @@ export function accountStatement(input: {
   const trueUpCents = complete
     ? sum(rows.map((row) => row.balanceCents ?? 0))
     : null;
-  const priorBalanceAsOf =
-    input.today < yearEnd(year) ? input.today : yearEnd(year);
+  const { priorBalanceAsOf } = input;
   const priorBalanceCents = balanceOn(input.ledger, priorBalanceAsOf);
 
   const jan1 = nextJanuary1(year);
@@ -763,6 +772,8 @@ export function reconciliationWorkspace(
   });
   const buildingSqft = sum(input.units.map((unit) => unit.sqft));
   const previewLetterDate = input.record?.letterDate ?? today;
+  const newestBank = newestBankDate(input.transactions);
+  const priorBalanceAsOf = priorBalanceDate(year, today, newestBank);
 
   const statements: AccountStatement[] = input.accounts
     .flatMap((account) => {
@@ -775,6 +786,7 @@ export function reconciliationWorkspace(
       const statement = accountStatement({
         year,
         today,
+        priorBalanceAsOf,
         trackingStart: input.trackingStart,
         account,
         unit,
@@ -840,8 +852,8 @@ export function reconciliationWorkspace(
     previewLetterDate,
     finalizedAt: input.record?.finalizedAt ?? null,
     today,
-    priorBalanceAsOf: today < yearEnd(year) ? today : yearEnd(year),
-    newestBankDate: newestBankDate(input.transactions),
+    priorBalanceAsOf,
+    newestBankDate: newestBank,
     pools: actuals,
     statements,
     checklist,
