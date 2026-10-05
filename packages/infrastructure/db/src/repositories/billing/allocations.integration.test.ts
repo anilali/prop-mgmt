@@ -65,6 +65,8 @@ describe.skipIf(!databaseUrl)("transaction allocations", () => {
           propertyId,
           bankAccountId: bankAccount.id,
           fileName: "activity.csv",
+          format: "csv",
+          accountLast4: null,
           importedAt: new Date(),
           rowCount: 1,
           insertedCount: 1,

@@ -253,6 +253,8 @@ export class PGBillingStore implements BillingStore {
         propertyId: batch.propertyId,
         bankAccountId: batch.bankAccountId,
         fileName: batch.fileName,
+        format: batch.format,
+        accountLast4: batch.accountLast4,
         importedAt: batch.importedAt,
         rowCount: batch.rowCount,
         insertedCount: batch.insertedCount,

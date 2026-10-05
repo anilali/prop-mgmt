@@ -16,6 +16,7 @@ import type {
   DedupeState,
   ImportBatch,
   ImportBatchSummary,
+  ImportFormat,
   TransactionSource,
   Txn,
 } from "@moonship/billing";
@@ -48,6 +49,8 @@ export function toImportBatch(
     propertyId: row.propertyId,
     bankAccountId: row.bankAccountId,
     fileName: row.fileName,
+    format: row.format as ImportFormat,
+    accountLast4: row.accountLast4,
     importedAt: row.importedAt,
     rowCount: row.rowCount,
     insertedCount: row.insertedCount,

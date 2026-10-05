@@ -170,6 +170,8 @@ describe.skipIf(!databaseUrl)("balance through PGBillingQueries", () => {
           propertyId,
           bankAccountId: bankAccount.id,
           fileName: "2024.csv",
+          format: "csv",
+          accountLast4: null,
           importedAt: new Date(),
           rowCount: rows.length,
           insertedCount: rows.length,

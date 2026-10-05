@@ -3,7 +3,12 @@ import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
 import type { CsvMapping } from "@moonship/billing";
-import { commitImport, removeImportBatch } from "@moonship/billing";
+import {
+  commitImport,
+  commitOfxImport,
+  parseOfx,
+  removeImportBatch,
+} from "@moonship/billing";
 
 import type { PGBillingStore } from "./billing-store";
 import { createDb } from "../../client";
@@ -27,6 +32,20 @@ const mapping: CsvMapping = {
 
 function csv(...lines: string[]): string[][] {
   return ["Date,Description,Amount", ...lines].map((line) => line.split(","));
+}
+
+function ofx(...transactions: [string, string, string, string][]): string {
+  return [
+    "OFXHEADER:100 DATA:OFXSGML VERSION:102 ENCODING:USASCII CHARSET:1252 ",
+    "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD",
+    "<BANKACCTFROM><BANKID>000000000<ACCTID>9900004321<ACCTTYPE>CHECKING</BANKACCTFROM>",
+    "<BANKTRANLIST><DTSTART>20260101<DTEND>20260131",
+    ...transactions.map(
+      ([date, name, amount, fitId]) =>
+        `<STMTTRN><TRNTYPE>OTHER<DTPOSTED>${date}120000.000[0:GMT]<TRNAMT>${amount}<FITID>${fitId}<NAME>${name}</STMTTRN>`,
+    ),
+    "</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+  ].join("\n");
 }
 
 function csvWithIds(...lines: string[]): string[][] {
@@ -261,5 +280,53 @@ describe.skipIf(!databaseUrl)("bank transaction import", () => {
     expect((await queries.listImportBatches(propertyId))[0]?.sortedCount).toBe(
       1,
     );
+  });
+  it("imports a QuickBooks file once by its transaction ids", async () => {
+    const propertyId = newProperty();
+    const commitOfx = (text: string) =>
+      unitOfWork.run(({ billing }) =>
+        commitOfxImport(billing, {
+          propertyId,
+          fileName: "activity.qbo",
+          statement: parseOfx(text),
+          trackingStart: "2026-01-01",
+          importedAt: new Date(),
+          newId: randomUUID,
+          hashRow: (cells) =>
+            createHash("sha256").update(cells.join("\u001f")).digest("hex"),
+        }),
+      );
+    const january = ofx(
+      ["20251231", "OLD FEE", "-5.00", "OFX-T0"],
+      ["20260105", "Mobile Check Deposit", "2500.00", "OFX-T1"],
+      ["20260106", "SERVICE FEE", "-25.00", "OFX-T2"],
+    );
+
+    const first = await commitOfx(january);
+    expect(first.batch.insertedCount).toBe(2);
+    expect(first.batch.beforeTrackingStartCount).toBe(1);
+
+    const overlap = await commitOfx(
+      ofx(
+        ["20260106", "SERVICE FEE", "-25.00", "OFX-T2"],
+        ["20260106", "SERVICE FEE", "-25.00", "OFX-T3"],
+      ),
+    );
+    expect(overlap.batch.insertedCount).toBe(1);
+    expect(overlap.batch.duplicateCount).toBe(1);
+    expect((await commitOfx(january)).batch.insertedCount).toBe(0);
+
+    const rows = await stored(propertyId);
+    expect(rows.map((row) => row.externalId).sort()).toEqual([
+      "OFX-T1",
+      "OFX-T2",
+      "OFX-T3",
+    ]);
+    const batches = await queries.listImportBatches(propertyId);
+    expect(batches).toHaveLength(3);
+    expect(
+      batches.every((b) => b.format === "ofx" && b.accountLast4 === "4321"),
+    ).toBe(true);
+    expect((await queries.getBankAccount(propertyId))?.csvMapping).toBeNull();
   });
 });

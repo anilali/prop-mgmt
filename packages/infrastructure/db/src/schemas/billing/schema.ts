@@ -123,6 +123,8 @@ export const importBatches = billingSchema.table(
       .notNull()
       .references(() => bankAccounts.id),
     fileName: text("file_name").notNull(),
+    format: varchar("format", { length: 8 }).notNull().default("csv"),
+    accountLast4: varchar("account_last4", { length: 4 }),
     importedAt: timestamp("imported_at").notNull().defaultNow(),
     rowCount: integer("row_count").notNull(),
     insertedCount: integer("inserted_count").notNull(),
@@ -134,6 +136,10 @@ export const importBatches = billingSchema.table(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+    check(
+      "import_batches_format_check",
+      sql`${table.format} in ('csv', 'ofx')`,
+    ),
     index("import_batches_property_id_idx").on(table.propertyId),
     index("import_batches_bank_account_id_idx").on(table.bankAccountId),
   ],
