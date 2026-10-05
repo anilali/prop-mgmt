@@ -181,6 +181,10 @@ export function streetWithSuite(address: Address): string {
     .join(", ");
 }
 
+export function nonBreaking(text: string): string {
+  return text.trim().replace(/\s+/g, "\u00a0");
+}
+
 function plain(text: string): TextRun {
   return { text, bold: false };
 }
@@ -218,9 +222,13 @@ export function letterDocument(data: StatementData): LetterDocument {
     const names = joinNames(
       data.continuing.newEstimates.map((estimate) => estimate.letterName),
     );
+    const chargesChange =
+      names === ""
+        ? ""
+        : `The monthly charges for ${names} for the year ${nextYear} will change to reflect the ${year} actual expense. `;
     paragraphs.push([
       plain(
-        `The monthly charges for ${names} for the year ${nextYear} will change to reflect the ${year} actual expense. Effective ${longDate(data.continuing.effectiveDate)}, the monthly rent will be changed to `,
+        `${chargesChange}Effective ${longDate(data.continuing.effectiveDate)}, the monthly rent will be changed to `,
       ),
       bold(formatCents(data.continuing.newMonthlyRentCents)),
       plain("."),
@@ -244,7 +252,7 @@ export function letterDocument(data: StatementData): LetterDocument {
           bold(formatCents(data.balanceOnAccountCents)),
         ]),
     plain(
-      `. If you have any questions, please call me at ${data.owner.phone}.`,
+      `. If you have any questions, please call me at ${nonBreaking(data.owner.phone)}.`,
     ),
   ]);
 

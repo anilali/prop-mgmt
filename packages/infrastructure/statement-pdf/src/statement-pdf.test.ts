@@ -47,7 +47,7 @@ function decodeHex(hex: string): string {
   return text;
 }
 
-function textOf(pdf: Buffer): string {
+function runsOf(pdf: Buffer): string[] {
   const runs: string[] = [];
   for (const stream of streams(pdf)) {
     const content = stream.toString("latin1");
@@ -56,7 +56,11 @@ function textOf(pdf: Buffer): string {
       runs.push(parts.map((part) => decodeHex(part[1] ?? "")).join(""));
     }
   }
-  return runs.join("").replace(/\s+/g, " ");
+  return runs;
+}
+
+function textOf(pdf: Buffer): string {
+  return runsOf(pdf).join("").replace(/\s+/g, " ");
 }
 
 const renderer = new ReactPdfStatementRenderer();
@@ -95,6 +99,19 @@ describe("ReactPdfStatementRenderer", () => {
       expect(text).toContain(value);
     }
     expect(text).not.toContain("MONTHS");
+  });
+
+  it("keeps the owner phone on one line", async () => {
+    const data = dataFor(superLucky.accountId);
+    const { pdf } = await render({
+      ...data,
+      owner: { ...data.owner, phone: "+1 (555) 010 2000" },
+    });
+    expect(
+      runsOf(pdf).some((run) =>
+        run.includes("+1\u00a0(555)\u00a0010\u00a02000"),
+      ),
+    ).toBe(true);
   });
 
   it("renders 6.2 without the new rent, insurance request, or revised rent block", async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { formatCents } from "@moonship/shared";
+
 import type { Paragraph, StatementData } from "./statement-document";
 import {
   reconciliationInput,
@@ -15,6 +17,7 @@ import {
   joinNames,
   letterDocument,
   longDate,
+  nonBreaking,
   statementDocument,
   statementFileName,
 } from "./statement-document";
@@ -100,7 +103,7 @@ describe("letter for 6.1 (positive true-up, continuing, no insurance)", () => {
       "Based upon the reconciliation, the balance of your pro rata share of the 2024 expenses for the center totals $237.74.",
       "The monthly charges for CAM, tax, and insurance for the year 2025 will change to reflect the 2024 actual expense. Effective January 1, 2025, the monthly rent will be changed to $3,674.64.",
       "We don't have a copy of your insurance on file for the year 2025. Could you please send us a copy at your earliest convenience. The copy can be emailed to owner@example.com.",
-      "The current balance on your account is $651.48. If you have any questions, please call me at (555) 010-2000.",
+      "The current balance on your account is $651.48. If you have any questions, please call me at (555)\u00a0010-2000.",
     ]);
   });
 
@@ -130,7 +133,7 @@ describe("letter for 6.3 (credit true-up and credit balance)", () => {
       expect.stringContaining("2024 expense reconciliation"),
       "Based upon the reconciliation, the balance of your pro rata share of the 2024 expenses for the center results in a credit of $1,084.54, which has been applied to your account.",
       "The monthly charges for CAM, tax, insurance, and water for the year 2025 will change to reflect the 2024 actual expense. Effective January 1, 2025, the monthly rent will be changed to $4,161.70.",
-      "The current balance on your account is a credit of $834.54. If you have any questions, please call me at (555) 010-2000.",
+      "The current balance on your account is a credit of $834.54. If you have any questions, please call me at (555)\u00a0010-2000.",
     ]);
     expect(boldRuns(letter.paragraphs)).toEqual([
       "$1,084.54",
@@ -155,7 +158,38 @@ describe("letter for 6.2 (moved out)", () => {
     expect(letter.paragraphs).toHaveLength(3);
     expect(text(letter.paragraphs[1])).toContain("totals $218.53.");
     expect(text(letter.paragraphs[2])).toBe(
-      "The current balance on your account is $218.53. If you have any questions, please call me at (555) 010-2000.",
+      "The current balance on your account is $218.53. If you have any questions, please call me at (555)\u00a0010-2000.",
+    );
+  });
+});
+
+describe("letter for a continuing lease with no new estimates", () => {
+  it("states only the new monthly rent", () => {
+    const continuing = lucky.continuing;
+    if (!continuing) throw new Error("Super Lucky should be continuing");
+    const letter = letterDocument({
+      ...lucky,
+      continuing: {
+        ...continuing,
+        newEstimates: [],
+        newMonthlyRentCents: continuing.baseRentCents,
+      },
+    });
+    expect(text(letter.paragraphs[2])).toBe(
+      `Effective January 1, 2025, the monthly rent will be changed to ${formatCents(continuing.baseRentCents)}.`,
+    );
+  });
+});
+
+describe("owner phone", () => {
+  it("keeps the number on one line", () => {
+    expect(nonBreaking(" (555)  010-2000 ")).toBe("(555)\u00a0010-2000");
+    const letter = letterDocument({
+      ...lucky,
+      owner: { ...lucky.owner, phone: "+1 555 010 2000" },
+    });
+    expect(text(letter.paragraphs.at(-1))).toContain(
+      "call me at +1\u00a0555\u00a0010\u00a02000.",
     );
   });
 });
