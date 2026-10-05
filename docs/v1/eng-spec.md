@@ -627,16 +627,19 @@ The preview lists each error with its row number and cells. The owner either fix
 
 6. Skip zero amounts. Skip rows dated before the tracking start date and count them.
 
-Dedupe, per row in file order:
+Dedupe, per row in file order. Stored state per key `(postedOn, descriptionKey, amountCents)`: the total count of stored rows, the count of stored rows with no `external_id`, and the key of every stored `external_id`.
 
 ```text
+key = (postedOn, descriptionKey, amountCents)
 if mapping.idColumn and row has an id:
-  insert unless a bank row with that external_id exists for the bank account, or the id appeared earlier in this file
+  if the id is stored or appeared earlier in this file:
+    duplicate when its stored or earlier key equals key, otherwise an error row
+  else:
+    if storedNoId[key] > usedNoId[key]: usedNoId[key] += 1 and it is a duplicate
+    else insert
 else:
-  key = (postedOn, descriptionKey, amountCents)
   seenInFile[key] += 1
-  insert if seenInFile[key] > storedCount[key]
-  where storedCount counts the bank account's rows with that key and no external_id
+  insert if seenInFile[key] > storedTotal[key] - usedNoId[key]
 ```
 
 This keeps `max(count already stored, count in this file)` rows per key. Two real $25.00 fees on the same day both import. Importing the same file again inserts nothing. An overlapping file inserts only the rows past what is stored.
@@ -647,7 +650,7 @@ Single bank rows are never deleted. Deleting one would lower the stored count, a
 
 A whole batch can be removed when none of its rows has allocation lines. This undoes an import made with a wrong mapping, such as a flipped sign. `removeBatch` locks the `bank_accounts` row, checks that no row in the batch is sorted, and deletes the rows and the batch in one unit of work.
 
-Changing `idColumn` after earlier imports used the count rule can let duplicates through. The mapping form warns when it changes.
+Changing `idColumn` between imports is safe: an id row first uses up a stored row with the same key and no id, and a row with no id is compared with every stored row with that key. The mapping form still warns when it changes. A known id whose date, description, or amount changed is an error row the owner skips.
 
 ### 5.8 Pool actual cost
 
