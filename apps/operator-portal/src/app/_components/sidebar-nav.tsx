@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   ArrowLeftRight,
   Building2,
+  Calculator,
   FileText,
   KeyRound,
   Settings,
@@ -25,6 +26,7 @@ interface NavItem {
 const propertyMainItems: NavItem[] = [
   { label: "Rent", href: "/rent", icon: Wallet },
   { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
+  { label: "Reconciliation", href: "/reconciliation", icon: Calculator },
 ];
 
 const propertyItems: NavItem[] = [
