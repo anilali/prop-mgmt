@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  char,
   check,
   date,
   index,
@@ -215,5 +216,63 @@ export const transactionAllocations = billingSchema.table(
     index("transaction_allocations_transaction_id_idx").on(table.transactionId),
     index("transaction_allocations_account_id_idx").on(table.accountId),
     index("transaction_allocations_category_id_idx").on(table.categoryId),
+  ],
+);
+
+export const accountLedgerEntries = billingSchema.table(
+  "account_ledger_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    accountId: uuid("account_id").notNull(),
+    kind: varchar("kind", { length: 24 }).notNull(),
+    entryDate: date("entry_date", { mode: "string" }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    note: text("note"),
+    feeMonth: char("fee_month", { length: 7 }),
+    reconciliationYearId: uuid("reconciliation_year_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check(
+      "account_ledger_entries_kind_check",
+      sql`${table.kind} in ('late_fee', 'late_fee_dismissed', 'adjustment', 'true_up')`,
+    ),
+    check(
+      "account_ledger_entries_late_fee_check",
+      sql`${table.kind} <> 'late_fee' or (${table.amountCents} > 0 and ${table.feeMonth} is not null)`,
+    ),
+    check(
+      "account_ledger_entries_late_fee_dismissed_check",
+      sql`${table.kind} <> 'late_fee_dismissed' or (${table.amountCents} = 0 and ${table.feeMonth} is not null)`,
+    ),
+    check(
+      "account_ledger_entries_adjustment_check",
+      sql`${table.kind} <> 'adjustment' or (${table.amountCents} <> 0 and btrim(coalesce(${table.note}, '')) <> '')`,
+    ),
+    check(
+      "account_ledger_entries_true_up_check",
+      sql`${table.kind} <> 'true_up' or (${table.reconciliationYearId} is not null and ${table.amountCents} <> 0)`,
+    ),
+    check(
+      "account_ledger_entries_fee_month_check",
+      sql`(${table.feeMonth} is not null) = (${table.kind} in ('late_fee', 'late_fee_dismissed')) and (${table.feeMonth} is null or ${table.feeMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')`,
+    ),
+    check(
+      "account_ledger_entries_reconciliation_year_check",
+      sql`(${table.reconciliationYearId} is not null) = (${table.kind} = 'true_up')`,
+    ),
+    uniqueIndex("account_ledger_entries_account_id_fee_month_unique")
+      .on(table.accountId, table.feeMonth)
+      .where(sql`${table.feeMonth} is not null`),
+    uniqueIndex("account_ledger_entries_true_up_unique")
+      .on(table.reconciliationYearId, table.accountId)
+      .where(sql`${table.kind} = 'true_up'`),
+    index("account_ledger_entries_property_id_idx").on(table.propertyId),
+    index("account_ledger_entries_account_id_idx").on(table.accountId),
   ],
 );

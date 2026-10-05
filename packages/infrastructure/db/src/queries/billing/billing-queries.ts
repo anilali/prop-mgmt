@@ -7,6 +7,7 @@ import type {
   DedupeRange,
   DedupeState,
   ImportBatchSummary,
+  LedgerEntry,
   Pool,
   Txn,
 } from "@moonship/billing";
@@ -22,7 +23,9 @@ import {
   loadCategories,
   loadPools,
 } from "../../repositories/billing/billing-rows";
+import { loadLedgerEntries } from "../../repositories/billing/ledger-rows";
 import {
+  accountLedgerEntries,
   bankAccounts,
   transactionAllocations,
   transactions,
@@ -48,8 +51,14 @@ export class PGBillingQueries implements BillingQueries {
     return rows.length > 0;
   }
 
-  hasTransactionsOrLedgerEntries(propertyId: string): Promise<boolean> {
-    return this.hasTransactions(propertyId);
+  async hasTransactionsOrLedgerEntries(propertyId: string): Promise<boolean> {
+    if (await this.hasTransactions(propertyId)) return true;
+    const rows = await this.db
+      .select({ id: accountLedgerEntries.id })
+      .from(accountLedgerEntries)
+      .where(eq(accountLedgerEntries.propertyId, propertyId))
+      .limit(1);
+    return rows.length > 0;
   }
 
   async categoryHasAllocations(
@@ -83,7 +92,18 @@ export class PGBillingQueries implements BillingQueries {
         ),
       )
       .limit(1);
-    return rows.length > 0;
+    if (rows.length > 0) return true;
+    const entries = await this.db
+      .select({ id: accountLedgerEntries.id })
+      .from(accountLedgerEntries)
+      .where(
+        and(
+          eq(accountLedgerEntries.propertyId, propertyId),
+          eq(accountLedgerEntries.accountId, accountId),
+        ),
+      )
+      .limit(1);
+    return entries.length > 0;
   }
 
   async getBankAccount(propertyId: string): Promise<BankAccount | null> {
@@ -115,5 +135,21 @@ export class PGBillingQueries implements BillingQueries {
   async getTransaction(propertyId: string, id: string): Promise<Txn | null> {
     const [txn] = await loadTransactions(this.db, propertyId, [id]);
     return txn ?? null;
+  }
+
+  listLedgerEntries(propertyId: string): Promise<LedgerEntry[]> {
+    return loadLedgerEntries(this.db, propertyId);
+  }
+
+  async getLedgerEntry(
+    propertyId: string,
+    id: string,
+  ): Promise<LedgerEntry | null> {
+    const [entry] = await loadLedgerEntries(this.db, propertyId, id);
+    return entry ?? null;
+  }
+
+  listFinalizedYears(_propertyId: string): Promise<number[]> {
+    return Promise.resolve([]);
   }
 }

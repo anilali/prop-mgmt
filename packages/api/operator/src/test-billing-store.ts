@@ -12,6 +12,7 @@ import type {
   DedupeState,
   ImportBatch,
   ImportBatchSummary,
+  LedgerEntry,
   NewBankTransaction,
   Pool,
   StoredKeyCount,
@@ -26,6 +27,7 @@ import type {
 import type { IsoDate } from "@moonship/shared";
 import {
   checkAllocationLines,
+  checkLedgerEntry,
   dedupeKey,
   descriptionKey,
 } from "@moonship/billing";
@@ -50,6 +52,8 @@ export class InMemoryBillingStore
   bankAccounts = new Map<string, BankAccount>();
   importBatches = new Map<string, ImportBatch>();
   transactions = new Map<string, Txn>();
+  ledgerEntries = new Map<string, LedgerEntry>();
+  finalizedYears: number[] = [];
 
   listPools(propertyId: string): Promise<Pool[]> {
     return Promise.resolve(
@@ -146,9 +150,17 @@ export class InMemoryBillingStore
     );
   }
 
+  private propertyEntries(propertyId: string): LedgerEntry[] {
+    return [...this.ledgerEntries.values()].filter(
+      (e) => e.propertyId === propertyId,
+    );
+  }
+
   async hasTransactionsOrLedgerEntries(propertyId: string): Promise<boolean> {
     return (
-      this.ledgerEntryCount > 0 || (await this.hasTransactions(propertyId))
+      this.ledgerEntryCount > 0 ||
+      this.propertyEntries(propertyId).length > 0 ||
+      (await this.hasTransactions(propertyId))
     );
   }
 
@@ -165,7 +177,8 @@ export class InMemoryBillingStore
   accountHasActivity(propertyId: string, accountId: string): Promise<boolean> {
     return Promise.resolve(
       this.accountIdsWithActivity.has(accountId) ||
-        this.propertyLines(propertyId).some((l) => l.accountId === accountId),
+        this.propertyLines(propertyId).some((l) => l.accountId === accountId) ||
+        this.propertyEntries(propertyId).some((e) => e.accountId === accountId),
     );
   }
 
@@ -367,18 +380,83 @@ export class InMemoryBillingStore
     return Promise.resolve(true);
   }
 
+  listLedgerEntries(propertyId: string): Promise<LedgerEntry[]> {
+    return Promise.resolve(
+      this.propertyEntries(propertyId)
+        .sort((a, b) =>
+          a.entryDate < b.entryDate ? -1 : a.entryDate > b.entryDate ? 1 : 0,
+        )
+        .map((e) => structuredClone(e)),
+    );
+  }
+
+  getLedgerEntry(propertyId: string, id: string): Promise<LedgerEntry | null> {
+    const entry = this.ledgerEntries.get(id);
+    return Promise.resolve(
+      entry?.propertyId === propertyId ? structuredClone(entry) : null,
+    );
+  }
+
+  listFinalizedYears(_propertyId: string): Promise<number[]> {
+    return Promise.resolve([...this.finalizedYears]);
+  }
+
+  insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry> {
+    checkLedgerEntry(entry);
+    if (
+      entry.feeMonth !== null &&
+      this.propertyEntries(entry.propertyId).some(
+        (e) => e.accountId === entry.accountId && e.feeMonth === entry.feeMonth,
+      )
+    ) {
+      return Promise.reject(new Error("Duplicate fee month"));
+    }
+    this.ledgerEntries.set(entry.id, structuredClone(entry));
+    return Promise.resolve(structuredClone(entry));
+  }
+
+  updateLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry | null> {
+    checkLedgerEntry(entry);
+    const existing = this.ledgerEntries.get(entry.id);
+    if (
+      existing?.propertyId !== entry.propertyId ||
+      existing.accountId !== entry.accountId ||
+      existing.kind !== entry.kind
+    ) {
+      return Promise.resolve(null);
+    }
+    const updated = {
+      ...existing,
+      entryDate: entry.entryDate,
+      amountCents: entry.amountCents,
+      note: entry.note,
+    };
+    this.ledgerEntries.set(entry.id, updated);
+    return Promise.resolve(structuredClone(updated));
+  }
+
+  deleteLedgerEntry(propertyId: string, id: string): Promise<boolean> {
+    if (this.ledgerEntries.get(id)?.propertyId !== propertyId) {
+      return Promise.resolve(false);
+    }
+    this.ledgerEntries.delete(id);
+    return Promise.resolve(true);
+  }
+
   snapshot(): () => void {
     const pools = structuredClone(this.pools);
     const categories = structuredClone(this.categories);
     const bankAccounts = structuredClone(this.bankAccounts);
     const importBatches = structuredClone(this.importBatches);
     const transactions = structuredClone(this.transactions);
+    const ledgerEntries = structuredClone(this.ledgerEntries);
     return () => {
       this.pools = pools;
       this.categories = categories;
       this.bankAccounts = bankAccounts;
       this.importBatches = importBatches;
       this.transactions = transactions;
+      this.ledgerEntries = ledgerEntries;
     };
   }
 }
