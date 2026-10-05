@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
-import { FileDown } from "lucide-react";
+import { ChevronDown, ChevronRight, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatPercentBps } from "@moonship/billing";
@@ -65,6 +66,9 @@ function StatementCard({
 }) {
   const trpc = useTRPC();
   const preview = useMutation(trpc.reconciliation.previewPdf.mutationOptions());
+  const [open, setOpen] = useState(() =>
+    statement.rows.some((row) => row.poolSqft === 0 || !row.unitInPool),
+  );
   const showMonths = statement.rows.some((row) => row.months < 12);
   const continuing = statement.continuing;
   const nextYear = workspace.year + 1;
@@ -123,70 +127,89 @@ function StatementCard({
         </Button>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Pool</TableHead>
-            {showMonths ? (
-              <TableHead className="text-right">Months</TableHead>
-            ) : null}
-            <TableHead className="text-right">Share</TableHead>
-            <TableHead className="text-right">Their part</TableHead>
-            <TableHead className="text-right">Estimates billed</TableHead>
-            <TableHead className="text-right">Balance due</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {statement.rows.map((row) => (
-            <TableRow key={row.poolId}>
-              <TableCell>
-                {row.name}
-                {row.poolSqft > 0 && !row.unitInPool ? (
-                  <Badge variant="destructive" className="ml-2">
-                    Unit not in pool
-                  </Badge>
+      <div className="space-y-2">
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? (
+            <ChevronDown className="size-4" />
+          ) : (
+            <ChevronRight className="size-4" />
+          )}
+          {statement.rows.length}{" "}
+          {statement.rows.length === 1 ? "pool" : "pools"}, true-up{" "}
+          {amount(statement.trueUpCents)}
+        </button>
+        {open ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Pool</TableHead>
+                {showMonths ? (
+                  <TableHead className="text-right">Months</TableHead>
                 ) : null}
-              </TableCell>
-              {showMonths ? (
-                <TableCell className="text-right tabular-nums">
-                  {row.months}
+                <TableHead className="text-right">Share</TableHead>
+                <TableHead className="text-right">Their part</TableHead>
+                <TableHead className="text-right">Estimates billed</TableHead>
+                <TableHead className="text-right">Balance due</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {statement.rows.map((row) => (
+                <TableRow key={row.poolId}>
+                  <TableCell>
+                    {row.name}
+                    {row.poolSqft > 0 && !row.unitInPool ? (
+                      <Badge variant="destructive" className="ml-2">
+                        Unit not in pool
+                      </Badge>
+                    ) : null}
+                  </TableCell>
+                  {showMonths ? (
+                    <TableCell className="text-right tabular-nums">
+                      {row.months}
+                    </TableCell>
+                  ) : null}
+                  {row.poolSqft > 0 ? (
+                    <>
+                      <TableCell className="text-right tabular-nums">
+                        {row.shareBps === null
+                          ? "-"
+                          : formatPercentBps(row.shareBps)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {amount(row.partCents)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCents(row.estimatesCents)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {amount(row.balanceCents)}
+                      </TableCell>
+                    </>
+                  ) : (
+                    <TableCell
+                      colSpan={4}
+                      className="text-destructive text-right text-sm"
+                    >
+                      Pool has no units
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+              <TableRow className="font-medium hover:bg-transparent">
+                <TableCell colSpan={showMonths ? 5 : 4}>True-up</TableCell>
+                <TableCell className="border-foreground/40 border-t text-right tabular-nums">
+                  {amount(statement.trueUpCents)}
                 </TableCell>
-              ) : null}
-              {row.poolSqft > 0 ? (
-                <>
-                  <TableCell className="text-right tabular-nums">
-                    {row.shareBps === null
-                      ? "-"
-                      : formatPercentBps(row.shareBps)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {amount(row.partCents)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCents(row.estimatesCents)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {amount(row.balanceCents)}
-                  </TableCell>
-                </>
-              ) : (
-                <TableCell
-                  colSpan={4}
-                  className="text-destructive text-right text-sm"
-                >
-                  Pool has no units
-                </TableCell>
-              )}
-            </TableRow>
-          ))}
-          <TableRow className="font-medium hover:bg-transparent">
-            <TableCell colSpan={showMonths ? 5 : 4}>True-up</TableCell>
-            <TableCell className="border-foreground/40 border-t text-right tabular-nums">
-              {amount(statement.trueUpCents)}
-            </TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
+              </TableRow>
+            </TableBody>
+          </Table>
+        ) : null}
+      </div>
 
       <dl className="grid gap-4 text-sm sm:grid-cols-3">
         <div className="space-y-1">
