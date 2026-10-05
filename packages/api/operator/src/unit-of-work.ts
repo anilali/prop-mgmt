@@ -1,12 +1,23 @@
-import type { BillingStore } from "@moonship/billing";
-import type { AccountRepository } from "@moonship/lease-mgmt";
-import type { PropertyRepository, UnitRepository } from "@moonship/property";
+import type { BillingQueries, BillingStore } from "@moonship/billing";
+import type { AccountQueries, AccountRepository } from "@moonship/lease-mgmt";
+import type {
+  PropertyQueries,
+  PropertyRepository,
+  UnitQueries,
+  UnitRepository,
+} from "@moonship/property";
+import type { TenantQueries } from "@moonship/tenant-mgmt";
 
 export interface TransactionalStores {
   billing: BillingStore;
   accountRepository: AccountRepository;
   unitRepository: UnitRepository;
   propertyRepository: PropertyRepository;
+  billingQueries: BillingQueries;
+  accountQueries: AccountQueries;
+  tenantQueries: TenantQueries;
+  unitQueries: UnitQueries;
+  propertyQueries: PropertyQueries;
 }
 
 export interface UnitOfWork {

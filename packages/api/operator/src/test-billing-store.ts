@@ -19,8 +19,14 @@ import type {
   ReconciliationYear,
   StatementData,
   StatementRenderer,
+  StatementSnapshot,
   Txn,
 } from "@moonship/billing";
+import type {
+  BlobStorage,
+  PutObjectInput,
+  SignedDownloadOptions,
+} from "@moonship/blob-storage";
 import type {
   AccountProps,
   AccountQueries,
@@ -59,6 +65,7 @@ export class InMemoryBillingStore
   finalizedYears: number[] = [];
   reconciliationYears = new Map<string, ReconciliationYear>();
   billOverrides = new Map<string, PoolBillOverride>();
+  statementSnapshots = new Map<string, StatementSnapshot>();
 
   listPools(propertyId: string): Promise<Pool[]> {
     return Promise.resolve(
@@ -164,7 +171,12 @@ export class InMemoryBillingStore
     return Promise.resolve(
       this.accountIdsWithActivity.has(accountId) ||
         this.propertyLines(propertyId).some((l) => l.accountId === accountId) ||
-        this.propertyEntries(propertyId).some((e) => e.accountId === accountId),
+        this.propertyEntries(propertyId).some(
+          (e) => e.accountId === accountId,
+        ) ||
+        [...this.statementSnapshots.values()].some(
+          (s) => s.propertyId === propertyId && s.accountId === accountId,
+        ),
     );
   }
 
@@ -479,6 +491,31 @@ export class InMemoryBillingStore
     return Promise.resolve(true);
   }
 
+  listStatementSnapshots(propertyId: string): Promise<StatementSnapshot[]> {
+    return Promise.resolve(
+      [...this.statementSnapshots.values()]
+        .filter((s) => s.propertyId === propertyId)
+        .sort((a, b) => a.year - b.year)
+        .map((s) => structuredClone(s)),
+    );
+  }
+
+  insertStatementSnapshot(
+    snapshot: StatementSnapshot,
+  ): Promise<StatementSnapshot> {
+    if (
+      [...this.statementSnapshots.values()].some(
+        (s) =>
+          s.reconciliationYearId === snapshot.reconciliationYearId &&
+          s.accountId === snapshot.accountId,
+      )
+    ) {
+      return Promise.reject(new Error("Duplicate statement snapshot"));
+    }
+    this.statementSnapshots.set(snapshot.id, structuredClone(snapshot));
+    return Promise.resolve(structuredClone(snapshot));
+  }
+
   insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry> {
     checkLedgerEntry(entry);
     if (
@@ -488,6 +525,17 @@ export class InMemoryBillingStore
       )
     ) {
       return Promise.reject(new Error("Duplicate fee month"));
+    }
+    if (
+      entry.kind === "true_up" &&
+      this.propertyEntries(entry.propertyId).some(
+        (e) =>
+          e.kind === "true_up" &&
+          e.accountId === entry.accountId &&
+          e.reconciliationYearId === entry.reconciliationYearId,
+      )
+    ) {
+      return Promise.reject(new Error("Duplicate true-up"));
     }
     this.ledgerEntries.set(entry.id, structuredClone(entry));
     return Promise.resolve(structuredClone(entry));
@@ -530,9 +578,11 @@ export class InMemoryBillingStore
     const ledgerEntries = structuredClone(this.ledgerEntries);
     const reconciliationYears = structuredClone(this.reconciliationYears);
     const billOverrides = structuredClone(this.billOverrides);
+    const statementSnapshots = structuredClone(this.statementSnapshots);
     return () => {
       this.reconciliationYears = reconciliationYears;
       this.billOverrides = billOverrides;
+      this.statementSnapshots = statementSnapshots;
       this.pools = pools;
       this.categories = categories;
       this.bankAccounts = bankAccounts;
@@ -602,12 +652,46 @@ export class InMemoryAccountStore
 
 export class FakeStatementRenderer implements StatementRenderer {
   rendered: StatementData[] = [];
+  failOnCall: number | null = null;
+  private calls = 0;
 
   render(data: StatementData): Promise<Uint8Array> {
+    this.calls += 1;
+    if (this.calls === this.failOnCall) {
+      return Promise.reject(new Error("Simulated render failure"));
+    }
     this.rendered.push(structuredClone(data));
     return Promise.resolve(
       new TextEncoder().encode(`%PDF-fake ${data.tenant.businessName}`),
     );
+  }
+}
+
+export class FakeBlobStorage implements BlobStorage {
+  objects = new Map<string, { body: Uint8Array; contentType: string }>();
+  puts: string[] = [];
+  signed: { key: string; options: SignedDownloadOptions | undefined }[] = [];
+
+  putObject(input: PutObjectInput): Promise<{ key: string }> {
+    this.puts.push(input.key);
+    this.objects.set(input.key, {
+      body: Uint8Array.from(input.body),
+      contentType: input.contentType,
+    });
+    return Promise.resolve({ key: input.key });
+  }
+
+  getSignedDownloadUrl(
+    key: string,
+    options?: SignedDownloadOptions,
+  ): Promise<string> {
+    this.signed.push({ key, options });
+    return Promise.resolve(`https://blob/${key}`);
+  }
+
+  deleteObject(key: string): Promise<void> {
+    this.objects.delete(key);
+    return Promise.resolve();
   }
 }
 

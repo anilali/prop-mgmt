@@ -123,6 +123,7 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
       propertyQueries: deps.propertyQueries,
       unitOfWork: deps.unitOfWork,
       statementRenderer: deps.statementRenderer,
+      blobStorage: deps.blobStorage,
     }),
   });
 

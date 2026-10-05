@@ -29,6 +29,7 @@ import { loadRequestAccess } from "./operator-context";
 import { createTRPCRouter } from "./root";
 import { InMemoryAccessStore, seedAccess } from "./test-access-store";
 import {
+  FakeBlobStorage,
   FakeStatementRenderer,
   InMemoryAccountStore,
   InMemoryBillingStore,
@@ -271,12 +272,18 @@ export function createTestApp(
   for (const category of seeds.categories) {
     billing.categories.set(category.id, category);
   }
+  const blob = new FakeBlobStorage();
   const unitOfWork = new InMemoryUnitOfWork(
     {
       billing,
       accountRepository: accounts,
       unitRepository: units,
       propertyRepository: properties,
+      billingQueries: billing,
+      accountQueries: accounts,
+      tenantQueries: tenants,
+      unitQueries: units,
+      propertyQueries: properties,
     },
     [billing, accounts, units, properties],
   );
@@ -295,11 +302,7 @@ export function createTestApp(
     billingStore: billing,
     billingQueries: billing,
     unitOfWork,
-    blobStorage: {
-      putObject: (input) => Promise.resolve({ key: input.key }),
-      getSignedDownloadUrl: (key) => Promise.resolve(`https://blob/${key}`),
-      deleteObject: () => Promise.resolve(),
-    },
+    blobStorage: blob,
     statementRenderer: renderer,
   });
 
@@ -326,6 +329,7 @@ export function createTestApp(
     accounts,
     billing,
     renderer,
+    blob,
     callerFor,
   };
 }
