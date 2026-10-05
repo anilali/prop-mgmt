@@ -25,12 +25,12 @@ const CASH = {
 
 const calls: [string, (caller: TestCaller) => Promise<unknown>][] = [
   ["bankImport.getMapping", (c) => c.bankImport.getMapping()],
-  ["bankImport.preview", (c) => c.bankImport.preview({ csvText: "a,b,c" })],
+  ["bankImport.preview", (c) => c.bankImport.preview({ fileText: "a,b,c" })],
   [
     "bankImport.commit",
     (c) =>
       c.bankImport.commit({
-        csvText: "a,b,c",
+        fileText: "a,b,c",
         fileName: "x.csv",
         mapping: MAPPING,
       }),

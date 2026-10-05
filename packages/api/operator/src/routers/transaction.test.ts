@@ -57,7 +57,7 @@ async function setup() {
     lease: leaseInput({ rentCents: 216_000 }),
   });
   await caller.bankImport.commit({
-    csvText: CSV,
+    fileText: CSV,
     fileName: "jan.csv",
     mapping: MAPPING,
   });

@@ -25,13 +25,51 @@ const CSV = [
   "",
 ].join("\n");
 
+function qbo(
+  transactions: [string, string, string, string][],
+  acctId = "9900001234",
+): string {
+  return [
+    "OFXHEADER:100 DATA:OFXSGML VERSION:102 ENCODING:USASCII CHARSET:1252 ",
+    "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD</CURDEF>",
+    `<BANKACCTFROM><BANKID>000000000</BANKID><ACCTID>${acctId}</ACCTID><ACCTTYPE>CHECKING</ACCTTYPE></BANKACCTFROM>`,
+    "<BANKTRANLIST><DTSTART>20251201120000.000[0:GMT]</DTSTART><DTEND>20260131120000.000[0:GMT]</DTEND>",
+    ...transactions.map(
+      ([date, name, amount, fitId]) =>
+        `<STMTTRN><TRNTYPE>OTHER</TRNTYPE><DTPOSTED>${date}120000.000[0:GMT]</DTPOSTED><TRNAMT>${amount}</TRNAMT><FITID>${fitId}</FITID><NAME>${name}</NAME></STMTTRN>`,
+    ),
+    "</BANKTRANLIST><LEDGERBAL><BALAMT>9876.54</BALAMT><DTASOF>20260131120000.000[0:GMT]</DTASOF></LEDGERBAL>",
+    "</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+  ].join("");
+}
+
+const QBO = qbo([
+  ["20251230", "OLD CHECK", "-1.00", "F0"],
+  ["20260102", "Mobile Check Deposit", "3654.82", "F1"],
+  ["20260105", "SERVICE FEE", "-25.00", "F2"],
+  ["20260105", "SERVICE FEE", "-25.00", "F3"],
+]);
+
 const WITH_TOTAL = `${CSV}Total,,3484.82,\nEnd of statement,,,\n`;
+
+type Caller = Awaited<
+  ReturnType<ReturnType<typeof createTestApp>["callerFor"]>
+>;
+
+async function previewCsv(
+  caller: Caller,
+  input: Parameters<Caller["bankImport"]["preview"]>[0],
+) {
+  const preview = await caller.bankImport.preview(input);
+  if (preview.format !== "csv") throw new Error("Expected a CSV preview");
+  return preview;
+}
 
 describe("bankImport procedures", () => {
   it("detects the header row below preamble lines before a mapping exists", async () => {
     const caller = await createTestApp().callerFor();
 
-    const preview = await caller.bankImport.preview({ csvText: CSV });
+    const preview = await previewCsv(caller, { fileText: CSV });
 
     expect(preview.headerRow).toBe(4);
     expect(preview.headers).toEqual([
@@ -49,8 +87,8 @@ describe("bankImport procedures", () => {
     const app = createTestApp();
     const caller = await app.callerFor();
 
-    const preview = await caller.bankImport.preview({
-      csvText: CSV,
+    const preview = await previewCsv(caller, {
+      fileText: CSV,
       mapping: MAPPING,
     });
 
@@ -82,7 +120,7 @@ describe("bankImport procedures", () => {
     const caller = await app.callerFor();
 
     const first = await caller.bankImport.commit({
-      csvText: CSV,
+      fileText: CSV,
       fileName: "jan.csv",
       mapping: MAPPING,
     });
@@ -92,12 +130,12 @@ describe("bankImport procedures", () => {
     expect(first.lastPostedOn).toBe("2026-01-05");
     expect(await caller.bankImport.getMapping()).toEqual(MAPPING);
 
-    const preview = await caller.bankImport.preview({ csvText: CSV });
+    const preview = await previewCsv(caller, { fileText: CSV });
     expect(preview.headerRow).toBe(4);
     expect(preview.counts?.duplicates).toBe(4);
 
     const second = await caller.bankImport.commit({
-      csvText: CSV,
+      fileText: CSV,
       fileName: "jan.csv",
       mapping: MAPPING,
     });
@@ -121,14 +159,14 @@ describe("bankImport procedures", () => {
     ].join("\n");
 
     const first = await caller.bankImport.commit({
-      csvText: file,
+      fileText: file,
       fileName: "jan.csv",
       mapping: MAPPING,
     });
     expect(first.insertedCount).toBe(2);
 
     const second = await caller.bankImport.commit({
-      csvText: `${file}1/6/2026,RENT,100.00,T3\n`,
+      fileText: `${file}1/6/2026,RENT,100.00,T3\n`,
       fileName: "jan.csv",
       mapping: withId,
     });
@@ -136,7 +174,7 @@ describe("bankImport procedures", () => {
     expect(second.duplicateCount).toBe(2);
 
     const third = await caller.bankImport.commit({
-      csvText: `${file}1/6/2026,RENT,100.00,T3\n`,
+      fileText: `${file}1/6/2026,RENT,100.00,T3\n`,
       fileName: "jan.csv",
       mapping: MAPPING,
     });
@@ -148,8 +186,8 @@ describe("bankImport procedures", () => {
     const app = createTestApp();
     const caller = await app.callerFor();
 
-    const preview = await caller.bankImport.preview({
-      csvText: WITH_TOTAL,
+    const preview = await previewCsv(caller, {
+      fileText: WITH_TOTAL,
       mapping: MAPPING,
     });
     expect(preview.errors).toEqual([
@@ -164,7 +202,7 @@ describe("bankImport procedures", () => {
     expect(
       await codeOf(
         caller.bankImport.commit({
-          csvText: WITH_TOTAL,
+          fileText: WITH_TOTAL,
           fileName: "jan.csv",
           mapping: MAPPING,
         }),
@@ -174,7 +212,7 @@ describe("bankImport procedures", () => {
     expect(app.billing.importBatches.size).toBe(0);
 
     const batch = await caller.bankImport.commit({
-      csvText: WITH_TOTAL,
+      fileText: WITH_TOTAL,
       fileName: "jan.csv",
       mapping: MAPPING,
       skipRows: [10],
@@ -187,13 +225,13 @@ describe("bankImport procedures", () => {
   it("reports a saved mapping that does not fit the file", async () => {
     const caller = await createTestApp().callerFor();
     await caller.bankImport.commit({
-      csvText: CSV,
+      fileText: CSV,
       fileName: "jan.csv",
       mapping: MAPPING,
     });
 
-    const preview = await caller.bankImport.preview({
-      csvText: "Posted,Memo,Value\n1/2/2026,RENT,10.00",
+    const preview = await previewCsv(caller, {
+      fileText: "Posted,Memo,Value\n1/2/2026,RENT,10.00",
     });
 
     expect(preview.mappingError).toBe(
@@ -208,7 +246,7 @@ describe("bankImport procedures", () => {
     const app = createTestApp();
     const caller = await app.callerFor();
     const batch = await caller.bankImport.commit({
-      csvText: CSV,
+      fileText: CSV,
       fileName: "jan.csv",
       mapping: MAPPING,
     });
@@ -243,13 +281,13 @@ describe("bankImport procedures", () => {
   it("asks for a tracking start date before importing", async () => {
     const caller = await createTestApp({ trackingStartDate: null }).callerFor();
 
-    expect(await codeOf(caller.bankImport.preview({ csvText: CSV }))).toBe(
+    expect(await codeOf(previewCsv(caller, { fileText: CSV }))).toBe(
       "BAD_REQUEST",
     );
     expect(
       await codeOf(
         caller.bankImport.commit({
-          csvText: CSV,
+          fileText: CSV,
           fileName: "jan.csv",
           mapping: MAPPING,
         }),
@@ -264,14 +302,14 @@ describe("bankImport procedures", () => {
       'Date,Description,Amount\n1/2/2026,"BAD "QUOTE" CO,100.00\n1/3/2026,RENT,200.00\n';
 
     await expect(
-      caller.bankImport.preview({ csvText: broken, mapping: MAPPING }),
+      previewCsv(caller, { fileText: broken, mapping: MAPPING }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
       message: expect.stringContaining("Row 2 has a quote mark") as string,
     });
     await expect(
       caller.bankImport.commit({
-        csvText: broken,
+        fileText: broken,
         fileName: "jan.csv",
         mapping: MAPPING,
         skipRows: [2],
@@ -288,8 +326,8 @@ describe("bankImport procedures", () => {
     const caller = await app.callerFor();
     const csvText = "Date,Description,Amount,Amount\n1/2/2026,RENT,,10.00\n";
 
-    const preview = await caller.bankImport.preview({
-      csvText,
+    const preview = await previewCsv(caller, {
+      fileText: csvText,
       mapping: MAPPING,
     });
     expect(preview.mappingError).toBe(
@@ -299,7 +337,7 @@ describe("bankImport procedures", () => {
     expect(
       await codeOf(
         caller.bankImport.commit({
-          csvText,
+          fileText: csvText,
           fileName: "jan.csv",
           mapping: MAPPING,
         }),
@@ -312,7 +350,145 @@ describe("bankImport procedures", () => {
     const caller = await createTestApp().callerFor();
 
     expect(
-      await codeOf(caller.bankImport.preview({ csvText: CSV, headerRow: 99 })),
+      await codeOf(previewCsv(caller, { fileText: CSV, headerRow: 99 })),
     ).toBe("BAD_REQUEST");
+  });
+  it("previews a QuickBooks file without a mapping or header row", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+
+    const preview = await caller.bankImport.preview({ fileText: QBO });
+
+    if (preview.format !== "ofx") throw new Error("Expected an OFX preview");
+    expect(preview.account).toEqual({
+      last4: "1234",
+      startOn: "2025-12-01",
+      endOn: "2026-01-31",
+      ledgerBalance: { amountCents: 987_654, asOf: "2026-01-31" },
+      warning: null,
+    });
+    expect(preview.counts).toEqual({
+      rows: 4,
+      transactions: 3,
+      toInsert: 3,
+      duplicates: 0,
+      beforeTrackingStart: 1,
+      zeroAmount: 0,
+      notTransaction: 0,
+      errors: 0,
+    });
+    expect(preview.parsedRows[1]).toEqual({
+      rowNumber: 2,
+      postedOn: "2026-01-02",
+      description: "Mobile Check Deposit",
+      amountCents: 365_482,
+      externalId: "F1",
+      status: "new",
+    });
+    expect(app.billing.transactions.size).toBe(0);
+  });
+
+  it("commits a QuickBooks file once without saving a mapping", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    await caller.bankImport.commit({
+      fileText: CSV,
+      fileName: "dec.csv",
+      mapping: MAPPING,
+    });
+
+    const first = await caller.bankImport.commit({
+      fileText: QBO,
+      fileName: "jan.qbo",
+    });
+    expect(first.format).toBe("ofx");
+    expect(first.accountLast4).toBe("1234");
+    expect(first.insertedCount).toBe(1);
+    expect(first.duplicateCount).toBe(2);
+
+    const overlap = await caller.bankImport.commit({
+      fileText: qbo([
+        ["20260105", "SERVICE FEE", "-25.00", "F3"],
+        ["20260201", "Mobile Check Deposit", "3654.82", "F4"],
+      ]),
+      fileName: "feb.qbo",
+    });
+    expect(overlap.insertedCount).toBe(1);
+    expect(overlap.duplicateCount).toBe(1);
+
+    const again = await caller.bankImport.commit({
+      fileText: QBO,
+      fileName: "jan.qbo",
+      format: "ofx",
+    });
+    expect(again.insertedCount).toBe(0);
+    expect(app.billing.transactions.size).toBe(6);
+    expect(await caller.bankImport.getMapping()).toEqual(MAPPING);
+
+    const batches = await caller.bankImport.listBatches();
+    expect(batches.map((b) => b.format).sort()).toEqual([
+      "csv",
+      "ofx",
+      "ofx",
+      "ofx",
+    ]);
+  });
+
+  it("warns when a QuickBooks file is for a different account", async () => {
+    const caller = await createTestApp().callerFor();
+    await caller.bankImport.commit({ fileText: QBO, fileName: "jan.qbo" });
+
+    const same = await caller.bankImport.preview({ fileText: QBO });
+    const other = await caller.bankImport.preview({
+      fileText: qbo([["20260102", "RENT", "10.00", "X1"]], "5550009999"),
+    });
+
+    expect(same.format === "ofx" && same.account.warning).toBeNull();
+    expect(other.format === "ofx" && other.account.warning).toBe(
+      "This file is for the account ending 9999, but earlier QuickBooks files were for the account ending 1234. Check that you downloaded the right account.",
+    );
+  });
+
+  it("rejects a QuickBooks commit until every error row is skipped", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const file = qbo([
+      ["20260102", "RENT", "10.00", "F1"],
+      ["20260103", "FEE", "abc", "F2"],
+    ]);
+
+    const preview = await caller.bankImport.preview({ fileText: file });
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        rowNumber: 2,
+        message: '"abc" is not an amount',
+      }),
+    ]);
+    await expect(
+      caller.bankImport.commit({ fileText: file, fileName: "jan.qbo" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Skip row 2" });
+
+    const batch = await caller.bankImport.commit({
+      fileText: file,
+      fileName: "jan.qbo",
+      skipRows: [2],
+    });
+    expect(batch.insertedCount).toBe(1);
+    expect(batch.skippedRows).toEqual([2]);
+  });
+
+  it("rejects a file that is not the format asked for", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+
+    expect(
+      await codeOf(caller.bankImport.preview({ fileText: CSV, format: "ofx" })),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await codeOf(
+        caller.bankImport.commit({ fileText: CSV, fileName: "jan.csv" }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(app.billing.importBatches.size).toBe(0);
   });
 });
