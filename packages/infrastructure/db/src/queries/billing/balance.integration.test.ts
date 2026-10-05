@@ -20,6 +20,7 @@ import {
   accountLedgerEntries,
   bankAccounts,
   importBatches,
+  reconciliationYears,
   transactions,
 } from "../../schemas/billing/schema";
 import { accounts } from "../../schemas/lease-mgmt/schema";
@@ -76,6 +77,9 @@ describe.skipIf(!databaseUrl)("balance through PGBillingQueries", () => {
       await db
         .delete(accountLedgerEntries)
         .where(inArray(accountLedgerEntries.propertyId, propertyIds));
+      await db
+        .delete(reconciliationYears)
+        .where(inArray(reconciliationYears.propertyId, propertyIds));
       await db
         .delete(transactions)
         .where(inArray(transactions.propertyId, propertyIds));
@@ -348,6 +352,9 @@ describe.skipIf(!databaseUrl)("balance through PGBillingQueries", () => {
     const accountId = randomUUID();
     const reconciliationYearId = randomUUID();
     propertyIds.push(propertyId);
+    await db
+      .insert(reconciliationYears)
+      .values({ id: reconciliationYearId, propertyId, year: 2026 });
     const trueUp = {
       propertyId,
       accountId,
