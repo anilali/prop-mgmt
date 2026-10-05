@@ -29,7 +29,7 @@ export async function requirePropertyContext() {
 export async function requirePlatformContext() {
   const result = await requireOperatorContext();
   if (result.context.mode !== "platform") {
-    redirect("/property");
+    redirect("/setup");
   }
 
   return result;

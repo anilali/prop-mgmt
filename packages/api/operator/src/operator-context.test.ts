@@ -140,7 +140,7 @@ describe("resolveOperatorContext", () => {
 });
 
 describe("decideOperatorContextSwitch", () => {
-  it("accepts a requested operable property and lands on /property", () => {
+  it("accepts a requested operable property and lands on /setup", () => {
     const decision = decideOperatorContextSwitch({
       requestedValue: BETA.id,
       isPlatformAdmin: false,
@@ -153,7 +153,7 @@ describe("decideOperatorContextSwitch", () => {
       propertyName: BETA.name,
       role: BETA.role,
     });
-    expect(decision.path).toBe("/property");
+    expect(decision.path).toBe("/setup");
   });
 
   it("accepts platform for a platform admin and lands on /platform/properties", () => {

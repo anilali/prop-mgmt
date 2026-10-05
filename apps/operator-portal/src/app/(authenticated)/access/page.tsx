@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { HydrateClient, prefetch, trpc } from "~/trpc/server";
-import { requirePropertyContext } from "../_lib/require-operator-context";
 import { MembersPanel } from "../_components/members-panel";
+import { requirePropertyContext } from "../_lib/require-operator-context";
 
 export default async function AccessPage() {
   const { context, propertyId } = await requirePropertyContext();
   if (context.mode !== "property" || context.role !== "admin") {
-    redirect("/property");
+    redirect("/setup");
   }
   prefetch(trpc.access.list.queryOptions({ propertyId }));
 

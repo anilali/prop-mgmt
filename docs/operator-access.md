@@ -158,7 +158,7 @@ On each request:
 
 Operate APIs (tenants, leases, units, property settings) take `propertyId` from request context. The client does not pass it. Access APIs take `propertyId` as input and check `canManageAccess`. Grant takes an email and a role: new email grants, revoked email reactivates with that role, active email is rejected. There is no reactivate procedure. Change role and revoke take a `membershipId`. Registering a property uses no `propertyId` and checks `canRegisterProperty`.
 
-Operate screens stay at `/property`, `/tenants`, `/leases`, `/events`. `/events` is a stub. This work does not scope it or change who can open it.
+Operate screens are at `/setup`, `/tenants`, `/leases`, and `/leases/[accountId]`. The v1 engineering spec adds `/home`, `/rent`, `/transactions`, and `/reconciliation` in later milestones.
 
 ### Platform mode
 

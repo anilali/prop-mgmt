@@ -21,7 +21,7 @@ export default async function HomePage() {
   }
 
   if (access.context.mode === "property") {
-    redirect("/property");
+    redirect("/setup");
   }
   if (access.context.mode === "platform") {
     redirect("/platform/properties");
