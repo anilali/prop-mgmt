@@ -80,6 +80,14 @@ export {
   unskippedErrors,
 } from "./csv-import";
 
+export type { ParsedImport } from "./bank-import";
+export {
+  commitImport,
+  planFileImport,
+  readImportRows,
+  removeImportBatch,
+} from "./bank-import";
+
 export { checkAllocationLines } from "./allocations";
 
 export type {
