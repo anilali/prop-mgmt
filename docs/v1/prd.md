@@ -88,7 +88,7 @@ An account has a tenant, a unit, and an opening balance: what the tenant owed wh
 A lease belongs to an account and has:
 
 - **Start date and end date.** A move-out date is added when the tenant leaves, early or as planned.
-- **Base rent.** A list of monthly amounts, each with the date it starts. An "Add increase" helper takes a date and a percentage or a new amount.
+- **Base rent.** A list of monthly amounts, each with the date it starts. An "Add increase" helper takes a date and a percentage or a new amount. On the account page, each later step that starts this year or after has a "Tenant notified" toggle. Steps from earlier years show none.
 - **Estimates.** For each pool the unit is in, a monthly estimate with the date it starts. The lease pays a pool from its first estimate for that pool, which can be partway through the lease. Estimates change each January 1 after the reconciliation.
 - **Fixed charges.** Optional monthly extras that are not reconciled, such as sign rent ($35) or trash ($50). Each has a name and a list of monthly amounts, each with the date it starts. An amount of 0 stops the charge.
 - **Late fee.** Optional. A flat amount, and the day of the month after which it applies, such as the 10th.

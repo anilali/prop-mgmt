@@ -176,6 +176,7 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
             accountId={accountId}
             version={account.version}
             timeZone={property.timeZone}
+            today={data.today}
             lease={lease}
             pools={unitPools}
             isNewest={lease.id === newest?.id}

@@ -2,6 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 
+import type { IsoDate } from "@moonship/shared";
 import { formatCents } from "@moonship/shared";
 import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
@@ -26,6 +27,7 @@ export function LeaseCard({
   accountId,
   version,
   timeZone,
+  today,
   lease,
   pools,
   isNewest,
@@ -36,6 +38,7 @@ export function LeaseCard({
   accountId: string;
   version: number;
   timeZone: string;
+  today: IsoDate;
   lease: Lease;
   pools: readonly PoolOption[];
   isNewest: boolean;
@@ -47,6 +50,7 @@ export function LeaseCard({
   const accountUpdated = useAccountUpdated(accountId);
   const accountUpdateFailed = useAccountUpdateFailed(accountId);
   const notifiedFormat = notifiedDateFormat(timeZone);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
 
   const setNotified = useMutation(
     trpc.lease.setRentStepNotified.mutationOptions({
@@ -139,7 +143,7 @@ export function LeaseCard({
                     {formatCents(step.amountCents)}
                   </TableCell>
                   <TableCell>
-                    {index === 0 ? null : (
+                    {index === 0 || step.startsOn < yearStart ? null : (
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
