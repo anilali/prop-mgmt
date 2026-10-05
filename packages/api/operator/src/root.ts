@@ -20,6 +20,7 @@ import { accessRouter } from "./routers/access";
 import { accountRouter } from "./routers/account";
 import { bankImportRouter } from "./routers/bank-import";
 import { categoryRouter } from "./routers/category";
+import { homeRouter } from "./routers/home";
 import { leaseRouter } from "./routers/lease";
 import { poolRouter } from "./routers/pool";
 import { propertyRouter } from "./routers/property";
@@ -96,6 +97,13 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
     }),
     account: accountRouter(accountDeps),
     lease: leaseRouter(accountDeps),
+    home: homeRouter({
+      billingQueries: deps.billingQueries,
+      accountQueries: deps.accountQueries,
+      tenantQueries: deps.tenantQueries,
+      unitQueries: deps.unitQueries,
+      propertyQueries: deps.propertyQueries,
+    }),
     bankImport: bankImportRouter({
       billingQueries: deps.billingQueries,
       propertyQueries: deps.propertyQueries,

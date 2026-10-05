@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isIsoDate, MAX_CENTS } from "@moonship/shared";
+import { isIsoDate, isYearMonth, MAX_CENTS } from "@moonship/shared";
 
 export const isoDate = z
   .string()
@@ -61,3 +61,8 @@ export const leaseInputSchema = z.object({
 });
 
 export type LeaseInput = z.infer<typeof leaseInputSchema>;
+
+export const yearMonth = z
+  .string()
+  .regex(/^\d{4}-\d{2}$/, "Use a YYYY-MM month")
+  .refine(isYearMonth, "Not a real month");
