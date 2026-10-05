@@ -3,14 +3,20 @@ import {
   boolean,
   check,
   date,
+  index,
   integer,
+  jsonb,
   pgSchema,
   primaryKey,
+  text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+
+import type { CsvMapping } from "@moonship/billing";
 
 export const billingSchema = pgSchema("billing");
 
@@ -85,5 +91,129 @@ export const categories = billingSchema.table(
       "categories_pool_id_check",
       sql`(${table.kind} = 'shared_cost') = (${table.poolId} is not null)`,
     ),
+  ],
+);
+
+export const bankAccounts = billingSchema.table(
+  "bank_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    name: varchar("name", { length: 64 })
+      .notNull()
+      .default("Business checking"),
+    csvMapping: jsonb("csv_mapping").$type<CsvMapping>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [unique("bank_accounts_property_id_unique").on(table.propertyId)],
+);
+
+export const importBatches = billingSchema.table(
+  "import_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    bankAccountId: uuid("bank_account_id")
+      .notNull()
+      .references(() => bankAccounts.id),
+    fileName: text("file_name").notNull(),
+    importedAt: timestamp("imported_at").notNull().defaultNow(),
+    rowCount: integer("row_count").notNull(),
+    insertedCount: integer("inserted_count").notNull(),
+    duplicateCount: integer("duplicate_count").notNull(),
+    beforeTrackingStartCount: integer("before_tracking_start_count").notNull(),
+    notTransactionCount: integer("not_transaction_count").notNull(),
+    firstPostedOn: date("first_posted_on", { mode: "string" }),
+    lastPostedOn: date("last_posted_on", { mode: "string" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("import_batches_property_id_idx").on(table.propertyId),
+    index("import_batches_bank_account_id_idx").on(table.bankAccountId),
+  ],
+);
+
+export const transactions = billingSchema.table(
+  "transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    source: varchar("source", { length: 8 }).notNull(),
+    bankAccountId: uuid("bank_account_id").references(() => bankAccounts.id),
+    importBatchId: uuid("import_batch_id").references(() => importBatches.id),
+    postedOn: date("posted_on", { mode: "string" }).notNull(),
+    description: text("description").notNull(),
+    descriptionKey: text("description_key").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    externalId: text("external_id"),
+    rawRowHash: text("raw_row_hash"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check(
+      "transactions_source_check",
+      sql`${table.source} in ('bank', 'cash')`,
+    ),
+    check("transactions_amount_check", sql`${table.amountCents} <> 0`),
+    check(
+      "transactions_bank_check",
+      sql`${table.source} <> 'bank' or (${table.bankAccountId} is not null and ${table.importBatchId} is not null and ${table.rawRowHash} is not null)`,
+    ),
+    check(
+      "transactions_cash_check",
+      sql`${table.source} <> 'cash' or (${table.bankAccountId} is null and ${table.importBatchId} is null and ${table.rawRowHash} is null and ${table.amountCents} < 0)`,
+    ),
+    uniqueIndex("transactions_bank_account_id_external_id_unique")
+      .on(table.bankAccountId, table.externalId)
+      .where(sql`${table.externalId} is not null`),
+    index("transactions_dedupe_idx").on(
+      table.bankAccountId,
+      table.postedOn,
+      table.descriptionKey,
+      table.amountCents,
+    ),
+    index("transactions_property_id_posted_on_idx").on(
+      table.propertyId,
+      table.postedOn,
+    ),
+    index("transactions_import_batch_id_idx").on(table.importBatchId),
+  ],
+);
+
+export const transactionAllocations = billingSchema.table(
+  "transaction_allocations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    transactionId: uuid("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id"),
+    categoryId: uuid("category_id").references(() => categories.id, {
+      onDelete: "restrict",
+    }),
+    amountCents: integer("amount_cents").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "transaction_allocations_amount_check",
+      sql`${table.amountCents} <> 0`,
+    ),
+    check(
+      "transaction_allocations_target_check",
+      sql`num_nonnulls(${table.accountId}, ${table.categoryId}) = 1`,
+    ),
+    index("transaction_allocations_transaction_id_idx").on(table.transactionId),
+    index("transaction_allocations_account_id_idx").on(table.accountId),
+    index("transaction_allocations_category_id_idx").on(table.categoryId),
   ],
 );
