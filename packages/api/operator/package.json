@@ -35,6 +35,7 @@
     "@moonship/lease-mgmt": "workspace:*",
     "@moonship/property": "workspace:*",
     "@moonship/shared": "workspace:*",
+    "@moonship/statement-pdf": "workspace:*",
     "@moonship/tenant-mgmt": "workspace:*",
     "@trpc/server": "catalog:",
     "papaparse": "^5.7.0",

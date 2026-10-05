@@ -1,1 +1,1 @@
-export { renderSpikePdf, type SpikePdfInput } from "./spike-pdf";
+export { ReactPdfStatementRenderer, StatementPdf } from "./statement-pdf";

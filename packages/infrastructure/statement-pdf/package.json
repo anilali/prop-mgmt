@@ -19,6 +19,8 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
+    "@moonship/billing": "workspace:*",
+    "@moonship/shared": "workspace:*",
     "@react-pdf/renderer": "catalog:",
     "react": "catalog:react19"
   },
