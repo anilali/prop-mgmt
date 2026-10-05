@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { TenantQueries, TenantRepository } from "@moonship/tenant-mgmt";
 import { Tenant } from "@moonship/tenant-mgmt";
 
+import { toBadRequest } from "../errors";
+import { addressSchema } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
 export interface TenantRouterDeps {
@@ -32,21 +34,30 @@ export function tenantRouter(deps: TenantRouterDeps) {
     create: propertyProcedure
       .input(
         z.object({
-          fullName: z.string().min(1),
-          email: z.string().email().optional(),
-          phone: z.string().optional(),
+          businessName: z.string().min(1).max(255),
+          contactName: z.string().max(255).optional(),
+          mailingAddress: addressSchema.optional(),
+          email: z.string().email().max(255).optional(),
+          phone: z.string().max(64).optional(),
           notes: z.string().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const tenant = Tenant.create({
-          id: randomUUID(),
-          propertyId: ctx.propertyId,
-          fullName: input.fullName,
-          email: input.email,
-          phone: input.phone,
-          notes: input.notes,
-        });
+        let tenant: Tenant;
+        try {
+          tenant = Tenant.create({
+            id: randomUUID(),
+            propertyId: ctx.propertyId,
+            businessName: input.businessName,
+            contactName: input.contactName,
+            mailingAddress: input.mailingAddress,
+            email: input.email,
+            phone: input.phone,
+            notes: input.notes,
+          });
+        } catch (e) {
+          throw toBadRequest(e, "Create failed");
+        }
         await deps.tenantRepository.save(tenant);
         return deps.tenantQueries.getById(ctx.propertyId, tenant.id);
       }),
@@ -55,9 +66,11 @@ export function tenantRouter(deps: TenantRouterDeps) {
       .input(
         z.object({
           id: z.string().uuid(),
-          fullName: z.string().min(1).optional(),
-          email: z.string().email().nullable().optional(),
-          phone: z.string().nullable().optional(),
+          businessName: z.string().min(1).max(255).optional(),
+          contactName: z.string().max(255).nullable().optional(),
+          mailingAddress: addressSchema.nullable().optional(),
+          email: z.string().email().max(255).nullable().optional(),
+          phone: z.string().max(64).nullable().optional(),
           notes: z.string().nullable().optional(),
         }),
       )
@@ -69,16 +82,15 @@ export function tenantRouter(deps: TenantRouterDeps) {
         if (!tenant) throw new TRPCError({ code: "NOT_FOUND" });
         try {
           tenant.update({
-            fullName: input.fullName,
+            businessName: input.businessName,
+            contactName: input.contactName,
+            mailingAddress: input.mailingAddress,
             email: input.email,
             phone: input.phone,
             notes: input.notes,
           });
         } catch (e) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: e instanceof Error ? e.message : "Update failed",
-          });
+          throw toBadRequest(e, "Update failed");
         }
         await deps.tenantRepository.save(tenant);
         return deps.tenantQueries.getById(ctx.propertyId, tenant.id);

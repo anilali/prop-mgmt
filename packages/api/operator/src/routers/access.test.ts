@@ -318,6 +318,9 @@ describe("access membership procedures", () => {
       propertyRouter({
         propertyRepository: {} as never,
         propertyQueries: new InMemoryPropertyQueries(PROPERTY_NAMES),
+        accountQueries: {} as never,
+        billingQueries: {} as never,
+        unitOfWork: {} as never,
       }),
     )({ access });
 
@@ -340,6 +343,9 @@ describe("access membership procedures", () => {
       propertyRouter({
         propertyRepository: {} as never,
         propertyQueries: new InMemoryPropertyQueries(PROPERTY_NAMES),
+        accountQueries: {} as never,
+        billingQueries: {} as never,
+        unitOfWork: {} as never,
       }),
     )({ access });
 

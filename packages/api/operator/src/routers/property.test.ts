@@ -1,157 +1,213 @@
-import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
-import type { Property, PropertyRepository } from "@moonship/property";
-import { PlatformAdmin } from "@moonship/access";
-
-import type { Operator } from "../operator";
-import { loadRequestAccess } from "../operator-context";
 import {
-  InMemoryAccessStore,
-  InMemoryPropertyQueries,
-  seedAccess,
-} from "../test-access-store";
-import { createCallerFactory } from "../trpc";
-import { propertyRouter } from "./property";
+  codeOf,
+  createTestApp,
+  PLATFORM_ADMIN,
+  PROPERTY_ADMIN,
+  PROPERTY_ID,
+  TEST_ADDRESS,
+} from "../test-setup-stores";
 
-const PROPERTY_A = "11111111-1111-4111-8111-111111111111";
-const PROPERTY_B = "22222222-2222-4222-8222-222222222222";
-const ADMIN_M = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const UNKNOWN_ID = "33333333-3333-4333-8333-333333333333";
-
-const ROOT: Operator = {
-  authUserId: "auth-root",
-  email: "root@example.com",
-  name: "Root",
-};
-
-const ADMIN: Operator = {
-  authUserId: "auth-admin",
-  email: "admin@example.com",
-  name: "Admin",
-};
-
-const ADDRESS = {
-  street1: "1 Test St",
-  city: "Testville",
-  state: "TS",
-  postalCode: "00000",
-  country: "US",
-};
-
-function seedPlatformAdmin(store: InMemoryAccessStore) {
-  store.seedAdmin(
-    PlatformAdmin.reconstitute({
-      id: "pa-root",
-      email: "root@example.com",
-      authUserId: "auth-root",
-    }),
-  );
-}
-
-function seedPropertyAdmin(store: InMemoryAccessStore) {
-  store.seed(
-    seedAccess(PROPERTY_A, [
-      {
-        id: ADMIN_M,
-        email: "admin@example.com",
-        role: "admin",
-        authUserId: "auth-admin",
-      },
-    ]),
-  );
-}
-
-async function propertyCaller(
-  store: InMemoryAccessStore,
-  names: Map<string, string>,
-  operator: Operator,
-) {
-  const propertyQueries = new InMemoryPropertyQueries(names);
-  const propertyRepository: PropertyRepository = {
-    findById: () => Promise.resolve(null),
-    save: (property: Property) => {
-      names.set(property.id, property.name);
-      return Promise.resolve();
-    },
-  };
-  const access = await loadRequestAccess(
-    {
-      accessQueries: store.queries,
-      platformAdminRepository: store.adminRepository,
-      propertyQueries,
-    },
-    { operator, cookieValue: null },
-  );
-  return createCallerFactory(
-    propertyRouter({ propertyRepository, propertyQueries }),
-  )({ access });
-}
-
-async function codeOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise;
-  } catch (error) {
-    expect(error).toBeInstanceOf(TRPCError);
-    return (error as TRPCError).code;
-  }
-  throw new Error("expected procedure to throw");
-}
 
 describe("property platform procedures", () => {
   it("list, getForPlatform, and register reject a non-platform-admin with admin memberships", async () => {
-    const store = new InMemoryAccessStore();
-    seedPropertyAdmin(store);
-    const names = new Map([[PROPERTY_A, "Alpha Property"]]);
-    const caller = await propertyCaller(store, names, ADMIN);
+    const app = createTestApp();
+    const caller = await app.callerFor(PROPERTY_ADMIN);
 
-    expect(await codeOf(caller.list())).toBe("FORBIDDEN");
+    expect(await codeOf(caller.property.list())).toBe("FORBIDDEN");
     expect(
-      await codeOf(caller.getForPlatform({ propertyId: PROPERTY_A })),
+      await codeOf(caller.property.getForPlatform({ propertyId: PROPERTY_ID })),
     ).toBe("FORBIDDEN");
     expect(
-      await codeOf(caller.register({ name: "New", address: ADDRESS })),
+      await codeOf(
+        caller.property.register({ name: "New", address: TEST_ADDRESS }),
+      ),
     ).toBe("FORBIDDEN");
   });
 
   it("list returns every property sorted by name", async () => {
-    const store = new InMemoryAccessStore();
-    seedPlatformAdmin(store);
-    const names = new Map([
-      [PROPERTY_B, "Beta Property"],
-      [PROPERTY_A, "alpha property"],
-    ]);
-    const caller = await propertyCaller(store, names, ROOT);
+    const app = createTestApp();
+    const caller = await app.callerFor(PLATFORM_ADMIN, "platform");
+    const created = await caller.property.register({
+      name: "alpha property",
+      address: TEST_ADDRESS,
+    });
 
-    const properties = await caller.list();
-    expect(properties.map((p) => p.id)).toEqual([PROPERTY_A, PROPERTY_B]);
+    const properties = await caller.property.list();
+    expect(properties.map((p) => p.id)).toEqual([created.id, PROPERTY_ID]);
   });
 
   it("getForPlatform returns the property or NOT_FOUND", async () => {
-    const store = new InMemoryAccessStore();
-    seedPlatformAdmin(store);
-    const names = new Map([[PROPERTY_A, "Alpha Property"]]);
-    const caller = await propertyCaller(store, names, ROOT);
+    const app = createTestApp();
+    const caller = await app.callerFor(PLATFORM_ADMIN, "platform");
 
-    const property = await caller.getForPlatform({ propertyId: PROPERTY_A });
-    expect(property.name).toBe("Alpha Property");
+    const property = await caller.property.getForPlatform({
+      propertyId: PROPERTY_ID,
+    });
+    expect(property.name).toBe("Main Street Center");
     expect(
-      await codeOf(caller.getForPlatform({ propertyId: UNKNOWN_ID })),
+      await codeOf(caller.property.getForPlatform({ propertyId: UNKNOWN_ID })),
     ).toBe("NOT_FOUND");
   });
 
-  it("register creates the property and no PropertyAccess", async () => {
-    const store = new InMemoryAccessStore();
-    seedPlatformAdmin(store);
-    const names = new Map([[PROPERTY_A, "Alpha Property"]]);
-    const caller = await propertyCaller(store, names, ROOT);
+  it("register creates the property, seeds pools and categories, and no PropertyAccess", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor(PLATFORM_ADMIN, "platform");
 
-    const created = await caller.register({
+    const created = await caller.property.register({
       name: "Beta Property",
-      address: ADDRESS,
+      address: TEST_ADDRESS,
     });
+
     expect(created.name).toBe("Beta Property");
-    expect(names.get(created.id)).toBe("Beta Property");
-    expect(await store.repository.findByPropertyId(created.id)).toBeNull();
+    expect(created.timeZone).toBe("America/Chicago");
+    expect(created.trackingStartDate).toBeNull();
+    expect(await app.access.repository.findByPropertyId(created.id)).toBeNull();
+    const pools = await app.billing.listPools(created.id);
+    expect(pools.map((p) => [p.name, p.addsNewUnits, p.unitIds])).toEqual([
+      ["CAM", true, []],
+      ["Taxes", true, []],
+      ["Insurance", true, []],
+      ["Water", false, []],
+    ]);
+    const categories = await app.billing.listCategories(created.id);
+    expect(categories).toHaveLength(9);
+    expect(
+      categories.filter((c) => c.kind === "shared_cost").map((c) => c.poolId),
+    ).toEqual(expect.arrayContaining(pools.map((p) => p.id)));
+  });
+
+  it("register leaves nothing behind when seeding fails", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor(PLATFORM_ADMIN, "platform");
+    app.billing.failNextSave = true;
+
+    await expect(
+      caller.property.register({ name: "Broken", address: TEST_ADDRESS }),
+    ).rejects.toThrow();
+
+    expect(app.properties.properties.size).toBe(1);
+    expect(app.billing.pools.size).toBe(4);
+  });
+});
+
+describe("property setup procedures", () => {
+  it("get returns the property with letter details, time zone, and today", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+
+    const property = await caller.property.get();
+
+    expect(property.id).toBe(PROPERTY_ID);
+    expect(property.trackingStartDate).toBe("2026-01-01");
+    expect(property.timeZone).toBe("America/Chicago");
+    expect(property.letter.ownerName).toBeNull();
+    expect(property.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("update saves letter details and time zone", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+
+    const updated = await caller.property.update({
+      timeZone: "America/Los_Angeles",
+      letter: {
+        ownerName: "Pat Owner",
+        ownerTitle: "Managing Member",
+        companyName: "Main Street LLC",
+        ownerPhone: "555-0100",
+        ownerEmail: "pat@example.com",
+      },
+    });
+
+    expect(updated.timeZone).toBe("America/Los_Angeles");
+    expect(updated.letter).toEqual({
+      ownerName: "Pat Owner",
+      ownerTitle: "Managing Member",
+      companyName: "Main Street LLC",
+      ownerPhone: "555-0100",
+      ownerEmail: "pat@example.com",
+    });
+  });
+
+  it("rejects an unknown time zone and a tracking start that is not the 1st", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+
+    expect(
+      await codeOf(caller.property.update({ timeZone: "Mars/Base" })),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await codeOf(caller.property.update({ trackingStartDate: "2026-01-15" })),
+    ).toBe("BAD_REQUEST");
+  });
+
+  it("changes the tracking start while nothing is recorded", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+
+    const updated = await caller.property.update({
+      trackingStartDate: "2025-01-01",
+    });
+
+    expect(updated.trackingStartDate).toBe("2025-01-01");
+  });
+
+  it("rejects a tracking start change once a transaction exists", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    app.billing.transactionCount = 1;
+
+    expect(
+      await codeOf(caller.property.update({ trackingStartDate: "2025-01-01" })),
+    ).toBe("CONFLICT");
+    expect(
+      await caller.property.update({
+        trackingStartDate: "2026-01-01",
+        name: "Renamed",
+      }),
+    ).toMatchObject({ name: "Renamed", trackingStartDate: "2026-01-01" });
+  });
+
+  it("rejects a tracking start change once a ledger entry exists", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    app.billing.ledgerEntryCount = 1;
+
+    expect(
+      await codeOf(caller.property.update({ trackingStartDate: null })),
+    ).toBe("CONFLICT");
+  });
+
+  it("rejects a tracking start that would leave an opening balance on a later account", async () => {
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const unit = await caller.unit.create({
+      label: "A",
+      sqft: 2500,
+      address: TEST_ADDRESS,
+    });
+    const tenant = await caller.tenant.create({ businessName: "Super Lucky" });
+    if (!tenant) throw new Error("missing tenant");
+    await caller.account.open({
+      tenantId: tenant.id,
+      unitId: unit.id,
+      openingBalanceCents: 41_374,
+      lease: {
+        startDate: "2025-06-01",
+        endDate: "2027-05-31",
+        rentSteps: [{ startsOn: "2025-06-01", amountCents: 250_000 }],
+      },
+    });
+
+    expect(
+      await codeOf(caller.property.update({ trackingStartDate: "2025-01-01" })),
+    ).toBe("CONFLICT");
+    expect(
+      (await caller.property.update({ trackingStartDate: "2025-07-01" }))
+        .trackingStartDate,
+    ).toBe("2025-07-01");
   });
 });

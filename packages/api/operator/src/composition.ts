@@ -3,9 +3,12 @@ import type { DatabaseClient } from "@moonship/db";
 import type { EventDispatcher } from "@moonship/events";
 import { S3BlobStorage } from "@moonship/blob-storage";
 import {
+  createPGUnitOfWork,
   PGAccessQueries,
-  PGLeaseQueries,
-  PGLeaseRepository,
+  PGAccountQueries,
+  PGAccountRepository,
+  PGBillingQueries,
+  PGBillingStore,
   PGPlatformAdminRepository,
   PGPropertyAccessRepository,
   PGPropertyQueries,
@@ -62,8 +65,11 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
   const accessQueries = new PGAccessQueries(db);
   const tenantRepository = new PGTenantRepository(db, eventDispatcher);
   const tenantQueries = new PGTenantQueries(db);
-  const leaseRepository = new PGLeaseRepository(db, eventDispatcher);
-  const leaseQueries = new PGLeaseQueries(db);
+  const accountRepository = new PGAccountRepository(db, eventDispatcher);
+  const accountQueries = new PGAccountQueries(db);
+  const billingStore = new PGBillingStore(db);
+  const billingQueries = new PGBillingQueries(db);
+  const unitOfWork = createPGUnitOfWork(db);
 
   const { appRouter, createTRPCContext, createCallerFactory } =
     createTRPCRouter({
@@ -75,8 +81,11 @@ export function createOperatorAPI(config: OperatorAPIConfig) {
       accessQueries,
       tenantRepository,
       tenantQueries,
-      leaseRepository,
-      leaseQueries,
+      accountRepository,
+      accountQueries,
+      billingStore,
+      billingQueries,
+      unitOfWork,
       blobStorage,
     });
 

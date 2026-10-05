@@ -149,7 +149,20 @@ export class InMemoryPropertyQueries implements PropertyQueries {
   getById(id: string): Promise<PropertyView | null> {
     const name = this.names.get(id);
     if (name === undefined) return Promise.resolve(null);
-    return Promise.resolve({ id, name, address: { ...STUB_ADDRESS } });
+    return Promise.resolve({
+      id,
+      name,
+      address: { ...STUB_ADDRESS },
+      trackingStartDate: null,
+      timeZone: "America/Chicago",
+      letter: {
+        ownerName: null,
+        ownerTitle: null,
+        companyName: null,
+        ownerPhone: null,
+        ownerEmail: null,
+      },
+    });
   }
 
   async listByIds(ids: string[]): Promise<PropertyView[]> {

@@ -65,7 +65,8 @@
     "AWS_SECRET_ACCESS_KEY",
     "AWS_REGION",
     "S3_BUCKET",
-    "PORT"
+    "PORT",
+    "TODAY_OVERRIDE"
   ],
   "globalPassThroughEnv": [
     "NODE_ENV",

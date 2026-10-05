@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@moonship/access": "workspace:*",
+    "@moonship/billing": "workspace:*",
     "@moonship/blob-storage": "workspace:*",
     "@moonship/db": "workspace:*",
     "@moonship/events": "workspace:*",

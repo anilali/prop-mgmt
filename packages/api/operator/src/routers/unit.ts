@@ -1,115 +1,127 @@
 import { randomUUID } from "node:crypto";
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import type { LeaseQueries } from "@moonship/lease-mgmt";
+import type { BillingQueries, Pool } from "@moonship/billing";
+import type { AccountQueries } from "@moonship/lease-mgmt";
 import type {
+  PropertyQueries,
   UnitQueries,
   UnitRepository,
-  UnitStatus,
-  UtilityAssignment,
+  UnitView,
 } from "@moonship/property";
-import { Unit, validateUtilityAssignments } from "@moonship/property";
+import { Unit } from "@moonship/property";
 
+import type { UnitOfWork } from "../unit-of-work";
+import { conflict, notFound, toBadRequest } from "../errors";
+import { loadProperty } from "../property-context";
+import { addressSchema } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
 export interface UnitRouterDeps {
   unitRepository: UnitRepository;
   unitQueries: UnitQueries;
-  leaseQueries: LeaseQueries;
+  propertyQueries: PropertyQueries;
+  accountQueries: AccountQueries;
+  billingQueries: BillingQueries;
+  unitOfWork: UnitOfWork;
 }
 
-const unitStatusSchema = z.enum(["vacant", "occupied", "offline"]);
-const utilityTypeSchema = z.enum([
-  "electric",
-  "gas",
-  "water",
-  "sewer",
-  "trash",
-]);
-const utilityAssignmentSchema = z.discriminatedUnion("kind", [
-  z.object({ type: utilityTypeSchema, kind: z.literal("individual") }),
-  z.object({
-    type: utilityTypeSchema,
-    kind: z.literal("shares"),
-    withUnitId: z.string().uuid(),
-  }),
-]);
-const addressSchema = z.object({
-  street1: z.string().min(1),
-  street2: z.string().optional(),
-  city: z.string().min(1),
-  state: z.string().min(1),
-  postalCode: z.string().min(1),
-  country: z.string().min(1),
-});
+const labelSchema = z.string().trim().min(1).max(64);
+const sqftSchema = z.number().int().positive();
+
+function withPoolIds(unit: UnitView, pools: Pool[]) {
+  return {
+    ...unit,
+    poolIds: pools
+      .filter((pool) => pool.unitIds.includes(unit.id))
+      .map((pool) => pool.id),
+  };
+}
 
 export function unitRouter(deps: UnitRouterDeps) {
+  async function changeDate(propertyId: string) {
+    if (!(await deps.billingQueries.hasTransactions(propertyId))) return null;
+    const { today } = await loadProperty(deps.propertyQueries, propertyId);
+    return today;
+  }
+
+  async function assertLabelFree(
+    propertyId: string,
+    label: string,
+    unitId: string | null,
+  ) {
+    const units = await deps.unitQueries.list(propertyId);
+    if (units.some((u) => u.label === label.trim() && u.id !== unitId)) {
+      throw conflict(`A unit labeled ${label.trim()} already exists`);
+    }
+  }
+
+  async function getUnit(propertyId: string, id: string) {
+    const [unit, pools] = await Promise.all([
+      deps.unitQueries.getById(propertyId, id),
+      deps.billingQueries.listPools(propertyId),
+    ]);
+    if (!unit) throw notFound("Unit not found");
+    return withPoolIds(unit, pools);
+  }
+
   return router({
     list: propertyProcedure.query(async ({ ctx }) => {
-      return deps.unitQueries.list(ctx.propertyId);
+      const [units, pools] = await Promise.all([
+        deps.unitQueries.list(ctx.propertyId),
+        deps.billingQueries.listPools(ctx.propertyId),
+      ]);
+      return units.map((unit) => withPoolIds(unit, pools));
     }),
 
     get: propertyProcedure
       .input(z.object({ id: z.string().uuid() }))
-      .query(async ({ ctx, input }) => {
-        const unit = await deps.unitQueries.getById(ctx.propertyId, input.id);
-        if (!unit) throw new TRPCError({ code: "NOT_FOUND" });
-        return unit;
-      }),
+      .query(({ ctx, input }) => getUnit(ctx.propertyId, input.id)),
 
     create: propertyProcedure
       .input(
         z.object({
-          label: z.string().min(1),
-          sqft: z.number().int().positive(),
-          bedrooms: z.number().int().min(0).optional(),
-          bathrooms: z.number().min(0).optional(),
-          addressOverride: addressSchema.nullable().optional(),
-          utilities: z.array(utilityAssignmentSchema).optional(),
-          status: unitStatusSchema.optional(),
+          label: labelSchema,
+          sqft: sqftSchema,
+          address: addressSchema,
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const existing = await deps.unitQueries.list(ctx.propertyId);
-        const existingIds = new Set(existing.map((u) => u.id));
-        const id = randomUUID();
-        const utilities = (input.utilities ?? []) as UtilityAssignment[];
+        await assertLabelFree(ctx.propertyId, input.label, null);
+        let unit: Unit;
         try {
-          validateUtilityAssignments(id, utilities, existingIds);
-        } catch (e) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: e instanceof Error ? e.message : "Invalid utilities",
+          unit = Unit.create({
+            id: randomUUID(),
+            propertyId: ctx.propertyId,
+            label: input.label,
+            sqft: input.sqft,
+            address: input.address,
           });
+        } catch (e) {
+          throw toBadRequest(e, "Create failed");
         }
-
-        const unit = Unit.create({
-          id,
-          propertyId: ctx.propertyId,
-          label: input.label,
-          sqft: input.sqft,
-          bedrooms: input.bedrooms,
-          bathrooms: input.bathrooms,
-          addressOverride: input.addressOverride ?? null,
-          utilities,
-          status: (input.status ?? "vacant") as UnitStatus,
+        const changedOn = await changeDate(ctx.propertyId);
+        await deps.unitOfWork.run(async (stores) => {
+          await stores.unitRepository.save(unit);
+          const pools = await stores.billing.listPools(ctx.propertyId);
+          for (const pool of pools.filter((p) => p.addsNewUnits)) {
+            await stores.billing.savePool({
+              ...pool,
+              unitIds: [...pool.unitIds, unit.id],
+              membersChangedOn: changedOn ?? pool.membersChangedOn,
+            });
+          }
         });
-        await deps.unitRepository.save(unit);
-        return deps.unitQueries.getById(ctx.propertyId, unit.id);
+        return getUnit(ctx.propertyId, unit.id);
       }),
 
     update: propertyProcedure
       .input(
         z.object({
           id: z.string().uuid(),
-          label: z.string().min(1).optional(),
-          sqft: z.number().int().positive().optional(),
-          bedrooms: z.number().int().min(0).nullable().optional(),
-          bathrooms: z.number().min(0).nullable().optional(),
-          addressOverride: addressSchema.nullable().optional(),
-          utilities: z.array(utilityAssignmentSchema).optional(),
-          status: unitStatusSchema.optional(),
+          label: labelSchema.optional(),
+          sqft: sqftSchema.optional(),
+          address: addressSchema.optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -117,67 +129,44 @@ export function unitRouter(deps: UnitRouterDeps) {
           ctx.propertyId,
           input.id,
         );
-        if (!unit) {
-          throw new TRPCError({ code: "NOT_FOUND" });
+        if (!unit) throw notFound("Unit not found");
+        if (input.label !== undefined) {
+          await assertLabelFree(ctx.propertyId, input.label, unit.id);
         }
-
-        if (input.utilities !== undefined) {
-          const existing = await deps.unitQueries.list(ctx.propertyId);
-          const existingIds = new Set(
-            existing.map((u) => u.id).filter((id) => id !== input.id),
+        const changedOn =
+          input.sqft !== undefined && input.sqft !== unit.sqft
+            ? await changeDate(ctx.propertyId)
+            : null;
+        try {
+          unit.updateDetails(
+            { label: input.label, sqft: input.sqft, address: input.address },
+            changedOn,
           );
-          try {
-            validateUtilityAssignments(
-              input.id,
-              input.utilities as UtilityAssignment[],
-              existingIds,
-            );
-          } catch (e) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: e instanceof Error ? e.message : "Invalid utilities",
-            });
-          }
+        } catch (e) {
+          throw toBadRequest(e, "Update failed");
         }
-
-        unit.updateDetails({
-          label: input.label,
-          sqft: input.sqft,
-          bedrooms: input.bedrooms,
-          bathrooms: input.bathrooms,
-          addressOverride: input.addressOverride,
-          utilities: input.utilities as UtilityAssignment[] | undefined,
-        });
-
-        if (input.status !== undefined) {
-          unit.changeStatus(input.status);
-        }
-
         await deps.unitRepository.save(unit);
-        return deps.unitQueries.getById(ctx.propertyId, unit.id);
+        return getUnit(ctx.propertyId, unit.id);
       }),
 
     remove: propertyProcedure
       .input(z.object({ id: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
-        const active = await deps.leaseQueries.listActiveByUnitId(
-          ctx.propertyId,
-          input.id,
-        );
-        if (active.length > 0) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Cannot remove a unit with an active lease",
-          });
+        const unit = await deps.unitQueries.getById(ctx.propertyId, input.id);
+        if (!unit) throw notFound("Unit not found");
+        const accounts = await deps.accountQueries.list(ctx.propertyId);
+        if (accounts.some((account) => account.unitId === input.id)) {
+          throw conflict("Cannot remove a unit that has an account");
         }
-        const unit = await deps.unitRepository.findById(
-          ctx.propertyId,
-          input.id,
-        );
-        if (!unit) {
-          throw new TRPCError({ code: "NOT_FOUND" });
-        }
-        await deps.unitRepository.delete(ctx.propertyId, input.id);
+        const changedOn = await changeDate(ctx.propertyId);
+        await deps.unitOfWork.run(async (stores) => {
+          await stores.billing.removeUnitFromPools(
+            ctx.propertyId,
+            input.id,
+            changedOn,
+          );
+          await stores.unitRepository.delete(ctx.propertyId, input.id);
+        });
         return { ok: true as const };
       }),
   });

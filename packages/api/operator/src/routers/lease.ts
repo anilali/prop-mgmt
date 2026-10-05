@@ -1,254 +1,122 @@
 import { randomUUID } from "node:crypto";
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import type { BlobStorage } from "@moonship/blob-storage";
-import type {
-  LeaseQueries,
-  LeaseRepository,
-  LeaseStatus,
-} from "@moonship/lease-mgmt";
-import type { UnitQueries } from "@moonship/property";
-import type { TenantQueries } from "@moonship/tenant-mgmt";
-import { Lease } from "@moonship/lease-mgmt";
+import type { Account, AccountRepository } from "@moonship/lease-mgmt";
 
+import type { AccountDeps } from "../accounts";
+import {
+  assertAccountRules,
+  getAccountDetail,
+  toLeaseTerms,
+} from "../accounts";
+import { notFound, toBadRequest } from "../errors";
+import { leaseInputSchema } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
-export interface LeaseRouterDeps {
-  leaseRepository: LeaseRepository;
-  leaseQueries: LeaseQueries;
-  unitQueries: UnitQueries;
-  tenantQueries: TenantQueries;
-  blobStorage: BlobStorage;
+export interface LeaseRouterDeps extends AccountDeps {
+  accountRepository: AccountRepository;
 }
 
-const leaseStatusSchema = z.enum(["draft", "active", "ended"]);
-
 export function leaseRouter(deps: LeaseRouterDeps) {
+  async function change(
+    propertyId: string,
+    accountId: string,
+    apply: (account: Account) => void,
+    options: { checkRules: boolean },
+  ) {
+    const account = await deps.accountRepository.findById(
+      propertyId,
+      accountId,
+    );
+    if (!account) throw notFound("Account not found");
+    try {
+      apply(account);
+    } catch (e) {
+      if (e instanceof Error && /not found/i.test(e.message)) {
+        throw notFound(e.message);
+      }
+      throw toBadRequest(e, "Lease change failed");
+    }
+    if (options.checkRules) {
+      await assertAccountRules(deps, propertyId, account);
+    }
+    await deps.accountRepository.save(account);
+    return getAccountDetail(deps, propertyId, account.id);
+  }
+
   return router({
-    list: propertyProcedure
+    add: propertyProcedure
       .input(
-        z
-          .object({
-            unitId: z.string().uuid().optional(),
-            status: leaseStatusSchema.optional(),
-          })
-          .optional(),
+        z.object({ accountId: z.string().uuid(), lease: leaseInputSchema }),
       )
-      .query(async ({ ctx, input }) =>
-        deps.leaseQueries.list(ctx.propertyId, input),
+      .mutation(({ ctx, input }) =>
+        change(
+          ctx.propertyId,
+          input.accountId,
+          (account) =>
+            account.addLease({
+              id: randomUUID(),
+              ...toLeaseTerms(input.lease),
+            }),
+          { checkRules: true },
+        ),
       ),
-
-    get: propertyProcedure
-      .input(z.object({ id: z.string().uuid() }))
-      .query(async ({ ctx, input }) => {
-        const lease = await deps.leaseQueries.getById(ctx.propertyId, input.id);
-        if (!lease) throw new TRPCError({ code: "NOT_FOUND" });
-        return lease;
-      }),
-
-    create: propertyProcedure
-      .input(
-        z.object({
-          unitId: z.string().uuid(),
-          tenantId: z.string().uuid(),
-          startDate: z.coerce.date(),
-          endDate: z.coerce.date(),
-          rentCents: z.number().int().min(0),
-          depositCents: z.number().int().min(0).optional(),
-          status: z.enum(["draft", "active"]).optional(),
-        }),
-      )
-      .mutation(async ({ ctx, input }) => {
-        const unit = await deps.unitQueries.getById(
-          ctx.propertyId,
-          input.unitId,
-        );
-        if (!unit) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unit not found",
-          });
-        }
-        const tenant = await deps.tenantQueries.getById(
-          ctx.propertyId,
-          input.tenantId,
-        );
-        if (tenant?.status !== "active") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Active tenant required",
-          });
-        }
-        const status = (input.status ?? "draft") as LeaseStatus;
-        if (status === "active") {
-          const existing = await deps.leaseQueries.listActiveByUnitId(
-            ctx.propertyId,
-            input.unitId,
-          );
-          if (existing.length > 0) {
-            throw new TRPCError({
-              code: "CONFLICT",
-              message: "Unit already has an active lease",
-            });
-          }
-        }
-
-        try {
-          const lease = Lease.create({
-            id: randomUUID(),
-            propertyId: ctx.propertyId,
-            unitId: input.unitId,
-            tenantId: input.tenantId,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            rentCents: input.rentCents,
-            depositCents: input.depositCents,
-            status,
-          });
-          await deps.leaseRepository.save(lease);
-          return deps.leaseQueries.getById(ctx.propertyId, lease.id);
-        } catch (e) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: e instanceof Error ? e.message : "Create failed",
-          });
-        }
-      }),
 
     update: propertyProcedure
       .input(
         z.object({
-          id: z.string().uuid(),
-          startDate: z.coerce.date().optional(),
-          endDate: z.coerce.date().optional(),
-          rentCents: z.number().int().min(0).optional(),
-          depositCents: z.number().int().min(0).nullable().optional(),
+          accountId: z.string().uuid(),
+          leaseId: z.string().uuid(),
+          lease: leaseInputSchema,
         }),
       )
-      .mutation(async ({ ctx, input }) => {
-        const lease = await deps.leaseRepository.findById(
+      .mutation(({ ctx, input }) =>
+        change(
           ctx.propertyId,
-          input.id,
-        );
-        if (!lease) throw new TRPCError({ code: "NOT_FOUND" });
-        try {
-          lease.updateMetadata({
-            startDate: input.startDate,
-            endDate: input.endDate,
-            rentCents: input.rentCents,
-            depositCents: input.depositCents,
-          });
-        } catch (e) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: e instanceof Error ? e.message : "Update failed",
-          });
-        }
-        await deps.leaseRepository.save(lease);
-        return deps.leaseQueries.getById(ctx.propertyId, lease.id);
-      }),
+          input.accountId,
+          (account) =>
+            account.updateLease(input.leaseId, toLeaseTerms(input.lease)),
+          { checkRules: true },
+        ),
+      ),
 
-    activate: propertyProcedure
-      .input(z.object({ id: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        const lease = await deps.leaseRepository.findById(
-          ctx.propertyId,
-          input.id,
-        );
-        if (!lease) throw new TRPCError({ code: "NOT_FOUND" });
-        const existing = await deps.leaseQueries.listActiveByUnitId(
-          ctx.propertyId,
-          lease.unitId,
-        );
-        if (existing.some((l) => l.id !== lease.id)) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Unit already has an active lease",
-          });
-        }
-        try {
-          lease.activate();
-        } catch (e) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: e instanceof Error ? e.message : "Activate failed",
-          });
-        }
-        await deps.leaseRepository.save(lease);
-        return deps.leaseQueries.getById(ctx.propertyId, lease.id);
-      }),
-
-    end: propertyProcedure
-      .input(z.object({ id: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        const lease = await deps.leaseRepository.findById(
-          ctx.propertyId,
-          input.id,
-        );
-        if (!lease) throw new TRPCError({ code: "NOT_FOUND" });
-        lease.end();
-        await deps.leaseRepository.save(lease);
-        return deps.leaseQueries.getById(ctx.propertyId, lease.id);
-      }),
-
-    attachDocument: propertyProcedure
+    remove: propertyProcedure
       .input(
         z.object({
-          id: z.string().uuid(),
-          fileName: z.string().min(1),
-          contentType: z.literal("application/pdf"),
-          /** base64-encoded PDF body */
-          contentBase64: z.string().min(1),
+          accountId: z.string().uuid(),
+          leaseId: z.string().uuid(),
         }),
       )
-      .mutation(async ({ ctx, input }) => {
-        const lease = await deps.leaseRepository.findById(
+      .mutation(({ ctx, input }) =>
+        change(
           ctx.propertyId,
-          input.id,
-        );
-        if (!lease) throw new TRPCError({ code: "NOT_FOUND" });
+          input.accountId,
+          (account) => account.removeLease(input.leaseId),
+          { checkRules: true },
+        ),
+      ),
 
-        const previousKey = lease.document?.storageKey;
-        const storageKey = `leases/${lease.id}/${Date.now()}-${input.fileName}`;
-        const body = Buffer.from(input.contentBase64, "base64");
-
-        await deps.blobStorage.putObject({
-          key: storageKey,
-          body,
-          contentType: input.contentType,
-        });
-
-        lease.attachDocument({
-          storageKey,
-          fileName: input.fileName,
-          contentType: input.contentType,
-          uploadedAt: new Date(),
-        });
-        await deps.leaseRepository.save(lease);
-
-        if (previousKey && previousKey !== storageKey) {
-          try {
-            await deps.blobStorage.deleteObject(previousKey);
-          } catch {
-            // best-effort cleanup
-          }
-        }
-
-        return deps.leaseQueries.getById(ctx.propertyId, lease.id);
-      }),
-
-    documentDownloadUrl: propertyProcedure
-      .input(z.object({ id: z.string().uuid() }))
-      .query(async ({ ctx, input }) => {
-        const lease = await deps.leaseQueries.getById(ctx.propertyId, input.id);
-        if (!lease?.document) {
-          throw new TRPCError({ code: "NOT_FOUND" });
-        }
-        const url = await deps.blobStorage.getSignedDownloadUrl(
-          lease.document.storageKey,
-        );
-        return { url, fileName: lease.document.fileName };
-      }),
+    setRentStepNotified: propertyProcedure
+      .input(
+        z.object({
+          accountId: z.string().uuid(),
+          leaseId: z.string().uuid(),
+          stepId: z.string().uuid(),
+          notified: z.boolean(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        change(
+          ctx.propertyId,
+          input.accountId,
+          (account) =>
+            account.markRentStepNotified(
+              input.leaseId,
+              input.stepId,
+              input.notified ? new Date() : null,
+            ),
+          { checkRules: false },
+        ),
+      ),
   });
 }
