@@ -17,6 +17,7 @@ export {
   dayOfMonth,
   firstDay,
   isIsoDate,
+  isTimeZone,
   isYearMonth,
   lastDay,
   maxDate,

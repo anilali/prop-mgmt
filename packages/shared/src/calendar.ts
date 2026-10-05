@@ -82,6 +82,15 @@ export function isYearMonth(value: string): boolean {
   }
 }
 
+export function isTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return value.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function todayIn(timeZone: string, now: Date = new Date()): IsoDate {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,

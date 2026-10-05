@@ -7,6 +7,7 @@ import {
   dayOfMonth,
   firstDay,
   isIsoDate,
+  isTimeZone,
   lastDay,
   maxDate,
   monthOf,
@@ -121,5 +122,13 @@ describe("todayIn", () => {
     expect(todayIn("America/Chicago", new Date("2026-07-01T05:00:00Z"))).toBe(
       "2026-07-01",
     );
+  });
+});
+
+describe("isTimeZone", () => {
+  it("accepts IANA names and rejects others", () => {
+    expect(isTimeZone("America/Chicago")).toBe(true);
+    expect(isTimeZone("Not/AZone")).toBe(false);
+    expect(isTimeZone("")).toBe(false);
   });
 });

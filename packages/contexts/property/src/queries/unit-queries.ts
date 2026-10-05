@@ -1,4 +1,5 @@
-import type { UnitStatus, UtilityAssignment } from "../aggregates/unit";
+import type { IsoDate } from "@moonship/shared";
+
 import type { Address } from "../value-objects/address";
 
 export interface UnitView {
@@ -6,11 +7,8 @@ export interface UnitView {
   propertyId: string;
   label: string;
   sqft: number;
-  bedrooms?: number;
-  bathrooms?: number;
-  addressOverride: Address | null;
-  utilities: UtilityAssignment[];
-  status: UnitStatus;
+  sqftChangedOn: IsoDate | null;
+  address: Address;
 }
 
 export interface UnitQueries {

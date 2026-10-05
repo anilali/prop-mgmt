@@ -1,14 +1,13 @@
 // Aggregates
-export { Property } from "./aggregates/property";
-export type { PropertyProps } from "./aggregates/property";
+export {
+  DEFAULT_TIME_ZONE,
+  EMPTY_LETTER_DETAILS,
+  Property,
+} from "./aggregates/property";
+export type { LetterDetails, PropertyProps } from "./aggregates/property";
 
-export { Unit, validateUtilityAssignments } from "./aggregates/unit";
-export type {
-  UnitProps,
-  UnitStatus,
-  UtilityAssignment,
-  UtilityType,
-} from "./aggregates/unit";
+export { Unit } from "./aggregates/unit";
+export type { UnitProps } from "./aggregates/unit";
 
 // Events
 export type {
@@ -21,7 +20,6 @@ export type {
   UnitEvent,
   UnitCreated,
   UnitDetailsUpdated,
-  UnitStatusChanged,
 } from "./events/unit-events";
 
 // Repository interfaces

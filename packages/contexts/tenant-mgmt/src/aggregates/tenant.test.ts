@@ -12,7 +12,15 @@ function buildTenantProps(overrides: Partial<TenantProps> = {}): TenantProps {
   return {
     id: "tenant-1",
     propertyId: "property-1",
-    fullName: "Jane Doe",
+    businessName: "Super Lucky LLC",
+    contactName: "Jane Doe",
+    mailingAddress: {
+      street1: "9 Elm St",
+      city: "Springfield",
+      state: "IL",
+      postalCode: "62701",
+      country: "US",
+    },
     email: "jane@example.com",
     phone: "555-0100",
     notes: "Prefers email",
@@ -28,7 +36,9 @@ describe("Tenant", () => {
 
       expect(tenant.id).toBe("tenant-1");
       expect(tenant.propertyId).toBe("property-1");
-      expect(tenant.fullName).toBe("Jane Doe");
+      expect(tenant.businessName).toBe("Super Lucky LLC");
+      expect(tenant.contactName).toBe("Jane Doe");
+      expect(tenant.mailingAddress?.street1).toBe("9 Elm St");
       expect(tenant.email).toBe("jane@example.com");
       expect(tenant.phone).toBe("555-0100");
       expect(tenant.notes).toBe("Prefers email");
@@ -40,19 +50,25 @@ describe("Tenant", () => {
       expect(created.eventType).toBe("TenantCreated");
       expect(created.payload).toEqual({
         propertyId: "property-1",
-        fullName: "Jane Doe",
+        businessName: "Super Lucky LLC",
       });
+    });
+
+    it("rejects an empty business name", () => {
+      expect(() =>
+        Tenant.create(buildTenantProps({ businessName: "  " })),
+      ).toThrow("Business name is required");
     });
   });
 
   describe("reconstitute", () => {
     it("restores a tenant without emitting events", () => {
       const tenant = Tenant.reconstitute(
-        buildTenantProps({ id: "tenant-2", fullName: "John Smith" }),
+        buildTenantProps({ id: "tenant-2", businessName: "Smith Dental" }),
       );
 
       expect(tenant.id).toBe("tenant-2");
-      expect(tenant.fullName).toBe("John Smith");
+      expect(tenant.businessName).toBe("Smith Dental");
       expect(tenant.pullEvents()).toHaveLength(0);
     });
   });
@@ -61,13 +77,15 @@ describe("Tenant", () => {
     it("updates fields and emits TenantUpdated", () => {
       const tenant = Tenant.reconstitute(buildTenantProps());
       tenant.update({
-        fullName: "Jane Smith",
+        businessName: "Lucky Two LLC",
+        contactName: "Jane Smith",
         email: "jane.smith@example.com",
         phone: "555-0199",
         notes: "Updated notes",
       });
 
-      expect(tenant.fullName).toBe("Jane Smith");
+      expect(tenant.businessName).toBe("Lucky Two LLC");
+      expect(tenant.contactName).toBe("Jane Smith");
       expect(tenant.email).toBe("jane.smith@example.com");
       expect(tenant.phone).toBe("555-0199");
       expect(tenant.notes).toBe("Updated notes");
@@ -79,7 +97,16 @@ describe("Tenant", () => {
 
     it("clears optional fields when set to null", () => {
       const tenant = Tenant.reconstitute(buildTenantProps());
-      tenant.update({ email: null, phone: null, notes: null });
+      tenant.update({
+        contactName: null,
+        mailingAddress: null,
+        email: null,
+        phone: null,
+        notes: null,
+      });
+
+      expect(tenant.contactName).toBeUndefined();
+      expect(tenant.mailingAddress).toBeUndefined();
 
       expect(tenant.email).toBeUndefined();
       expect(tenant.phone).toBeUndefined();

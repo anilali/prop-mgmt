@@ -1,9 +1,13 @@
+import type { Address } from "@moonship/shared";
+
 import type { TenantStatus } from "../aggregates/tenant";
 
 export interface TenantView {
   id: string;
   propertyId: string;
-  fullName: string;
+  businessName: string;
+  contactName?: string;
+  mailingAddress?: Address;
   email?: string;
   phone?: string;
   notes?: string;

@@ -1,27 +1,26 @@
 // Aggregates
-export { Lease } from "./aggregates/lease";
+export { Account } from "./aggregates/account";
 export type {
-  LeaseProps,
-  LeaseStatus,
-  LeaseDocument,
-} from "./aggregates/lease";
+  AccountProps,
+  EstimateStep,
+  LateFee,
+  Lease,
+  LeaseTermsInput,
+  NewLease,
+  RentStep,
+} from "./aggregates/account";
 
 // Events
 export type {
-  LeaseEvent,
-  LeaseCreated,
-  LeaseMetadataUpdated,
-  LeaseActivated,
-  LeaseEnded,
-  LeaseDocumentAttached,
-} from "./events/lease-events";
+  AccountEvent,
+  AccountOpened,
+  LeaseAdded,
+  LeaseRemoved,
+  LeaseUpdated,
+} from "./events/account-events";
 
 // Repository interfaces
-export type { LeaseRepository } from "./repositories/lease-repository";
+export type { AccountRepository } from "./repositories/account-repository";
 
 // Query interfaces
-export type {
-  LeaseView,
-  LeaseListFilters,
-  LeaseQueries,
-} from "./queries/lease-queries";
+export type { AccountQueries, AccountView } from "./queries/account-queries";

@@ -4,7 +4,7 @@ export interface TenantCreated extends DomainEvent {
   readonly eventType: "TenantCreated";
   readonly payload: {
     readonly propertyId: string;
-    readonly fullName: string;
+    readonly businessName: string;
   };
 }
 

@@ -1,4 +1,4 @@
-import type { DomainEvent } from "@moonship/shared";
+import type { Address, DomainEvent } from "@moonship/shared";
 
 import type {
   TenantArchived,
@@ -11,11 +11,21 @@ export type TenantStatus = "active" | "archived";
 export interface TenantProps {
   id: string;
   propertyId: string;
-  fullName: string;
+  businessName: string;
+  contactName?: string;
+  mailingAddress?: Address;
   email?: string;
   phone?: string;
   notes?: string;
   status: TenantStatus;
+}
+
+function cleanBusinessName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Business name is required");
+  }
+  return trimmed;
 }
 
 export class Tenant {
@@ -32,6 +42,7 @@ export class Tenant {
     const status = props.status ?? "active";
     const tenant = new Tenant({
       ...props,
+      businessName: cleanBusinessName(props.businessName),
       status,
     });
     const event: TenantCreated = {
@@ -40,7 +51,7 @@ export class Tenant {
       aggregateId: props.id,
       payload: {
         propertyId: props.propertyId,
-        fullName: props.fullName,
+        businessName: tenant.businessName,
       },
     };
     tenant.addEvent(event);
@@ -59,8 +70,16 @@ export class Tenant {
     return this.props.propertyId;
   }
 
-  get fullName(): string {
-    return this.props.fullName;
+  get businessName(): string {
+    return this.props.businessName;
+  }
+
+  get contactName(): string | undefined {
+    return this.props.contactName;
+  }
+
+  get mailingAddress(): Address | undefined {
+    return this.props.mailingAddress;
   }
 
   get email(): string | undefined {
@@ -80,12 +99,22 @@ export class Tenant {
   }
 
   update(updates: {
-    fullName?: string;
+    businessName?: string;
+    contactName?: string | null;
+    mailingAddress?: Address | null;
     email?: string | null;
     phone?: string | null;
     notes?: string | null;
   }): void {
-    if (updates.fullName !== undefined) this.props.fullName = updates.fullName;
+    const businessName =
+      updates.businessName !== undefined
+        ? cleanBusinessName(updates.businessName)
+        : undefined;
+    if (businessName !== undefined) this.props.businessName = businessName;
+    if (updates.contactName !== undefined)
+      this.props.contactName = updates.contactName ?? undefined;
+    if (updates.mailingAddress !== undefined)
+      this.props.mailingAddress = updates.mailingAddress ?? undefined;
     if (updates.email !== undefined)
       this.props.email = updates.email ?? undefined;
     if (updates.phone !== undefined)

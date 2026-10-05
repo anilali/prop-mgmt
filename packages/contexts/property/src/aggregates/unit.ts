@@ -1,62 +1,29 @@
-import type { DomainEvent } from "@moonship/shared";
+import type { DomainEvent, IsoDate } from "@moonship/shared";
 
-import type {
-  UnitCreated,
-  UnitDetailsUpdated,
-  UnitStatusChanged,
-} from "../events/unit-events";
+import type { UnitCreated, UnitDetailsUpdated } from "../events/unit-events";
 import type { Address } from "../value-objects/address";
-
-export type UnitStatus = "vacant" | "occupied" | "offline";
-
-export type UtilityType = "electric" | "gas" | "water" | "sewer" | "trash";
-
-export type UtilityAssignment =
-  | { type: UtilityType; kind: "individual" }
-  | { type: UtilityType; kind: "shares"; withUnitId: string };
 
 export interface UnitProps {
   id: string;
   propertyId: string;
   label: string;
   sqft: number;
-  bedrooms?: number;
-  bathrooms?: number;
-  addressOverride?: Address | null;
-  utilities: UtilityAssignment[];
-  status: UnitStatus;
+  sqftChangedOn: IsoDate | null;
+  address: Address;
 }
 
-export function validateUtilityAssignments(
-  unitId: string,
-  assignments: UtilityAssignment[],
-  existingUnitIds: Set<string>,
-): void {
-  const seenTypes = new Set<UtilityType>();
-
-  for (const assignment of assignments) {
-    if (seenTypes.has(assignment.type)) {
-      throw new Error(`Duplicate utility type: ${assignment.type}`);
-    }
-    seenTypes.add(assignment.type);
-
-    if (assignment.kind === "shares") {
-      if (assignment.withUnitId === unitId) {
-        throw new Error("Unit cannot share a utility with itself");
-      }
-      if (!existingUnitIds.has(assignment.withUnitId)) {
-        throw new Error(
-          `Shared utility target unit not found: ${assignment.withUnitId}`,
-        );
-      }
-    }
-  }
-}
-
-function assertPositiveInt(value: number, field: string): void {
+function assertSqft(value: number): void {
   if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${field} must be a positive integer`);
+    throw new Error("sqft must be a positive integer");
   }
+}
+
+function cleanLabel(label: string): string {
+  const trimmed = label.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Unit label is required");
+  }
+  return trimmed;
 }
 
 export class Unit {
@@ -67,12 +34,12 @@ export class Unit {
     this.props = props;
   }
 
-  static create(props: UnitProps): Unit {
-    assertPositiveInt(props.sqft, "sqft");
+  static create(props: Omit<UnitProps, "sqftChangedOn">): Unit {
+    assertSqft(props.sqft);
     const unit = new Unit({
       ...props,
-      addressOverride: props.addressOverride ?? null,
-      utilities: props.utilities,
+      label: cleanLabel(props.label),
+      sqftChangedOn: null,
     });
     const event: UnitCreated = {
       eventType: "UnitCreated",
@@ -80,7 +47,7 @@ export class Unit {
       aggregateId: props.id,
       payload: {
         propertyId: props.propertyId,
-        label: props.label,
+        label: unit.label,
       },
     };
     unit.addEvent(event);
@@ -88,11 +55,7 @@ export class Unit {
   }
 
   static reconstitute(props: UnitProps): Unit {
-    return new Unit({
-      ...props,
-      addressOverride: props.addressOverride ?? null,
-      utilities: props.utilities,
-    });
+    return new Unit({ ...props });
   }
 
   get id(): string {
@@ -111,65 +74,33 @@ export class Unit {
     return this.props.sqft;
   }
 
-  get bedrooms(): number | undefined {
-    return this.props.bedrooms;
+  get sqftChangedOn(): IsoDate | null {
+    return this.props.sqftChangedOn;
   }
 
-  get bathrooms(): number | undefined {
-    return this.props.bathrooms;
+  get address(): Address {
+    return this.props.address;
   }
 
-  get addressOverride(): Address | null {
-    return this.props.addressOverride ?? null;
-  }
+  updateDetails(
+    updates: { label?: string; sqft?: number; address?: Address },
+    changedOn: IsoDate | null,
+  ): void {
+    const label =
+      updates.label !== undefined ? cleanLabel(updates.label) : undefined;
+    if (updates.sqft !== undefined) assertSqft(updates.sqft);
 
-  get utilities(): UtilityAssignment[] {
-    return this.props.utilities;
-  }
-
-  get status(): UnitStatus {
-    return this.props.status;
-  }
-
-  updateDetails(updates: {
-    label?: string;
-    sqft?: number;
-    bedrooms?: number | null;
-    bathrooms?: number | null;
-    addressOverride?: Address | null;
-    utilities?: UtilityAssignment[];
-  }): void {
-    if (updates.label !== undefined) this.props.label = updates.label;
-    if (updates.sqft !== undefined) {
-      assertPositiveInt(updates.sqft, "sqft");
+    if (label !== undefined) this.props.label = label;
+    if (updates.address !== undefined) this.props.address = updates.address;
+    if (updates.sqft !== undefined && updates.sqft !== this.props.sqft) {
       this.props.sqft = updates.sqft;
+      if (changedOn !== null) this.props.sqftChangedOn = changedOn;
     }
-    if (updates.bedrooms !== undefined)
-      this.props.bedrooms = updates.bedrooms ?? undefined;
-    if (updates.bathrooms !== undefined)
-      this.props.bathrooms = updates.bathrooms ?? undefined;
-    if (updates.addressOverride !== undefined)
-      this.props.addressOverride = updates.addressOverride;
-    if (updates.utilities !== undefined)
-      this.props.utilities = updates.utilities;
 
     const event: UnitDetailsUpdated = {
       eventType: "UnitDetailsUpdated",
       occurredAt: new Date(),
       aggregateId: this.props.id,
-    };
-    this.addEvent(event);
-  }
-
-  changeStatus(status: UnitStatus): void {
-    if (this.props.status === status) return;
-
-    this.props.status = status;
-    const event: UnitStatusChanged = {
-      eventType: "UnitStatusChanged",
-      occurredAt: new Date(),
-      aggregateId: this.props.id,
-      payload: { status },
     };
     this.addEvent(event);
   }
