@@ -18,8 +18,8 @@ export function ImportPageContent() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Import bank CSV"
-        description="Upload the bank's CSV export. Rows already imported are left out."
+        title="Import bank file"
+        description="Upload the bank's CSV or QuickBooks (QBO) download. Rows already imported are left out."
         action={
           <Button type="button" variant="outline" asChild>
             <Link href="/transactions">Back to transactions</Link>

@@ -36,10 +36,19 @@ const COUNT_LABELS: { key: keyof Counts; label: string }[] = [
   { key: "errors", label: "Errors" },
 ];
 
-function Cells({ cells }: { cells: readonly string[] }) {
+function Cells({
+  cells,
+  skipBlank = false,
+}: {
+  cells: readonly string[];
+  skipBlank?: boolean;
+}) {
   return (
     <span className="font-mono text-xs break-all">
-      {cells.map((cell) => cell.trim()).join(" | ")}
+      {cells
+        .map((cell) => cell.trim())
+        .filter((cell) => !skipBlank || cell !== "")
+        .join(" | ")}
     </span>
   );
 }
@@ -68,9 +77,10 @@ export function ImportPreview({
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Preview</h2>
         <p className="text-muted-foreground text-sm">
-          {counts.rows} rows below the header, {counts.transactions} with a date
-          and amount. Rows dated before {formatDate(result.trackingStartDate)}{" "}
-          are skipped.
+          {result.format === "ofx"
+            ? `${counts.rows} transactions in the file.`
+            : `${counts.rows} rows below the header, ${counts.transactions} with a date and amount.`}{" "}
+          Rows dated before {formatDate(result.trackingStartDate)} are skipped.
         </p>
       </div>
 
@@ -95,8 +105,10 @@ export function ImportPreview({
         <div className="space-y-2">
           <h3 className="font-medium">Rows that could not be read</h3>
           <p className="text-muted-foreground text-sm">
-            Fix the column matching, or tick Skip to leave a row out. Every row
-            here must be skipped before importing.
+            {result.format === "ofx"
+              ? "Tick Skip to leave a row out."
+              : "Fix the column matching, or tick Skip to leave a row out."}{" "}
+            Every row here must be skipped before importing.
           </p>
           <Table>
             <TableHeader>
@@ -121,7 +133,10 @@ export function ImportPreview({
                   </TableCell>
                   <TableCell>{error.rowNumber}</TableCell>
                   <TableCell>
-                    <Cells cells={error.cells} />
+                    <Cells
+                      cells={error.cells}
+                      skipBlank={result.format === "ofx"}
+                    />
                   </TableCell>
                   <TableCell className="text-destructive">
                     {error.message}
@@ -211,8 +226,8 @@ export function ImportPreview({
         </Button>
         {unskipped > 0 ? (
           <p className="text-muted-foreground text-sm">
-            Skip or fix {unskipped} {unskipped === 1 ? "row" : "rows"} that
-            could not be read.
+            {result.format === "ofx" ? "Skip" : "Skip or fix"} {unskipped}{" "}
+            {unskipped === 1 ? "row" : "rows"} that could not be read.
           </p>
         ) : counts.toInsert === 0 ? (
           <p className="text-muted-foreground text-sm">

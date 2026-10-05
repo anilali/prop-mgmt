@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 
 import type { CsvMapping } from "@moonship/billing";
+import { fileCharset } from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
 import { Input } from "@moonship/ui/input";
 import { Label } from "@moonship/ui/label";
@@ -25,6 +26,8 @@ import {
 import type { PreviewResult } from "./import-preview";
 import { useTRPC } from "~/trpc/react";
 import { useTransactionsChanged } from "../../_components/use-transactions-changed";
+import { formatAmount } from "../../_lib/transactions";
+import { formatDate } from "../../../leases/_lib/format";
 import { ImportPreview } from "./import-preview";
 import { MappingForm } from "./mapping-form";
 
@@ -35,7 +38,40 @@ interface LoadedFile {
   text: string;
 }
 
-function RawRows({ result }: { result: PreviewResult }) {
+type CsvPreview = Extract<PreviewResult, { format: "csv" }>;
+type OfxPreview = Extract<PreviewResult, { format: "ofx" }>;
+
+async function readBankFile(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const head = new TextDecoder("windows-1252").decode(bytes.subarray(0, 1024));
+  return new TextDecoder(fileCharset(head)).decode(bytes);
+}
+
+function OfxAccount({ result }: { result: OfxPreview }) {
+  const { last4, startOn, endOn, ledgerBalance, warning } = result.account;
+  return (
+    <div className="space-y-2 rounded-lg border p-4 text-sm">
+      <p>
+        QuickBooks file
+        {last4 ? ` for the account ending ${last4}` : ""}
+        {startOn && endOn
+          ? `, ${formatDate(startOn)} to ${formatDate(endOn)}`
+          : ""}
+        .
+        {ledgerBalance
+          ? ` Bank balance ${formatAmount(ledgerBalance.amountCents)}${ledgerBalance.asOf ? ` on ${formatDate(ledgerBalance.asOf)}` : ""}.`
+          : null}
+      </p>
+      <p className="text-muted-foreground">
+        No column matching is needed. The bank&apos;s transaction id is used to
+        leave out rows already imported.
+      </p>
+      {warning ? <p className="text-destructive">{warning}</p> : null}
+    </div>
+  );
+}
+
+function RawRows({ result }: { result: CsvPreview }) {
   const width = Math.max(
     result.headers.length,
     ...result.rawRows.map((row) => row.cells.length),
@@ -101,20 +137,25 @@ export function ImportFlow() {
   ) => {
     preview.mutate(
       {
-        csvText: loaded.text,
+        fileText: loaded.text,
         mapping: options.mapping,
         headerRow: options.headerRow,
       },
       {
         onSuccess: (next) => {
           setResult(next);
-          setHeaderRowText(
-            next.headerRow === null ? "" : String(next.headerRow),
-          );
           setSkipRows((current) =>
             current.filter((row) =>
               next.errors.some((error) => error.rowNumber === row),
             ),
+          );
+          if (next.format === "ofx") {
+            setHeaderRowText("");
+            setEditingMapping(false);
+            return;
+          }
+          setHeaderRowText(
+            next.headerRow === null ? "" : String(next.headerRow),
           );
           setEditingMapping(
             next.mapping === null ||
@@ -165,29 +206,42 @@ export function ImportFlow() {
     }
     const loaded = {
       name: selected.name.slice(0, 255),
-      text: await selected.text(),
+      text: await readBankFile(selected),
     };
     setFile(loaded);
     runPreview(loaded, { keepEditing: false });
   };
 
+  const csvResult = result?.format === "csv" ? result : null;
+  const ofxResult = result?.format === "ofx" ? result : null;
   const counts = result?.counts ?? null;
   const activeMapping =
-    result?.mapping && result.mappingError === null ? result.mapping : null;
+    csvResult?.mapping && csvResult.mappingError === null
+      ? csvResult.mapping
+      : null;
+
+  const onToggleSkip = (rowNumber: number, skip: boolean) =>
+    setSkipRows((current) =>
+      skip
+        ? [...current.filter((row) => row !== rowNumber), rowNumber]
+        : current.filter((row) => row !== rowNumber),
+    );
 
   return (
     <section className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="csv-file">Bank CSV file</Label>
+        <Label htmlFor="bank-file">Bank file</Label>
         <Input
           key={inputKey}
-          id="csv-file"
+          id="bank-file"
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.qbo,.ofx,.qfx,text/csv"
           className="max-w-md"
           onChange={(e) => void onFile(e.target.files?.[0])}
         />
-        <p className="text-muted-foreground text-xs">Up to 2 MB.</p>
+        <p className="text-muted-foreground text-xs">
+          CSV or QuickBooks (.qbo, .ofx, .qfx), up to 2 MB.
+        </p>
         {imported !== null ? (
           <p className="text-sm">
             Imported {imported}{" "}
@@ -203,15 +257,36 @@ export function ImportFlow() {
         <p className="text-muted-foreground text-sm">Reading {file.name}...</p>
       ) : null}
 
-      {file && result ? (
+      {file && ofxResult ? (
+        <>
+          <OfxAccount result={ofxResult} />
+          <ImportPreview
+            result={ofxResult}
+            counts={ofxResult.counts}
+            skipRows={skipRows}
+            onToggleSkip={onToggleSkip}
+            importing={commit.isPending}
+            onImport={() =>
+              commit.mutate({
+                fileText: file.text,
+                fileName: file.name,
+                format: "ofx",
+                skipRows,
+              })
+            }
+          />
+        </>
+      ) : null}
+
+      {file && csvResult ? (
         <>
           <div className="space-y-3">
             <div className="space-y-1">
               <h2 className="text-lg font-medium">Header row</h2>
               <p className="text-muted-foreground text-sm">
-                {result.headerRow === null
+                {csvResult.headerRow === null
                   ? "No row with column names was found. Enter the row number that has them."
-                  : `Row ${result.headerRow} has the column names. Rows above it are ignored.`}
+                  : `Row ${csvResult.headerRow} has the column names. Rows above it are ignored.`}
               </p>
             </div>
             <form
@@ -248,28 +323,28 @@ export function ImportFlow() {
                 Use this row
               </Button>
             </form>
-            <RawRows result={result} />
+            <RawRows result={csvResult} />
           </div>
 
-          {result.mappingError ? (
+          {csvResult.mappingError ? (
             <p className="text-destructive text-sm">
               The saved column matching doesn&apos;t fit this file:{" "}
-              {result.mappingError}. Match the columns again.
+              {csvResult.mappingError}. Match the columns again.
             </p>
           ) : null}
 
-          {result.headerRow !== null && editingMapping ? (
+          {csvResult.headerRow !== null && editingMapping ? (
             <MappingForm
-              key={`${result.headerRow}-${result.headers.join("\u001f")}`}
-              headers={result.headers}
-              initial={result.mapping ?? savedMapping}
+              key={`${csvResult.headerRow}-${csvResult.headers.join("\u001f")}`}
+              headers={csvResult.headers}
+              initial={csvResult.mapping ?? savedMapping}
               savedIdColumn={savedMapping?.idColumn ?? null}
               hasSavedMapping={savedMapping !== null}
               pending={preview.isPending}
               onPreview={(mapping) =>
                 runPreview(file, {
                   mapping,
-                  headerRow: result.headerRow ?? undefined,
+                  headerRow: csvResult.headerRow ?? undefined,
                   keepEditing: false,
                 })
               }
@@ -301,23 +376,17 @@ export function ImportFlow() {
 
           {counts && activeMapping && !editingMapping ? (
             <ImportPreview
-              result={result}
+              result={csvResult}
               counts={counts}
               skipRows={skipRows}
-              onToggleSkip={(rowNumber, skip) =>
-                setSkipRows((current) =>
-                  skip
-                    ? [...current.filter((row) => row !== rowNumber), rowNumber]
-                    : current.filter((row) => row !== rowNumber),
-                )
-              }
+              onToggleSkip={onToggleSkip}
               importing={commit.isPending}
               onImport={() =>
                 commit.mutate({
-                  csvText: file.text,
+                  fileText: file.text,
                   fileName: file.name,
                   mapping: activeMapping,
-                  headerRow: result.headerRow ?? undefined,
+                  headerRow: csvResult.headerRow ?? undefined,
                   skipRows,
                 })
               }

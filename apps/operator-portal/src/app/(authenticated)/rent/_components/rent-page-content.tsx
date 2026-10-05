@@ -61,7 +61,7 @@ export function Freshness({
         className="underline underline-offset-4"
         href="/transactions/import"
       >
-        Import CSV
+        Import bank file
       </Link>
     </p>
   );

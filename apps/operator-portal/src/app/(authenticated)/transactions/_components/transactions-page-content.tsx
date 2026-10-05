@@ -30,7 +30,7 @@ export function TransactionsPageContent() {
         action={
           <>
             <Button type="button" variant="outline" asChild>
-              <Link href="/transactions/import">Import CSV</Link>
+              <Link href="/transactions/import">Import bank file</Link>
             </Button>
             <Button
               type="button"

@@ -57,6 +57,7 @@ export function PastBatches() {
           <TableHeader>
             <TableRow>
               <TableHead>File</TableHead>
+              <TableHead>Format</TableHead>
               <TableHead>Imported</TableHead>
               <TableHead>Dates</TableHead>
               <TableHead className="text-right">Rows</TableHead>
@@ -73,6 +74,14 @@ export function PastBatches() {
               <TableRow key={batch.id}>
                 <TableCell className="max-w-60 truncate font-medium">
                   {batch.fileName}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {batch.format === "ofx" ? "QuickBooks" : "CSV"}
+                  {batch.accountLast4 ? (
+                    <span className="text-muted-foreground block text-xs">
+                      Account ending {batch.accountLast4}
+                    </span>
+                  ) : null}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {importedAt.format(batch.importedAt)}

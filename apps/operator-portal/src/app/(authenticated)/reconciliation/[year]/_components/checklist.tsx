@@ -41,7 +41,7 @@ function fixLink(item: ChecklistItem): FixLink | null {
         ? { href: `/leases/${item.accountId}`, label: "Open the account" }
         : null;
     case "bank_data_through":
-      return { href: "/transactions/import", label: "Import CSV" };
+      return { href: "/transactions/import", label: "Import bank file" };
   }
 }
 
