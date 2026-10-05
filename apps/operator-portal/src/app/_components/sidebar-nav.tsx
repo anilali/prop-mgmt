@@ -8,6 +8,7 @@ import {
   Building2,
   Calculator,
   FileText,
+  House,
   KeyRound,
   Settings,
   Users,
@@ -24,6 +25,7 @@ interface NavItem {
 }
 
 const propertyMainItems: NavItem[] = [
+  { label: "Home", href: "/home", icon: House },
   { label: "Rent", href: "/rent", icon: Wallet },
   { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
   { label: "Reconciliation", href: "/reconciliation", icon: Calculator },

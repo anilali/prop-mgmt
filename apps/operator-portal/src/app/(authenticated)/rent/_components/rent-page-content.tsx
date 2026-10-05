@@ -23,6 +23,7 @@ import type { RentStatusData } from "../_lib/rent";
 import { useTRPC } from "~/trpc/react";
 import { RENT_STATUS_LABELS, RENT_STATUS_VARIANTS } from "../_lib/rent";
 import { ACCOUNT_STATE_LABELS, formatDate } from "../../leases/_lib/format";
+import { LateFeeSuggestionItem } from "./late-fee-suggestion";
 
 export function RentPageContent() {
   const trpc = useTRPC();
@@ -35,6 +36,7 @@ export function RentPageContent() {
         description="What each tenant was expected to pay so far, what they paid, and what they owe."
       />
       <Freshness today={data.today} newestBankDate={data.newestBankDate} />
+      <LateFees data={data} />
       <RentTable data={data} />
     </div>
   );
@@ -62,6 +64,33 @@ export function Freshness({
         Import CSV
       </Link>
     </p>
+  );
+}
+
+function LateFees({ data }: { data: RentStatusData }) {
+  const rows = data.rows.filter((row) => row.suggestions.length > 0);
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold">Late fees to decide</h2>
+      {rows.flatMap((row) =>
+        row.suggestions.map((suggestion) => (
+          <LateFeeSuggestionItem
+            key={`${row.accountId}-${suggestion.month}`}
+            suggestion={suggestion}
+            title={
+              <Link
+                className="underline-offset-4 hover:underline"
+                href={`/rent/${row.accountId}`}
+              >
+                {row.tenant.businessName}, unit {row.unit.label}
+              </Link>
+            }
+          />
+        )),
+      )}
+    </section>
   );
 }
 

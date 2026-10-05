@@ -16,6 +16,7 @@ export function useAccountUpdated(accountId: string) {
     await Promise.all([
       queryClient.invalidateQueries(trpc.account.list.queryFilter()),
       queryClient.invalidateQueries(trpc.rent.pathFilter()),
+      queryClient.invalidateQueries(trpc.home.pathFilter()),
     ]);
   };
 }

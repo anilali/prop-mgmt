@@ -167,7 +167,7 @@ export function decideOperatorContextSwitch(input: {
     context.mode === "property" &&
     context.propertyId === input.requestedValue
   ) {
-    return { ok: true, context, path: "/setup" };
+    return { ok: true, context, path: "/home" };
   }
   return { ok: false, context, path: null };
 }

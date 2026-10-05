@@ -12,5 +12,6 @@ export function useTransactionsChanged() {
       queryClient.invalidateQueries(trpc.transaction.pathFilter()),
       queryClient.invalidateQueries(trpc.bankImport.listBatches.queryFilter()),
       queryClient.invalidateQueries(trpc.rent.pathFilter()),
+      queryClient.invalidateQueries(trpc.home.pathFilter()),
     ]);
 }
