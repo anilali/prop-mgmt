@@ -25,6 +25,7 @@ import type {
 import { useTRPC } from "~/trpc/react";
 import { formatDate } from "../../../leases/_lib/format";
 import { formatMonth } from "../../../rent/_lib/rent";
+import { PoolCards } from "./pool-cards";
 
 type Snapshot = Finalized["snapshots"][number];
 type Comparison = Finalized["comparisons"][number];
@@ -37,10 +38,13 @@ export function FinalizedView({
   finalized: Finalized;
 }) {
   const mismatches = finalized.comparisons.filter((c) => !c.matches);
+  const compared = workspace.source === "app";
 
   return (
     <div className="space-y-8">
-      {finalized.mismatchCount > 0 ? (
+      {!compared ? (
+        <PoolCards year={workspace.year} pools={workspace.pools} readOnly />
+      ) : finalized.mismatchCount > 0 ? (
         <MismatchSection
           count={finalized.mismatchCount}
           mismatches={mismatches}
@@ -55,8 +59,11 @@ export function FinalizedView({
         year={workspace.year}
         snapshots={finalized.snapshots}
         comparisons={finalized.comparisons}
+        compared={compared}
       />
-      <JanuarySection january={finalized.january} />
+      {finalized.january ? (
+        <JanuarySection january={finalized.january} />
+      ) : null}
     </div>
   );
 }
@@ -127,10 +134,12 @@ function SnapshotsSection({
   year,
   snapshots,
   comparisons,
+  compared,
 }: {
   year: number;
   snapshots: Snapshot[];
   comparisons: Comparison[];
+  compared: boolean;
 }) {
   return (
     <section className="space-y-3">
@@ -148,7 +157,7 @@ function SnapshotsSection({
               <TableHead className="text-right">True-up</TableHead>
               <TableHead className="text-right">Balance on account</TableHead>
               <TableHead className="text-right">New monthly rent</TableHead>
-              <TableHead>Current data</TableHead>
+              {compared ? <TableHead>Current data</TableHead> : null}
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -159,8 +168,11 @@ function SnapshotsSection({
                 year={year}
                 snapshot={snapshot}
                 matches={
-                  comparisons.find((c) => c.accountId === snapshot.accountId)
-                    ?.matches ?? true
+                  compared
+                    ? (comparisons.find(
+                        (c) => c.accountId === snapshot.accountId,
+                      )?.matches ?? true)
+                    : null
                 }
               />
             ))}
@@ -178,7 +190,7 @@ function SnapshotRow({
 }: {
   year: number;
   snapshot: Snapshot;
-  matches: boolean;
+  matches: boolean | null;
 }) {
   const trpc = useTRPC();
   const download = useMutation(
@@ -209,13 +221,15 @@ function SnapshotRow({
       <TableCell className="text-right tabular-nums">
         {continuing ? formatCents(continuing.newMonthlyRentCents) : "-"}
       </TableCell>
-      <TableCell>
-        {matches ? (
-          <Badge variant="secondary">Matches</Badge>
-        ) : (
-          <Badge variant="destructive">Changed</Badge>
-        )}
-      </TableCell>
+      {matches === null ? null : (
+        <TableCell>
+          {matches ? (
+            <Badge variant="secondary">Matches</Badge>
+          ) : (
+            <Badge variant="destructive">Changed</Badge>
+          )}
+        </TableCell>
+      )}
       <TableCell className="text-right">
         <Button
           type="button"
@@ -235,7 +249,11 @@ function SnapshotRow({
   );
 }
 
-function JanuarySection({ january }: { january: Finalized["january"] }) {
+function JanuarySection({
+  january,
+}: {
+  january: NonNullable<Finalized["january"]>;
+}) {
   return (
     <section className="space-y-3">
       <div className="space-y-1">

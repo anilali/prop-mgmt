@@ -23,9 +23,11 @@ import { BillAmountDialog } from "./bill-amount-dialog";
 export function PoolCards({
   year,
   pools,
+  readOnly = false,
 }: {
   year: number;
   pools: PoolView[];
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState<PoolView | null>(null);
 
@@ -34,8 +36,14 @@ export function PoolCards({
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Pools</h2>
         <p className="text-muted-foreground text-sm">
-          Each pool&apos;s {year} cost comes from the transactions sorted to its
-          category, unless you enter the bill amount.
+          {readOnly ? (
+            <>Each pool&apos;s {year} cost and the transactions behind it.</>
+          ) : (
+            <>
+              Each pool&apos;s {year} cost comes from the transactions sorted to
+              its category, unless you enter the bill amount.
+            </>
+          )}
         </p>
       </div>
       {pools.length === 0 ? (
@@ -48,16 +56,18 @@ export function PoolCards({
             <PoolCard
               key={pool.poolId}
               pool={pool}
-              onEditBill={() => setEditing(pool)}
+              onEditBill={readOnly ? null : () => setEditing(pool)}
             />
           ))}
         </div>
       )}
-      <BillAmountDialog
-        year={year}
-        pool={editing}
-        onClose={() => setEditing(null)}
-      />
+      {readOnly ? null : (
+        <BillAmountDialog
+          year={year}
+          pool={editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </section>
   );
 }
@@ -67,7 +77,7 @@ function PoolCard({
   onEditBill,
 }: {
   pool: PoolView;
-  onEditBill: () => void;
+  onEditBill: (() => void) | null;
 }) {
   const [open, setOpen] = useState(false);
   const hasUnits = pool.poolSqft > 0;
@@ -92,9 +102,16 @@ function PoolCard({
             {hasUnits ? `${formatSqft(pool.poolSqft)} sq ft` : "No units"}
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={onEditBill}>
-          {pool.billOverride ? "Edit bill amount" : "Enter bill amount"}
-        </Button>
+        {onEditBill ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onEditBill}
+          >
+            {pool.billOverride ? "Edit bill amount" : "Enter bill amount"}
+          </Button>
+        ) : null}
       </div>
 
       <dl className="grid gap-4 text-sm sm:grid-cols-3">
@@ -163,9 +180,11 @@ function PoolCard({
         {open ? (
           pool.lines.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              {pool.categoryId === null
-                ? "This pool has no category, so no transactions count toward it."
-                : "No transactions sorted to this pool's category in this year."}
+              {onEditBill === null
+                ? "No transactions."
+                : pool.categoryId === null
+                  ? "This pool has no category, so no transactions count toward it."
+                  : "No transactions sorted to this pool's category in this year."}
             </p>
           ) : (
             <Table>
