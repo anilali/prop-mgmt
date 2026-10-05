@@ -30,6 +30,37 @@ describe("tenant procedures", () => {
     expect(updated?.businessName).toBe("Super Lucky LLC");
   });
 
+  it("trims the mailing address and rejects a blank street or city", async () => {
+    const caller = await createTestApp().callerFor();
+
+    const created = await caller.tenant.create({
+      businessName: "Super Lucky LLC",
+      mailingAddress: {
+        street1: " 100 Main St ",
+        street2: " Suite A ",
+        city: " Springfield",
+        state: "IL ",
+        postalCode: " 62701",
+        country: " US ",
+      },
+    });
+    expect(created?.mailingAddress).toEqual({
+      ...TEST_ADDRESS,
+      street2: "Suite A",
+    });
+
+    for (const blank of [{ street1: "  " }, { city: "\t" }]) {
+      expect(
+        await codeOf(
+          caller.tenant.create({
+            businessName: "Tenant D Co",
+            mailingAddress: { ...TEST_ADDRESS, ...blank },
+          }),
+        ),
+      ).toBe("BAD_REQUEST");
+    }
+  });
+
   it("rejects a blank business name", async () => {
     const caller = await createTestApp().callerFor();
 

@@ -14,12 +14,12 @@ export const centsSchema = z.number().int().min(-MAX_CENTS).max(MAX_CENTS);
 export const nonNegativeCentsSchema = centsSchema.min(0);
 
 export const addressSchema = z.object({
-  street1: z.string().min(1),
-  street2: z.string().optional(),
-  city: z.string().min(1),
-  state: z.string().min(1),
-  postalCode: z.string().min(1),
-  country: z.string().min(1),
+  street1: z.string().trim().min(1),
+  street2: z.string().trim().optional(),
+  city: z.string().trim().min(1),
+  state: z.string().trim().min(1),
+  postalCode: z.string().trim().min(1),
+  country: z.string().trim().min(1),
 });
 
 export const leaseInputSchema = z.object({
