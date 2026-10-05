@@ -11,15 +11,21 @@ import type {
   DedupeState,
   ImportBatch,
   ImportBatchSummary,
+  LedgerEntry,
   NewBankTransaction,
   Pool,
   Txn,
 } from "@moonship/billing";
 import type { IsoDate } from "@moonship/shared";
-import { checkAllocationLines, descriptionKey } from "@moonship/billing";
+import {
+  checkAllocationLines,
+  checkLedgerEntry,
+  descriptionKey,
+} from "@moonship/billing";
 
 import type { DbExecutor } from "../../client";
 import {
+  accountLedgerEntries,
   bankAccounts,
   categories,
   costPools,
@@ -35,6 +41,7 @@ import {
   toBankAccount,
 } from "./bank-rows";
 import { loadCategories, loadPools } from "./billing-rows";
+import { toLedgerEntry } from "./ledger-rows";
 
 const INSERT_CHUNK = 1000;
 
@@ -323,6 +330,61 @@ export class PGBillingStore implements BillingStore {
         ),
       )
       .returning({ id: transactions.id });
+    return deleted.length > 0;
+  }
+
+  async insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry> {
+    checkLedgerEntry(entry);
+    const [row] = await this.db
+      .insert(accountLedgerEntries)
+      .values({
+        id: entry.id,
+        propertyId: entry.propertyId,
+        accountId: entry.accountId,
+        kind: entry.kind,
+        entryDate: entry.entryDate,
+        amountCents: entry.amountCents,
+        note: entry.note,
+        feeMonth: entry.feeMonth,
+        reconciliationYearId: entry.reconciliationYearId,
+      })
+      .returning();
+    if (!row) throw new Error(`Ledger entry ${entry.id} was not saved`);
+    return toLedgerEntry(row);
+  }
+
+  async updateLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry | null> {
+    checkLedgerEntry(entry);
+    const [row] = await this.db
+      .update(accountLedgerEntries)
+      .set({
+        entryDate: entry.entryDate,
+        amountCents: entry.amountCents,
+        note: entry.note,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(accountLedgerEntries.id, entry.id),
+          eq(accountLedgerEntries.propertyId, entry.propertyId),
+          eq(accountLedgerEntries.accountId, entry.accountId),
+          eq(accountLedgerEntries.kind, entry.kind),
+        ),
+      )
+      .returning();
+    return row ? toLedgerEntry(row) : null;
+  }
+
+  async deleteLedgerEntry(propertyId: string, id: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(accountLedgerEntries)
+      .where(
+        and(
+          eq(accountLedgerEntries.id, id),
+          eq(accountLedgerEntries.propertyId, propertyId),
+        ),
+      )
+      .returning({ id: accountLedgerEntries.id });
     return deleted.length > 0;
   }
 }
