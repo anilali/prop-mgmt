@@ -8,7 +8,7 @@ The first user is one owner with a few properties. Other operators should be abl
 
 | # | PRD | What it covers | Depends on |
 |---|---|---|---|
-| 01 | [Navigation and property setup](./01-navigation-and-property-setup.md) | Sidebar, Settings, units (and removing residential fields), categories, cost pools, dashboard | nothing |
+| 01 | [Navigation and property setup](./01-navigation-and-property-setup.md) | Sidebar, Settings, property addresses, units (and removing residential fields), categories, cost pools, dashboard | nothing |
 | 02 | [Commercial leases](./02-commercial-leases.md) | Tenant contacts, rent schedules, recoveries, flat charges, options, lease creation and detail | 01 |
 | 03 | [Lease documents](./03-lease-documents.md) | Many documents per lease, types, expiry, compliance view | 02 |
 | 04 | [Billing and rent roll](./04-billing-and-rent-roll.md) | Charges, charge runs, payments, ledger, rent roll | 01, 02 |
@@ -46,7 +46,7 @@ The leases are triple net (NNN). A tenant pays base rent plus a monthly estimate
 Each PRD adds terms of its own. These are used across all of them.
 
 - **Property.** A building or center the operator runs. Everything below is scoped to one property.
-- **Unit.** A rentable space with a label and an area in sqft.
+- **Unit.** A rentable space with a label, an address, and an area in sqft that can change over time.
 - **Tenant.** A business or person that leases one or more units.
 - **Lease.** An agreement between one tenant and one unit for a date range.
 - **Category.** A label for money moving in or out, configured per property. Example: CAM.
@@ -61,57 +61,21 @@ Each PRD adds terms of its own. These are used across all of them.
 - **Transaction.** One line imported from a bank account.
 - **Reconciliation.** The yearly comparison of actual pool costs with estimates billed, per lease.
 
-## Context map
-
-```text
-             Property  (properties, units, categories, cost pools)
-                 ^
-                 | propertyId, unitId, categoryId, poolId
-                 |
-  TenantMgmt     |      LeaseMgmt                   Banking
-  (tenants,  <---+----  (leases, rent schedule,     (bank accounts, imports,
-   contacts,            recoveries, flat charges,    transactions, rules)
-   bank aliases)        options, documents)                |
-                              |                            | category totals,
-                              | lease terms                | deposit facts
-                              v                            v
-                           Billing  (charges, payments, charge runs,
-                                     reconciliations)
-```
-
-- **Property** gains categories and cost pools, and units lose their residential fields. It does not know about leases.
-- **TenantMgmt** gains contacts, a mailing address, and bank aliases.
-- **LeaseMgmt** owns everything written in the lease, including documents.
-- **Banking** is new, in `packages/contexts/banking`, persisted in a new `banking` Postgres schema.
-- **Billing** fills the existing stub in `packages/contexts/billing` and the empty `billing` schema. It is the only context that computes balances.
-- Contexts refer to each other by id only. When a flow spans contexts (confirming a deposit match creates a payment), an application service in `packages/api/operator` coordinates it, the same way lease creation checks the unit and tenant today.
-
 ## Principles every PRD follows
 
-1. **Property scoping.** Every read and write takes `propertyId` from request context, as in `docs/operator-access.md`. An id from another property returns not found.
-2. **Money is integer cents.** Stored as `bigint`. No floats anywhere in calculation or storage.
-3. **Shares are computed, not stored.** Pro rata shares come from integer sqft at calculation time. Rounding happens once per final line, to the cent, half away from zero.
-4. **Money records are append-only.** Posted charges, payments, and imported transactions are never edited. Corrections are new linked records. The one exception, unmatching a deposit, is covered in 05 and blocked once a year is reconciled.
-5. **Accounting dates are date-only.** Charge periods, payment dates, and transaction dates are `date` columns with no time zone. A charge period is the first day of its month.
-6. **The database enforces uniqueness.** Rules like "one charge run per month" are unique constraints, not only code checks.
-7. **Every write emits a domain event** with the acting operator's `authUserId`. Events back the history views (lease terms history in 02, who posted or finalized what in 04 and 06). There is no separate activity screen.
-8. **Configuration over code.** Category lists, pool rules, import formats, and categorization rules are data a property edits.
-9. **Writes are plannable.** Once 07 ships, every new user-facing write ships with an entry in the assistant's action catalog: the mutation's Zod schema, the form route, and a dry-run check. Its mutation accepts an optional `planStepId`, and its form accepts the `planStep` search parameter.
+1. **Property scoping.** An operator only sees and changes data for the property they're working in. Anything from another property behaves as if it doesn't exist.
+2. **Money is exact to the cent.** Amounts never pick up fractions of a cent along the way.
+3. **Shares are computed, not stored.** Pro rata shares are worked out from unit areas each time they're needed. Rounding happens once per final line, to the cent, with halves rounded away from zero.
+4. **Money records are never edited.** Posted charges, payments, and imported transactions stay as they are. Corrections are new linked records. The one exception, unmatching a deposit, is covered in 05 and blocked once a year is reconciled.
+5. **Accounting dates have no time of day.** Charge periods, payment dates, and transaction dates are plain dates. A charge period is the first day of its month.
+6. **Duplicates are impossible, not just discouraged.** Rules like "one charge run per month" always hold, even when two people act at once.
+7. **Every change records who made it.** This history backs the history views (lease terms in 02, who posted or finalized what in 04 and 06). There is no separate activity screen.
+8. **Configuration over code.** Category lists, pool rules, import formats, and categorization rules are settings a property edits.
+9. **Actions can be planned by the assistant.** Once 07 ships, every new action an operator can take also ships so the assistant can include it in a plan and open its form pre-filled.
 
 ## Permissions
 
-Roles are the existing `admin` and `staff` from `docs/operator-access.md`. Staff do the daily work: charge runs, payments, imports, categorizing, documents, and draft leases. Admins also activate leases and change their terms, change settings that affect every tenant, and close out a year. Each PRD lists its own actions. Admin-only actions use a new `propertyAdminProcedure` in `packages/api/operator/src/trpc.ts` that extends `propertyProcedure` with a role check.
-
-## New shared infrastructure
-
-| What | Added by | Used by |
-|---|---|---|
-| `propertyAdminProcedure` | 01 | 01, 02, 05, 06 |
-| Signed upload URLs and `headObject` on `BlobStorage`, bucket CORS | 03 | 03, 05 |
-| A daily cron route in the operator portal (Vercel Cron) | 03 | 03, 05 |
-| `packages/infrastructure/pdf` on `@react-pdf/renderer` | 06 | 04, 06 |
-| `packages/infrastructure/llm` on the Vercel AI SDK and AI Gateway | 07 | 07, later the AI pre-fill in 03 |
-| A streaming route handler that builds the tRPC request context | 07 | 07 |
+Each property has two roles. Staff do the daily work: charge runs, payments, imports, categorizing, documents, and draft leases. Staff also update estimates after reconciliation. Admins activate leases and change their other terms, change settings that affect every tenant, and close out a year. Each PRD lists its own actions.
 
 ## Out of scope for the whole set
 

@@ -19,7 +19,7 @@ The assistant never writes data. Every change still goes through the normal form
 
 - An operator can describe a lease event in plain language and get a correct plan without knowing which screens are involved.
 - The assistant asks before guessing. It never proposes a plan while a choice that changes the plan is still open.
-- Every value in a plan is either something the operator said, something read from the property's data, or something the system calculated. The model doesn't do arithmetic on money.
+- Every value in a plan is either something the operator said, something read from the property's data, or something the system calculated. The assistant doesn't do arithmetic on money itself.
 - Following a plan takes no more clicks than doing the changes by hand, and usually fewer, because the forms come pre-filled.
 - Staff can prepare a plan that includes admin-only steps and hand it to an admin.
 
@@ -43,13 +43,15 @@ The assistant never writes data. Every change still goes through the normal form
 
 The assistant reads with the asking person's permissions and property scope. It can't see anything that person couldn't open themselves.
 
+Each person sees only their own conversations on the property. An admin can also read the conversation behind a plan sent to admins.
+
 ## Glossary
 
 - **Conversation.** One thread between a person and the assistant on one property.
 - **Understanding.** The assistant's restatement of what happened, as a short list of facts. The person confirms or corrects it before any plan appears.
 - **Change plan.** An ordered list of steps that carries out the understanding. Saved, so it can be resumed, shared, or handed off.
 - **Step.** One action from the action catalog, with a target (a lease, a tenant), proposed input, and a status.
-- **Action catalog.** The list of changes the assistant may propose. Each entry maps to one existing form and one existing tRPC mutation.
+- **Action catalog.** The list of changes the assistant may propose. Each entry matches one existing form.
 
 ## User stories
 
@@ -84,7 +86,7 @@ The assistant reads with the asking person's permissions and property scope. It 
  State the understanding --- person corrects ---------+
           | person confirms
           v
- Build the change plan, validate every step on the server
+ Build the change plan, check every step
           |
           v
  Plan card: steps with "Open" buttons
@@ -125,7 +127,7 @@ Here's what I understood:
 [ That's right ]  [ Change something ]
 ```
 
-Corrections loop back to the questions. The plan appears only after "That's right". This is the step that catches misunderstandings, so it isn't skippable.
+Corrections loop back to the questions. The plan appears only after "That's right". This is the step that catches misunderstandings, so it isn't skippable. If the person corrects something after confirming, they have to confirm the new understanding before a plan appears.
 
 ### The change plan
 
@@ -151,7 +153,7 @@ Plan: Acme Hardware renewal                         0 of 4 done
 ```
 
 - Each step names the action, who can do it, the proposed values, and anything the person should know before saving, like a catch-up amount or a flag the step will set.
-- Values on the card come from the server. The server validates the step and calculates previews like catch-up totals and rent steps from "Fill from pattern" with the same domain functions the forms use. The model's chat text can explain, but the card holds the numbers.
+- Values on the card come from the system, not the assistant. The system checks the step and calculates previews like catch-up totals and rent steps from "Fill from pattern" the same way the forms do. The assistant's chat text can explain, but the card holds the numbers.
 - Steps have an order. A step that depends on an earlier one, like a catch-up that needs the renewal saved first, shows "After step 1" until that's done.
 - Any step can be skipped, with an optional reason.
 - "Open" goes to the form for that action with the values filled in (see "Pre-filled forms").
@@ -177,66 +179,56 @@ One sentence, "Acme is renewing", can lead to quite different plans. The assista
 
 ## Pre-filled forms
 
-Form routes accept a `planStep` search parameter, for example `/leases/{id}/renew?planStep={stepId}`.
+Each step's "Open" button goes to that action's form, with the step's values filled in.
 
-- The form loads the step's input with `assistant.planStep` and fills its fields.
 - A banner says "Filled in from your plan. Check each field before saving." Fields the assistant filled get a small marker. Fields the person changes lose it.
 - If the target changed after the plan was made (someone edited the lease), the form still loads current data and shows the plan's values side by side where they differ. The person chooses.
-- Saving sends `planStepId` with the mutation. After the mutation succeeds, the API layer marks the step done in the same request. The domain contexts don't know plans exist.
+- Saving the form marks the step done in the same save. A save only completes a step when it's the form that step points to, on the same property.
 - If the person leaves without saving, the step stays open.
 
 ## Action catalog
 
-The catalog is the list of things the assistant can put in a plan. It lives in `packages/api/operator/src/assistant/catalog`, one file per action.
+The catalog is the list of things the assistant can put in a plan. Each action matches one existing form.
 
-Each entry has:
-
-- `name`, like `lease.renew`.
-- `inputSchema`, the same Zod schema the tRPC mutation uses. A plan step can't hold input the form wouldn't accept.
-- `route`, a function from the step's target and id to the form URL.
-- `requiresAdmin`, matching the mutation's procedure.
-- `description` and `whenToUse`, written for the model, including the decision points from the table above.
-- `validate(ctx, input)`, a dry run. It loads the aggregate, runs the same command method the mutation would, and throws away the result. Errors go back to the model so it can fix the input or ask a question.
-- `preview(ctx, input)`, optional. It returns the server-calculated facts shown on the plan card, like the catch-up table or the new monthly total.
-- `availableWhen`, which PRD or feature the action needs, so the assistant never plans a step whose screen isn't shipped yet.
+- A step's values follow the same rules as the form. A plan step can't hold values the form wouldn't accept.
+- Each action is marked admin-only or staff ok, matching who can save that form.
+- Before a step goes on a plan, the system checks it the way the form would check it on save, without saving anything. When the check fails, the assistant fixes the values or asks the person a question.
+- Some actions also show calculated facts on the plan card, like the catch-up table or the new monthly total.
+- Each action lists the decision points from the table above, so the assistant knows what to check before using it.
+- The assistant never plans a step whose screen isn't shipped yet.
 
 v1 actions come from 01 to 03.
 
 | Action | From |
 |---|---|
-| `unit.update`, `pool.update`, `category.create` | 01 |
-| `tenant.create`, `tenant.update`, `tenant.addContact` | 02 |
-| `lease.create`, `lease.updateBasics`, `lease.addRentSteps`, `lease.changeEstimate`, `lease.changeFlatCharge`, `lease.setOptions`, `lease.renew`, `lease.attachRenewalDocument`, `lease.end` | 02 |
-| `document.upload`, `document.replace` | 03 |
+| Edit a unit, edit a cost pool, create a category | 01 |
+| Create a tenant, edit a tenant, add a tenant contact | 02 |
+| Create a lease, edit lease basics, add rent steps, change an estimate, change a flat charge, set options, renew a lease, attach a renewal document, end a lease | 02 |
+| Upload a document, replace a document | 03 |
 
-04, 05, and 06 add their own actions as part of their scope: manual charges and credits, recording payments, matching deposits, refunds, reopening a reconciliation. The README's principles gain a rule that a new user-facing write ships with its catalog entry.
+04, 05, and 06 add their own actions as part of their scope: manual charges and credits, recording payments, matching deposits, refunds, reopening a reconciliation. The README's principles gain a rule that every new way to change data ships with its catalog entry.
 
-## Tools the model can call
+## What the assistant can look up
 
-All tools run on the server with the asking person's request context. All of them are read-only, except for writing the assistant's own records (questions, understanding, plan).
+The assistant only reads. The only things it saves are its own records: the questions, the understanding, and the plan.
 
-| Tool | Returns |
-|---|---|
-| `findTenants(query)` | Matches by display name, legal name, or bank alias, with their leases |
-| `getLease(leaseId)` | Basics, terms with history, current monthly breakdown, options, renewals |
-| `listLeases(filter)` | Leases by status, unit, or end date range |
-| `getLedgerSummary(leaseId)` | Balance, charged months, recent entries (after 04) |
-| `listDocuments(leaseId)` | Documents with type and dates (after 03) |
-| `previewCatchUp(leaseId, change)` | The catch-up table from 02 and 04 |
-| `fillFromPattern(start, increase, every, until)` | Rent steps, from the same function the form uses |
-| `getYearStatus(year)` | Whether a year is reconciled and locked (after 06) |
-| `searchHelp(query)` | Short help articles about portal concepts |
-| `askQuestions(questions)` | Renders questions with choices. Ends the model's turn |
-| `stateUnderstanding(facts)` | Renders the confirmation card. Ends the model's turn |
-| `proposePlan(title, steps)` | Validates every step with the catalog. On success, saves and renders the plan. On failure, returns the errors to the model |
+It can look up:
 
-`proposePlan` is rejected if the conversation has no confirmed understanding, or if the confirmed understanding came before the person's latest correction.
+- Tenants by display name, legal name, or bank alias, with their leases.
+- A lease's basics, terms with history, current monthly breakdown, options, and renewals.
+- Leases by status, unit, or end date range.
+- A lease's balance, charged months, and recent ledger entries (after 04).
+- A lease's documents with type and dates (after 03).
+- The catch-up table for a change (02, 04).
+- Rent steps from "Fill from pattern", calculated the same way the form does it.
+- Whether a year is reconciled and locked (after 06).
+- Short help articles about portal concepts.
 
-Help articles live as Markdown in `packages/api/operator/src/assistant/help`. They're short, written for operators, and kept in the repo so they change with the code. They're not these PRDs.
+Help articles are short and written for operators. They're kept up to date with the portal. They're not these PRDs.
 
 ## Who can do what in a plan
 
-- Every step shows "Admin" or "Staff ok" from the catalog's `requiresAdmin`.
+- Every step shows "Admin" or "Staff ok", based on the action.
 - A staff member sees admin steps with their values, but the "Open" button reads "Needs an admin".
 - If a plan has any admin steps, staff get "Send to an admin" with an optional note. The plan shows up on the admin dashboard card and in every admin's History tab under "Sent to admins".
 - An admin who opens a sent plan sees the conversation that produced it, read-only, so they know what was said.
@@ -251,124 +243,34 @@ Help articles live as Markdown in `packages/api/operator/src/assistant/help`. Th
 ```
 
 - A plan with no step done in 30 days shows as stale in History, and the dashboard card drops it. It can still be opened.
-- Before showing an open plan, the server runs `validate` on its remaining steps. A step that no longer validates is marked "Out of date", with the reason, like "the lease already ends Dec 31, 2030". The person can ask the assistant to update the plan, which starts a new turn in the same conversation.
+- Before showing an open plan, and before opening a step's form, the system checks the remaining steps again. A step that no longer passes is marked "Out of date", with the reason, like "the lease already ends Dec 31, 2030". This includes a step whose form rules changed after the plan was saved, so the form never fills with values it would reject. The person can ask the assistant to update the plan, which starts a new turn in the same conversation.
+- Each plan keeps the confirmed understanding as it was shown, who sent it to admins and their note, each step's skip reason, and who completed each step and when.
 
-## Domain and architecture
+## Limits
 
-The assistant isn't a business context. It owns no business rules, only conversations and plans. It lives in the API layer and talks to contexts through the same application services and queries the routers use.
-
-```text
- Operator portal
-   Assistant panel  --stream-->  /api/assistant (route handler)
-   Forms ?planStep=                   |
-        |                             v
-        |                     packages/api/operator/src/assistant
-        |                       model loop, tools, action catalog
-        |                             |               |
-        v                             v               v
-   tRPC mutations  <--- same Zod ---  catalog     read queries in each
-   (+ planStepId)        schemas      validate()  context (property-scoped)
-        |
-        v
-   assistant schema: conversations, messages, plans, plan_steps
-```
-
-- **Model access.** Use the Vercel AI SDK (`ai`) through the Vercel AI Gateway. The gateway lets the model and provider change without code changes. A new `packages/infrastructure/llm` package wraps it and reads its config from environment variables.
-- **Streaming.** A Next.js route handler at `apps/operator-portal/src/app/api/assistant/route.ts` streams responses. It builds the same request context as tRPC (session, property, role) and rejects requests without one. tRPC handles the non-streaming calls: history, plans, `planStep`, send to admin.
-- **System prompt.** Built per request from the catalog's descriptions and decision points, the person's role, the current page, and today's date. It's versioned in code. Each saved message records the prompt version.
-- **Limits.** Each turn has at most 10 tool calls. Each person has a daily message cap per property, set by config. Conversations over a size limit get older tool results summarized.
+Each person has a daily message limit on each property.
 
 ## Safety
 
-- **No writes.** The model has no tool that changes business data. The worst outcome of a bad answer is a wrong plan, and a person reviews every value in the form before it saves.
-- **Untrusted text.** Tenant names, memos, bank descriptions, and document titles can contain text that looks like instructions. Tool results mark them as data, and the system prompt tells the model to treat them that way. The no-writes rule limits the damage if that fails.
-- **Scope.** Tools take no `propertyId` argument. They read it from the request context, so the model can't ask for another property's data.
-- **Audit.** Conversations, tool calls, and plans are stored. Each completed step links to the domain event its mutation emitted, so the terms history can show "via plan: Acme Hardware renewal".
-
-## API
-
-| Procedure | Kind | Notes |
-|---|---|---|
-| `POST /api/assistant` | route handler | Streams one turn. Input conversation id (optional), message, current page |
-| `assistant.conversations` | query | The person's conversations on this property |
-| `assistant.conversation` | query | Messages and plan. Admins can read conversations behind plans sent to them |
-| `assistant.plans` | query | Filter by status and "sent to admins" |
-| `assistant.planStep` | query | Step input and target for pre-filling a form. Re-validates first |
-| `assistant.skipStep` | mutation | Optional reason |
-| `assistant.sendToAdmin` | mutation | Optional note |
-| `assistant.abandonPlan` | mutation | |
-| `assistant.plansWaitingForAdmin` | query | For the dashboard card |
-
-Every mutation in the action catalog accepts an optional `planStepId`. The router marks the step done after the command succeeds, only if the step belongs to this property and has the same action name.
-
-## Data model
-
-```text
-assistant.conversations
-  id              uuid pk
-  property_id     uuid not null
-  auth_user_id    text not null
-  title           varchar(255)
-  created_at      timestamp not null default now()
-  updated_at      timestamp not null default now()
-  index (property_id, auth_user_id, updated_at)
-
-assistant.messages
-  id              uuid pk
-  conversation_id uuid not null references conversations on delete cascade
-  role            varchar(16) not null      -- 'user', 'assistant', 'tool'
-  parts           jsonb not null            -- text, tool calls, tool results, question and answer cards
-  prompt_version  varchar(32)
-  created_at      timestamp not null default now()
-  index (conversation_id, created_at)
-
-assistant.plans
-  id                    uuid pk
-  property_id           uuid not null
-  conversation_id       uuid not null references conversations
-  title                 varchar(255) not null
-  understanding         jsonb not null      -- confirmed facts, as shown
-  status                varchar(16) not null  -- 'open', 'complete', 'abandoned'
-  created_by            text not null
-  sent_to_admin_at      timestamp
-  sent_to_admin_note    text
-  created_at            timestamp not null default now()
-  closed_at             timestamp
-  index (property_id, status)
-
-assistant.plan_steps
-  id              uuid pk
-  plan_id         uuid not null references plans on delete cascade
-  position        int not null
-  action          varchar(64) not null
-  target          jsonb not null            -- e.g. { "leaseId": "..." }
-  input           jsonb not null            -- matches the action's inputSchema
-  requires_admin  boolean not null
-  depends_on      int[] not null default '{}'   -- positions of earlier steps
-  status          varchar(16) not null default 'pending'  -- 'pending', 'done', 'skipped'
-  skip_reason     text
-  completed_by    text
-  completed_at    timestamp
-  event_id        uuid                      -- domain event from the completing mutation
-  unique (plan_id, position)
-```
-
-`input` is validated against the action's current schema when the step is read, not only when it's written. A schema change after a plan is saved marks the step "Out of date" rather than filling a form with bad values.
+- **No writes.** The assistant can't change business data. The worst outcome of a bad answer is a wrong plan, and a person reviews every value in the form before it saves.
+- **Untrusted text.** Tenant names, memos, bank descriptions, and document titles can contain text that looks like instructions. The assistant treats that text as data, never as instructions. The no-writes rule limits the damage if that fails.
+- **Scope.** The assistant always reads the property the person has selected. Nothing it reads can make it look at another property.
+- **Audit.** Conversations, the lookups the assistant made, and plans are kept. Each completed step links to the change its form saved, so the terms history can show "via plan: Acme Hardware renewal".
 
 ## Screen states
 
 - **Panel, first open.** A short line on what the assistant does, plus three example prompts based on the current page. On a lease, one is "This tenant is renewing".
-- **Thinking.** Tool calls show as a quiet line, like "Looking up Acme Hardware's lease". Raw tool output isn't shown.
-- **Gateway or model error.** "The assistant isn't available right now." The rest of the portal works as normal, and open plans and pre-filled forms still work.
-- **Daily cap reached.** Says so, and says when it resets.
+- **Thinking.** Each lookup shows as a quiet line, like "Looking up Acme Hardware's lease". The raw results aren't shown.
+- **Assistant unavailable.** "The assistant isn't available right now." The rest of the portal works as normal, and open plans and pre-filled forms still work.
+- **Daily limit reached.** Says so, and says when it resets.
 - **No permission for any step.** A staff member asking for something entirely admin-only gets the plan plus "Send to an admin" as the only action.
 
 ## Edge cases
 
 - **Person asks the assistant to "just do it".** It explains that it prepares plans and the person saves each form. The design is ready to change this later.
 - **Feature not shipped yet.** A request that needs 04's manual charge before 04 ships gets an explanation that the portal can't record it yet, not a plan with a missing screen.
-- **Two plans touch the same lease.** Allowed. Steps re-validate when opened, so the second one shows "Out of date" if the first already made its change.
-- **Person edits a form far from the plan's values.** The save goes through, and the step is done. The plan records what was saved through `event_id`, not what was proposed.
+- **Two plans touch the same lease.** Allowed. Steps are checked again when opened, so the second one shows "Out of date" if the first already made its change.
+- **Person edits a form far from the plan's values.** The save goes through, and the step is done. The plan records what was saved, not what was proposed.
 - **Wrong property selected.** The person describes a tenant that isn't on this property. The assistant says it can't find them here and suggests switching property. It doesn't search other properties.
 - **Locked year.** The assistant doesn't plan changes into a reconciled year. It explains 06's options (categorize to a non-recoverable category, carry to next year, or reopen as an admin) and plans whichever one the person picks.
 - **Long conversation drifts to a new topic.** The assistant offers to start a new conversation so the plan and its understanding stay about one event.
@@ -376,38 +278,38 @@ assistant.plan_steps
 
 ## Quality checks
 
-The model's behavior can't be unit tested like the domain, so this PRD adds a scenario suite in `packages/api/operator/src/assistant/evals`.
+The assistant's answers can't be checked the same way as the rest of the portal, so this PRD adds a set of scenarios to check it against.
 
-- Each scenario has fixture property data, a scripted conversation (the person's messages and answers), and expected results: which questions must be asked, which facts the understanding must contain, and which steps the plan must have, in order, with which key input values.
+- Each scenario has sample property data, a scripted conversation (the person's messages and answers), and expected results: which questions must be asked, which facts the understanding must contain, and which steps the plan must have, in order, with which key values.
 - The renewal table above becomes the first set of scenarios. Add scenarios for unit moves, early termination, an estimate change in a charged month, and a locked year.
-- The suite runs against the configured model on demand and before changing the model or prompt version. It doesn't run in normal CI.
+- The scenarios run before any change to the assistant's model or instructions.
 - A change ships only if every scenario that passed before still passes.
 
 ## Later: applying plans
 
 v1 keeps a person in every form. If that proves slow for simple plans, a later PRD can add "Apply" on a step. The pieces are already in place:
 
-- Step input already matches the mutation's schema.
-- `validate` already dry-runs the command.
-- `requiresAdmin` already matches the procedure.
-- `planStepId` already links the step to the event it produced.
+- Step values already follow the form's rules.
+- Each step is already checked the way the form would check it, without saving.
+- Each step already knows whether it needs an admin.
+- Each completed step already links to the change it saved.
 
-"Apply" would call the same mutation as the form, after the person confirms the step's preview on the card. Steps with catch-ups or year locks would likely stay form-only.
+"Apply" would save the change the same way the form does, after the person confirms the step's preview on the card. Steps with catch-ups or year locks would likely stay form-only.
 
 ## Acceptance criteria
 
 1. Starting from "Acme is renewing" on a lease with options left, the assistant asks about kind, new end date, rent, and the signed document before showing any plan.
 2. No plan is created without a confirmed understanding. A correction after confirming requires confirming again.
-3. Every renewal scenario in the table above produces the listed steps in the scenario suite.
+3. Every renewal scenario in the table above produces the listed steps in the scenario checks.
 4. Every amount on a plan card matches what the form shows when opened from that step.
 5. Opening a step fills the form and shows the banner. Saving marks the step done. Leaving without saving doesn't.
 6. A staff member can't complete an admin step, can send the plan to an admin, and the plan appears on the admin dashboard card.
 7. A step whose target changed after planning shows "Out of date" or the side-by-side values, and never saves the stale values silently.
 8. The assistant can't read data from another property, even if a tenant name or memo in this property asks it to.
-9. With the model unavailable, open plans, pre-filled forms, and the rest of the portal keep working.
+9. With the assistant unavailable, open plans, pre-filled forms, and the rest of the portal keep working.
 
 ## Open questions
 
-1. **Model choice.** Which model to start with. The gateway makes switching cheap, so pick by how well each one does on the scenario suite.
+1. **Model choice.** Which AI model to start with. Switching later is cheap, so pick by how well each one does on the scenario checks.
 2. **Conversation retention.** Keep conversations forever for audit, or delete them after a set time and keep only plans and their understanding?
-3. **Cost.** Who pays for model usage once other operators use the product? This affects the daily cap and whether the assistant is a paid feature.
+3. **Cost.** Who pays for model usage once other operators use the product? This affects the daily limit and whether the assistant is a paid feature.
