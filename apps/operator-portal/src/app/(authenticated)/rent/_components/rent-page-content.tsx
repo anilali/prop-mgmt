@@ -34,18 +34,24 @@ export function RentPageContent() {
         title="Rent"
         description="What each tenant was expected to pay so far, what they paid, and what they owe."
       />
-      <Freshness data={data} />
+      <Freshness today={data.today} newestBankDate={data.newestBankDate} />
       <RentTable data={data} />
     </div>
   );
 }
 
-function Freshness({ data }: { data: RentStatusData }) {
+export function Freshness({
+  today,
+  newestBankDate,
+}: {
+  today: string;
+  newestBankDate: string | null;
+}) {
   return (
     <p className="text-muted-foreground text-sm">
-      As of {formatDate(data.today)}.{" "}
-      {data.newestBankDate ? (
-        <>Bank activity imported through {formatDate(data.newestBankDate)}.</>
+      As of {formatDate(today)}.{" "}
+      {newestBankDate ? (
+        <>Bank activity imported through {formatDate(newestBankDate)}.</>
       ) : (
         <>No bank activity imported yet.</>
       )}{" "}

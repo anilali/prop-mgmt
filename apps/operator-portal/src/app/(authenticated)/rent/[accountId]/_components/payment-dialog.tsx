@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { skipToken, useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { useTRPC } from "~/trpc/react";
 import {
@@ -22,12 +24,18 @@ export function PaymentDialog({
   const { data: categories } = useSuspenseQuery(
     trpc.category.list.queryOptions({ includeArchived: true }),
   );
-  const { data: txn } = useQuery(
+  const { data: txn, error } = useQuery(
     trpc.transaction.get.queryOptions(
       transactionId ? { id: transactionId } : skipToken,
     ),
   );
   const current = txn?.id === transactionId ? txn : null;
+
+  useEffect(() => {
+    if (!error) return;
+    toast.error(error.message);
+    onClose();
+  }, [error, onClose]);
 
   return (
     <SortDialog

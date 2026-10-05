@@ -26,6 +26,7 @@ import {
 import type { EntryRow, HistoryRow } from "../../_lib/rent";
 import type { AdjustmentTarget } from "./adjustment-dialog";
 import { useTRPC } from "~/trpc/react";
+import { Freshness } from "../../_components/rent-page-content";
 import {
   formatMonth,
   RENT_STATUS_LABELS,
@@ -223,10 +224,12 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
       </dl>
 
       {tracking ? (
-        <p className="text-muted-foreground text-sm">
-          As of {formatDate(data.today)}. A positive balance is what the tenant
-          owes.
-        </p>
+        <div className="space-y-1">
+          <Freshness today={data.today} newestBankDate={data.newestBankDate} />
+          <p className="text-muted-foreground text-sm">
+            A positive balance is what the tenant owes.
+          </p>
+        </div>
       ) : (
         <p className="text-muted-foreground text-sm">
           Set the tracking start date in{" "}
@@ -270,7 +273,7 @@ export function HistoryPageContent({ accountId }: { accountId: string }) {
                   {formatCents(row.balanceCents)}
                 </TableCell>
                 <TableCell className="text-right align-top whitespace-nowrap">
-                  {row.kind === "adjustment" ? (
+                  {row.kind === "adjustment" && !row.locked ? (
                     <>
                       <Button
                         type="button"
