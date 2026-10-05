@@ -9,12 +9,14 @@ export type {
   CsvMapping,
   ImportBatch,
   LeaseTerms,
+  LedgerEntry,
+  LedgerEntryKind,
   NewBankTransaction,
   Pool,
   TransactionSource,
   Txn,
 } from "./types";
-export { CATEGORY_KINDS, CSV_DATE_FORMATS } from "./types";
+export { CATEGORY_KINDS, CSV_DATE_FORMATS, LEDGER_ENTRY_KINDS } from "./types";
 
 export type { AccountState, MonthCharges } from "./lease-calendar";
 export {
@@ -89,6 +91,35 @@ export {
 } from "./bank-import";
 
 export { checkAllocationLines } from "./allocations";
+
+export { checkLedgerEntry, entryDateFor, isInFinalizedYear } from "./ledger";
+
+export type {
+  AccountBalance,
+  AccountLedger,
+  AccountPayment,
+  HistoryRow,
+} from "./balance";
+export {
+  accountBalance,
+  accountEntries,
+  accountPayments,
+  balanceOn,
+  expectedOn,
+  historyRows,
+  monthsDue,
+  paymentsBetween,
+  receivedOn,
+} from "./balance";
+
+export type { RentStatus } from "./rent-status";
+export {
+  RENT_STATUSES,
+  compareRentStatus,
+  graceDate,
+  rentStatus,
+  thisMonthCharges,
+} from "./rent-status";
 
 export type {
   BillingQueries,

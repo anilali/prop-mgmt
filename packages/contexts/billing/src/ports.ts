@@ -8,6 +8,7 @@ import type {
   Category,
   CsvMapping,
   ImportBatch,
+  LedgerEntry,
   NewBankTransaction,
   Pool,
   Txn,
@@ -62,6 +63,9 @@ export interface BillingStore {
   insertCashExpense(expense: CashExpense): Promise<Txn>;
   updateCashExpense(expense: CashExpense): Promise<Txn | null>;
   deleteCashExpense(propertyId: string, id: string): Promise<boolean>;
+  insertLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry>;
+  updateLedgerEntry(entry: LedgerEntry): Promise<LedgerEntry | null>;
+  deleteLedgerEntry(propertyId: string, id: string): Promise<boolean>;
 }
 
 export interface BillingQueries {
@@ -83,4 +87,7 @@ export interface BillingQueries {
   listImportBatches(propertyId: string): Promise<ImportBatchSummary[]>;
   listTransactions(propertyId: string): Promise<Txn[]>;
   getTransaction(propertyId: string, id: string): Promise<Txn | null>;
+  listLedgerEntries(propertyId: string): Promise<LedgerEntry[]>;
+  getLedgerEntry(propertyId: string, id: string): Promise<LedgerEntry | null>;
+  listFinalizedYears(propertyId: string): Promise<number[]>;
 }

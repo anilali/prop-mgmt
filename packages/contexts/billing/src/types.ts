@@ -1,4 +1,4 @@
-import type { IsoDate } from "@moonship/shared";
+import type { IsoDate, YearMonth } from "@moonship/shared";
 
 export interface LeaseTerms {
   leaseId: string;
@@ -136,4 +136,25 @@ export interface CashExpense {
   description: string;
   amountCents: number;
   categoryId: string;
+}
+
+export const LEDGER_ENTRY_KINDS = [
+  "late_fee",
+  "late_fee_dismissed",
+  "adjustment",
+  "true_up",
+] as const;
+
+export type LedgerEntryKind = (typeof LEDGER_ENTRY_KINDS)[number];
+
+export interface LedgerEntry {
+  id: string;
+  propertyId: string;
+  accountId: string;
+  kind: LedgerEntryKind;
+  entryDate: IsoDate;
+  amountCents: number;
+  note: string | null;
+  feeMonth: YearMonth | null;
+  reconciliationYearId: string | null;
 }
