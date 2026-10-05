@@ -13,6 +13,9 @@ export function useAccountUpdated(accountId: string) {
       trpc.account.get.queryKey({ id: accountId }),
       detail,
     );
-    await queryClient.invalidateQueries(trpc.account.list.queryFilter());
+    await Promise.all([
+      queryClient.invalidateQueries(trpc.account.list.queryFilter()),
+      queryClient.invalidateQueries(trpc.rent.pathFilter()),
+    ]);
   };
 }

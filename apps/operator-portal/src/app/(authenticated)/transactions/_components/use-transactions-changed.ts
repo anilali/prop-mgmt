@@ -9,8 +9,8 @@ export function useTransactionsChanged() {
   const queryClient = useQueryClient();
   return () =>
     Promise.all([
-      queryClient.invalidateQueries(trpc.transaction.listToSort.queryFilter()),
-      queryClient.invalidateQueries(trpc.transaction.list.queryFilter()),
+      queryClient.invalidateQueries(trpc.transaction.pathFilter()),
       queryClient.invalidateQueries(trpc.bankImport.listBatches.queryFilter()),
+      queryClient.invalidateQueries(trpc.rent.pathFilter()),
     ]);
 }
