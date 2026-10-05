@@ -258,6 +258,7 @@ Conventions for every new table: `id uuid primary key default gen_random_uuid()`
 | `tenant_id` | `uuid not null` | |
 | `unit_id` | `uuid not null` | Index `(property_id, unit_id)`. |
 | `opening_balance_cents` | `integer not null default 0` | What the tenant owed at the end of the day before tracking start, including last year's true-up. Prepayments are negative. Must be 0 when the account starts after tracking start; use a dated adjustment instead. |
+| `version` | `integer not null default 0` | Goes up by 1 on every save of the account or its leases (4). |
 
 An account has no status column. It is closed when its newest lease has a move-out date (5.1).
 
@@ -377,7 +378,9 @@ Unique `(account_id, fee_month) where fee_month is not null`. Unique `(reconcili
 
 The opening balance is not a ledger row. It stays on the account (3.3).
 
-Once a year is finalized, a new late fee or adjustment whose date would fall inside that year is dated on the day the owner saves it instead, and the response says so. A finalized statement then stays true to what was sent.
+Once a year is finalized, every date on or before December 31 of the latest finalized year is locked. A new late fee or adjustment with a locked date is dated on the day the owner saves it instead, and the response says so. A finalized statement then stays true to what was sent. This also covers dates between the tracking start and the first reconciliation year.
+
+Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a unit of work. Each first locks the reconciliation year row of the entry's date, or of the first reconciliation year when the date is before it (`lockExistingYear`: an update of the row's `updated_at`, which takes the row lock and creates no row). It then reads the finalized years again. A write waiting on a finalize sees the finalized year once the lock is released. A finalize waiting on a write fails with CONFLICT, because finalize runs at repeatable read (5.11).
 
 ### 3.7 `billing` schema: reconciliation
 
@@ -428,7 +431,7 @@ Once a year is finalized, a new late fee or adjustment whose date would fall ins
 
 `Account` in `lease-mgmt` is the aggregate. It owns its leases, and each lease owns its rent and estimate steps. `PGAccountRepository.save` upserts the account row, upserts its leases, deletes leases that were removed, and deletes and reinserts every lease's steps, all inside `this.db.transaction`. It keeps step ids and `tenant_notified_at`. Nothing outside the aggregate refers to a lease id, so leases can be rewritten freely. Events: `AccountOpened`, `LeaseAdded`, `LeaseUpdated`, `LeaseRemoved`.
 
-Methods: `open(props, firstLease)` (static), `setOpeningBalance(cents)`, `addLease(terms)`, `updateLease(leaseId, terms)` (dates, move-out, late fee, insurance date, both step lists), `removeLease(leaseId)`, `setEstimateStep(leaseId, poolId, startsOn, amountCents)` (used by finalize; replaces a step on the same date), `markRentStepNotified(leaseId, stepId, at | null)`.
+Methods: `open(props, firstLease)` (static), `assertVersion(expected)`, `setOpeningBalance(cents)`, `addLease(terms)`, `updateLease(leaseId, terms)` (dates, move-out, late fee, insurance date, both step lists), `removeLease(leaseId)`, `setEstimateStep(leaseId, poolId, startsOn, amountCents)` (used by finalize; replaces a step on the same date), `markRentStepNotified(leaseId, stepId, at | null)`.
 
 Rules the aggregate checks:
 
@@ -445,6 +448,8 @@ Rules the router checks, because they span aggregates or contexts:
 8. Accounts on the same unit do not overlap. Each account covers `[accountStart, accountEnd ?? forever]` (5.1). An account in holdover blocks a new account on that unit until the owner enters a move-out date.
 9. Every pool a lease pays contains the account's unit.
 10. An account can be deleted only when it has no allocation lines, ledger entries, or statement snapshots. A lease can be removed when the account has another lease.
+
+Saves use the account's `version`. `save` writes `version + 1` only where the stored version still equals the version the account was loaded with, and throws `StaleAccountError` otherwise. `lease.add`, `lease.update`, `lease.remove`, `lease.setRentStepNotified`, and `account.setOpeningBalance` take the `expectedVersion` the page loaded with `account.get`, and both a mismatch on load and a failed save return CONFLICT "This account changed since you opened it. Reload and try again." Finalize saves new estimate steps through the same check, so a lease page opened before finalize cannot write its old steps back.
 
 A tenant renting two units has two accounts. A tenant moving to another unit gets a new account: the owner enters a move-out date on the old account's lease and moves any remaining balance with two adjustments (a credit on the old account, a charge of the same amount on the new one). There is no special feature for this.
 
@@ -695,7 +700,10 @@ priorBalance     = balance(A, priorAsOf)
 balanceOnAccount = trueUp + priorBalance
 
 if J:
-  newEstimate[P] = prorate(actual(P, Y), [unit.sqft], [poolSqft(P), 12])  for each P with paysOn(J, P, jan1)
+  last      = the last month in months
+  continuingPools = { P : paysOn(J, P, jan1) }
+                  ∪ { P : paysIn(last, P) and unit.id in P.unitIds }
+  newEstimate[P] = prorate(actual(P, Y), [unit.sqft], [poolSqft(P), 12])  for each P in continuingPools
   newMonthlyRent = rentOn(J, jan1) + Σ newEstimate[P]
   insuranceRequest = J.insuranceExpiresOn is null or J.insuranceExpiresOn < jan1
 ```
@@ -709,6 +717,7 @@ Pools with `poolSqft(P) = 0` skip both `prorate` calls (5.8).
 - During the November dry run, `priorAsOf` is today. The workspace labels it "Rent balance as of {date}".
 - A pool with zero actual cost still gets a row: part 0, balance equal to minus the estimates, new estimate 0.
 - `newEstimate` uses a full year's share even when `monthsP < 12`.
+- A pool the account paid in its last counted month carries over to `J` even when `J` has no step for it, as long as the unit is still in the pool. A renewal starting January 1 that was entered with blank estimates still gets every pool the tenant paid in December. A pool carried over this way gets a checklist warning (5.10).
 
 ### 5.10 Checklist
 
@@ -726,16 +735,17 @@ Warnings (shown, not blocking):
 7. An account is in holdover. Finalize would give it new estimates.
 8. "Bank data only through {date}" when the newest imported `posted_on` is before `Y-12-31`.
 9. A pool's members or a unit's sqft changed during `Y` (`members_changed_on` or `sqft_changed_on` on or after `Y-01-01`). The current values apply to the whole year.
+10. A pool carries over to the lease that covers January 1 without a step on that lease (5.9): "{tenant}'s lease from {start date} has no {pool} estimate; finalize will add {amount}."
 
-Finalize also needs: status `draft`, a letter date after `Y-12-31`, and today after `Y-12-31`.
+Finalize also needs: status `draft`, `Y-1` finalized unless `Y` is the first reconciliation year ("Finalize {Y-1} first."), a letter date after `Y-12-31`, and today after `Y-12-31`.
 
 ### 5.11 Finalize
 
-Finalize is one request that does everything inside one unit of work:
+Finalize is one request that does everything inside one unit of work at repeatable read:
 
 ```text
 finalize(Y):
-  unitOfWork.run(stores):
+  unitOfWork.run(stores, isolation = repeatable read):
     yr = stores.billing.lockYear(propertyId, Y)       select ... for update, insert if missing
     if yr.status = finalized: throw CONFLICT
     ws = workspace(Y) read through stores
@@ -747,18 +757,19 @@ finalize(Y):
       if s.trueUp <> 0: insert true_up entry on s.accountId, entry_date = letterDate, amount = s.trueUp
       if s.J:
         account = stores.accountRepository.findById(propertyId, s.accountId)
-        for each P with paysOn(J, P, jan1): account.setEstimateStep(J.leaseId, P, jan1, newEstimate[P])
-        stores.accountRepository.save(account)
+        for each P in continuingPools: account.setEstimateStep(J.leaseId, P, jan1, newEstimate[P])
+        stores.accountRepository.save(account)            version check (4)
     set yr.status = finalized, finalized_at = now, letter_date
 ```
 
 - The row lock and the status check stop a second finalize; the unique `(reconciliation_year_id, account_id)` on snapshots backs them up. Holding the transaction open for a few seconds while five PDFs render and upload is fine for one owner.
-- Only accounts with a statement get new estimates, on the lease that covers January 1 of `Y+1`. A lease starting on January 1 of `Y+1` is that lease. A lease starting later keeps its typed estimates. An account that opens after January 1 of `Y+1` has no statement for `Y`, so it keeps its typed estimates.
+- Repeatable read gives finalize one snapshot of all its reads. A second finalize waiting on the row lock, a ledger write that locked the year first (3.6), or a lease save on an account finalize writes ends in a serialization failure. The PG unit of work turns serialization failures and deadlocks into `ConcurrentUpdateError`, and the router returns CONFLICT: "{Y} is already finalized" when the year is finalized by then, otherwise "Something changed while {Y} was being finalized. Try again." The losing call uploads nothing, because it fails on the year lock before rendering.
+- Only accounts with a statement get new estimates, on the lease that covers January 1 of `Y+1`, for every pool in `continuingPools` (5.9). A lease starting on January 1 of `Y+1` is that lease, even when it was entered with no estimates. A lease starting later keeps its typed estimates. An account that opens after January 1 of `Y+1` has no statement for `Y`, so it keeps its typed estimates.
 - `setEstimateStep` replaces a step dated January 1 of `Y+1` if the owner typed one. Later steps stay.
 - If anything fails, the transaction rolls back and nothing in the database changes. PDFs already uploaded stay in the bucket under the same keys, and the next attempt overwrites them.
 - Finalize runs once per year. A later mistake is fixed with an adjustment.
 
-After finalize, the year page shows the stored snapshots. It recomputes each statement and compares the pool lines, true-up, rent balance, balance on account, new estimates, and new rent with the snapshot. When any differ, the account shows "Current data no longer matches this statement" with each changed value as snapshot, now, and difference, such as "Balance on account: $651.48, now $701.48 (+$50.00)". The finalize writes themselves do not cause a mismatch: the true-up is dated after December 31, and new estimates start January 1 of `Y+1`. New fees and adjustments cannot be dated inside the finalized year (3.6), so a mismatch comes from bank rows, sorting, or lease edits.
+After finalize, the year page shows the stored snapshots. It recomputes each statement and compares the pool lines, true-up, rent balance, and balance on account with the snapshot. It compares the snapshot's new estimates and new monthly rent with what the lease covering January 1 bills now (`estimateOn(J, P, jan1)` for each pool `J` pays then, and `rentOn(J, jan1)` plus those estimates), and the insurance request with `J`'s insurance date. So a later edit to `J`'s January steps or January rent, or January steps that never landed, shows as a mismatch. When any differ, the account shows "Current data no longer matches this statement" with each changed value as snapshot, now, and difference, such as "Balance on account: $651.48, now $701.48 (+$50.00)". The finalize writes themselves do not cause a mismatch: the true-up is dated after December 31, and new estimates start January 1 of `Y+1`. New fees and adjustments cannot have a locked date (3.6), so a mismatch comes from bank rows, sorting, or lease edits.
 
 The finalized page also lists January `Y+1` for each continuing account: new monthly rent, payments dated in January so far, and the difference. This answers which tenants' January 1 payment came in at the old amount.
 
@@ -935,12 +946,12 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | `account` | `list` | none | accounts with tenant, unit, state (5.1), and leases |
 | | `get` | id | account, leases with steps, pools the unit is in |
 | | `open` | tenantId, unitId, openingBalanceCents, lease: `LeaseInput` | account |
-| | `setOpeningBalance` | id, openingBalanceCents | account |
+| | `setOpeningBalance` | id, expectedVersion, openingBalanceCents | account; CONFLICT when the version is stale (4) |
 | | `remove` | id | ok; rule 10 |
-| `lease` | `add` | accountId, `LeaseInput` | account |
-| | `update` | accountId, leaseId, `LeaseInput` | account |
-| | `remove` | accountId, leaseId | account; rule 10 |
-| | `setRentStepNotified` | accountId, leaseId, stepId, notified | account |
+| `lease` | `add` | accountId, expectedVersion, `LeaseInput` | account |
+| | `update` | accountId, expectedVersion, leaseId, `LeaseInput` | account |
+| | `remove` | accountId, expectedVersion, leaseId | account; rule 10 |
+| | `setRentStepNotified` | accountId, expectedVersion, leaseId, stepId, notified | account |
 | `bankImport` | `getMapping` | none | `CsvMapping` or null |
 | | `preview` | csvText (max 2 MB), mapping?, headerRow? | header row used, headers, first 10 raw rows, first 10 parsed rows, counts, not-a-transaction rows, errors |
 | | `commit` | csvText, fileName, mapping, headerRow?, skipRows? | batch summary; rejected if an error row is not in skipRows |
@@ -954,19 +965,19 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | | `createCash`, `updateCash` | date, description, amountCents (positive, stored negative), categoryId | transaction with one line, written in one database transaction |
 | | `removeCash` | id | ok |
 | `rent` | `status` | none | `today`, newest bank date, rows (5.4) with suggestions |
-| | `history` | accountId | account, newest bank date, history rows (ledger entry rows say whether they are locked: a true-up or dated in a finalized year), suggestions |
-| | `addAdjustment` | accountId, date, amountCents, note | entry; a date inside a finalized year becomes today (3.6) |
-| | `updateAdjustment` | id, date, amountCents, note | entry; rejected for an entry dated inside a finalized year |
-| | `removeEntry` | id | ok; rejected for `true_up` and for entries dated inside a finalized year |
+| | `history` | accountId | account, newest bank date, history rows (ledger entry rows say whether they are locked: a true-up or a locked date, 3.6), suggestions |
+| | `addAdjustment` | accountId, date, amountCents, note | entry; a locked date becomes today (3.6) |
+| | `updateAdjustment` | id, date, amountCents, note | entry; rejected when the old or new date is locked |
+| | `removeEntry` | id | ok; rejected for `true_up` and for an entry with a locked date |
 | | `approveLateFee`, `dismissLateFee` | accountId, month | entry |
 | `home` | `comingUp` | none | the lists in 5.12 |
 | `reconciliation` | `listYears` | none | years from the first full year after the tracking start (5.9) to the current year, with status and letter date |
 | | `workspace` | year | checklist, pool cards, statements, finalize gates, and, when finalized, snapshots, mismatch flags, January table |
-| | `setLetterDate` | year, letterDate | year |
+| | `setLetterDate` | year, letterDate | year; the date must be in `year + 1` |
 | | `setBillOverride` | year, poolId, amountCents, note | override |
 | | `clearBillOverride` | year, poolId | ok |
-| | `previewPdf` | year, accountId | `{ fileName, base64 }` |
-| | `finalize` | year | summary per account |
+| | `previewPdf` | year, accountId | `{ fileName, base64 }`; rejected for a finalized year (use `downloadUrl`) |
+| | `finalize` | year | summary per account; needs `year - 1` finalized unless `year` is the first reconciliation year |
 | | `downloadUrl` | year, accountId | `{ url, fileName }`, signed for one hour with the file name in Content-Disposition |
 
 Removed: the old `lease` procedures (`list`, `get`, `create`, `update`, `activate`, `end`, `attachDocument`, `documentDownloadUrl`), and unit `utilities` and `status` inputs.
@@ -1121,12 +1132,12 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 - `property`: tracking start change rejected once a transaction exists.
 - `unit` and `pool`: `unit.create` joins pools with `adds_new_units` and no others; `members_changed_on` is set only after the first transaction exists; `pool.setUnits` rejected when it removes a unit whose open or upcoming account pays the pool, accepted for a vacant unit.
 - `category`: archiving a shared-cost category rejected.
-- `account` and `lease`: overlapping accounts on one unit rejected; overlapping leases on one account rejected; lease after a move-out rejected; pool the unit is not in rejected; non-zero opening balance on an account starting after tracking start rejected; one tenant can hold accounts on two units.
+- `account` and `lease`: a stale `expectedVersion` returns CONFLICT on every account save; overlapping accounts on one unit rejected; overlapping leases on one account rejected; lease after a move-out rejected; pool the unit is not in rejected; non-zero opening balance on an account starting after tracking start rejected; one tenant can hold accounts on two units.
 - `bankImport`: `removeBatch` rejected when a row is sorted, accepted otherwise.
 - `transaction`: `listToSort` returns suggestions and leaves every transaction unsorted; `allocate` rejects lines that do not add up, and a line with both or neither target; a split across two accounts is accepted.
-- `rent`: `status` writes nothing; `approveLateFee` with no current suggestion is rejected; approve posts the covering lease's fee amount; an adjustment dated in a finalized year is saved with today's date.
+- `rent`: `status` writes nothing; `approveLateFee` with no current suggestion is rejected; approve posts the covering lease's fee amount; an adjustment dated in a finalized year is saved with today's date; every ledger write locks the entry's reconciliation year.
 - `home`: `comingUp` with a fixed today and one item just inside and just outside each window in 5.12.
-- `reconciliation`: finalize rejected while a blocker stands, before January 1, without a letter date, and the second time; finalize with the section 6 data writes three snapshots, three true-ups, and seven estimate steps; a renderer that throws on the second account leaves the stores unchanged; `workspace` for a finalized year returns mismatch values after a payment is re-sorted, and the January table.
+- `reconciliation`: finalize rejected while a blocker stands, before January 1, without a letter date, before the previous year is finalized, and the second time; finalize with the section 6 data writes three snapshots, three true-ups, and seven estimate steps at repeatable read, and the renderer gets the stored snapshot data; a January 1 renewal with blank estimates gets every December pool; a typed January 1 step is replaced, not added; a renderer that throws on the second account leaves the stores unchanged; `workspace` for a finalized year returns mismatch values after a payment is re-sorted and after January 1 steps or rent change, and the January table; `setLetterDate` outside `year + 1`, `previewPdf` for a finalized year, and `downloadUrl` for another year or property are rejected; a lease save from before finalize returns CONFLICT.
 
 ### 10.3 DB integration tests
 
@@ -1134,9 +1145,9 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 |---|---|---|
 | `transactions.integration.test.ts` | M2 | Commit the same CSV twice: second run inserts 0. Overlapping CSV: inserts only new rows. Two equal rows in one day: both stored once. Remove a batch, then commit the same file: rows come back. |
 | `allocations.integration.test.ts` | M2 | Replacing lines is atomic; a bad sum leaves the old lines in place; two `allocate` calls for one transaction at the same time end with one set of lines. |
-| `account-repository.integration.test.ts` | M1 | Leases and step rows round-trip with ids and `tenant_notified_at`; a removed lease is deleted with its steps. |
+| `account-repository.integration.test.ts` | M1 | Leases and step rows round-trip with ids and `tenant_notified_at`; a removed lease is deleted with its steps; each save bumps `version` and a stale copy throws `StaleAccountError`. |
 | `balance.integration.test.ts` | M3 | Load the 6.3 account through `PGBillingQueries`, compute the balance, and compare it with a plain SQL sum of opening balance, entries, and payments plus the computed months. |
-| `finalize.integration.test.ts` | M5 | Force a failure after the snapshot inserts (a stub account repository that throws): no snapshot, entry, or step rows remain, and the year is still draft. |
+| `finalize.integration.test.ts` | M5 | Force a failure after the snapshot inserts (a stub account repository that throws): no snapshot, entry, or step rows remain, and the year is still draft. Two finalize calls at once: one CONFLICT, one set of snapshots, uploads only from the winner. The stored snapshot data equals what the renderer received. A lease save from before finalize returns CONFLICT. |
 
 ### 10.4 Acceptance criteria
 
