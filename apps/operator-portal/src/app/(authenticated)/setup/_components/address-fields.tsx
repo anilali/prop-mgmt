@@ -36,6 +36,20 @@ export function toAddress(draft: AddressDraft): Address {
   };
 }
 
+export function addressProblem(draft: AddressDraft): string | null {
+  const address = toAddress(draft);
+  const missing = [
+    address.street1,
+    address.city,
+    address.state,
+    address.postalCode,
+    address.country,
+  ].some((part) => part === "");
+  return missing
+    ? "Enter the street, city, state, postal code, and country"
+    : null;
+}
+
 export function AddressFields({
   idPrefix,
   value,

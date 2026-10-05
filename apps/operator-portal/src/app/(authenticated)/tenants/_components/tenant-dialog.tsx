@@ -126,6 +126,10 @@ function TenantForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (businessName.trim() === "") {
+          toast.error("Enter the business name");
+          return;
+        }
         let address: ReturnType<typeof mailingAddress>;
         try {
           address = mailingAddress();
@@ -136,21 +140,21 @@ function TenantForm({
         if (tenant) {
           update.mutate({
             id: tenant.id,
-            businessName,
-            contactName: contactName || null,
+            businessName: businessName.trim(),
+            contactName: contactName.trim() || null,
             mailingAddress: address,
-            email: email || null,
-            phone: phone || null,
-            notes: notes || null,
+            email: email.trim() || null,
+            phone: phone.trim() || null,
+            notes: notes.trim() || null,
           });
         } else {
           create.mutate({
-            businessName,
-            contactName: contactName || undefined,
+            businessName: businessName.trim(),
+            contactName: contactName.trim() || undefined,
             mailingAddress: address ?? undefined,
-            email: email || undefined,
-            phone: phone || undefined,
-            notes: notes || undefined,
+            email: email.trim() || undefined,
+            phone: phone.trim() || undefined,
+            notes: notes.trim() || undefined,
           });
         }
       }}

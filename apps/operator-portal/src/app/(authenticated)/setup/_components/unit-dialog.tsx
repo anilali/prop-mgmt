@@ -20,7 +20,12 @@ import { Label } from "@moonship/ui/label";
 import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
 import { useLedgerChanged } from "../../_lib/use-ledger-changed";
-import { AddressFields, toAddress, toAddressDraft } from "./address-fields";
+import {
+  AddressFields,
+  addressProblem,
+  toAddress,
+  toAddressDraft,
+} from "./address-fields";
 
 export type UnitView = RouterOutputs["unit"]["list"][number];
 
@@ -103,9 +108,18 @@ function UnitForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (label.trim() === "") {
+          toast.error("Enter a unit label");
+          return;
+        }
         const sqftValue = Number(sqft);
         if (!Number.isInteger(sqftValue) || sqftValue <= 0) {
           toast.error("Sqft must be a whole number above 0");
+          return;
+        }
+        const problem = addressProblem(address);
+        if (problem) {
+          toast.error(problem);
           return;
         }
         const payload = {

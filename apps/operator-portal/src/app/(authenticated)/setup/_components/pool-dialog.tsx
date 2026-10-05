@@ -94,6 +94,14 @@ function PoolForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (name.trim() === "") {
+          toast.error("Enter a pool name");
+          return;
+        }
+        if (letterName.trim() === "") {
+          toast.error("Enter a letter name");
+          return;
+        }
         if (pool) {
           update.mutate({
             id: pool.id,

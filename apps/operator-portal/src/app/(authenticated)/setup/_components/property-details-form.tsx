@@ -18,7 +18,12 @@ import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
 import { useLedgerChanged } from "../../_lib/use-ledger-changed";
 import { formatDate } from "../../leases/_lib/format";
-import { AddressFields, toAddress, toAddressDraft } from "./address-fields";
+import {
+  AddressFields,
+  addressProblem,
+  toAddress,
+  toAddressDraft,
+} from "./address-fields";
 import { TimeZoneSelect } from "./time-zone-select";
 
 type PropertyView = RouterOutputs["property"]["get"];
@@ -105,6 +110,15 @@ function PropertyDetailsFormInner({ property }: { property: PropertyView }) {
         className="grid max-w-3xl gap-6"
         onSubmit={(e) => {
           e.preventDefault();
+          if (name.trim() === "") {
+            toast.error("Enter the property name");
+            return;
+          }
+          const problem = addressProblem(address);
+          if (problem) {
+            toast.error(problem);
+            return;
+          }
           const month = trackingMonth.trim();
           if (month && !isYearMonth(month)) {
             toast.error("Enter the tracking start as a month, like 2026-01");
