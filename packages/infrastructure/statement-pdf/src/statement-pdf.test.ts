@@ -102,7 +102,7 @@ describe("ReactPdfStatementRenderer", () => {
       "1200 Main St, Suite A",
       "TAXES",
       "26.74%",
-      "3,446.84",
+      "$3,446.84",
       "-$362.79",
       "$237.74",
       "REVISED MONTHLY RENT",
@@ -139,7 +139,7 @@ describe("ReactPdfStatementRenderer", () => {
     for (const value of [
       "$218.53",
       "MONTHS",
-      "1,148.95",
+      "$1,148.95",
       "-$10.49",
       "Unpaid Balance",
       "Balance on Account",

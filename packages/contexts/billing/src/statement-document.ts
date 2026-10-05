@@ -400,7 +400,7 @@ export function statementDocument(data: StatementData): StatementDocument {
         formatCents(row.actualCents),
         formatPercentBps(shareBps(data.unit.sqft, row.poolSqft)),
         ...(showMonths ? [String(row.months)] : []),
-        formatNumberCents(row.partCents),
+        formatCents(row.partCents),
         formatCents(row.estimatesCents),
         formatCents(row.balanceCents),
       ]),
