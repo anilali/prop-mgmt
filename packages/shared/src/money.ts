@@ -39,6 +39,8 @@ export function prorate(
   return result;
 }
 
+export const MAX_CENTS = 2_147_483_647;
+
 const AMOUNT_PATTERN =
   /^([-+])?\s*\$?\s*([-+])?\s*(?:(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{0,2}))?|\.(\d{1,2}))\s*(-)?$/;
 

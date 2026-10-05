@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isIsoDate } from "@moonship/shared";
+import { isIsoDate, MAX_CENTS } from "@moonship/shared";
 
 export const isoDate = z
   .string()
@@ -9,7 +9,7 @@ export const isoDate = z
 
 export const idSchema = z.string().uuid();
 
-export const centsSchema = z.number().int();
+export const centsSchema = z.number().int().min(-MAX_CENTS).max(MAX_CENTS);
 
 export const nonNegativeCentsSchema = centsSchema.min(0);
 
