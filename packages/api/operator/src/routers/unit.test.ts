@@ -162,6 +162,7 @@ describe("unit procedures", () => {
         endDate: "2024-12-31",
         moveOutDate: "2024-08-15",
         rentSteps: [{ startsOn: "2024-01-01", amountCents: 1 }],
+        fixedCharges: [],
       },
     });
 

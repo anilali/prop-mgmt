@@ -986,7 +986,7 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 
 `OperatorRouterDeps` gains `accountRepository`, `accountQueries`, `billingStore`, `billingQueries`, `unitOfWork`, and `statementRenderer`, and loses `leaseRepository` and `leaseQueries`. `createOperatorAPI` builds them, with `ReactPdfStatementRenderer` from `@moonship/statement-pdf`.
 
-`LeaseInput` below is: startDate, endDate, moveOutDate?, rentSteps, estimates by pool, fixedCharges (`{ name, steps: { id?, startsOn, amountCents }[] }[]`, default empty), lateFee?, insuranceExpiresOn?. Leases in outputs carry `fixedChargeSteps: { id, name, startsOn, amountCents }[]`.
+`LeaseInput` below is: startDate, endDate, moveOutDate?, rentSteps, estimates by pool, fixedCharges (`{ name, steps: { id?, startsOn, amountCents }[] }[]`, required, so a save that leaves it out is rejected instead of clearing the charges), lateFee?, insuranceExpiresOn?. Leases in outputs carry `fixedChargeSteps: { id, name, startsOn, amountCents }[]`.
 
 | Router | Procedure | Input | Output |
 |---|---|---|---|

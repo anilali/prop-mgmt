@@ -53,22 +53,20 @@ export const leaseInputSchema = z.object({
       }),
     )
     .default([]),
-  fixedCharges: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(FIXED_CHARGE_NAME_MAX_LENGTH),
-        steps: z
-          .array(
-            z.object({
-              id: idSchema.optional(),
-              startsOn: isoDate,
-              amountCents: nonNegativeCentsSchema,
-            }),
-          )
-          .min(1),
-      }),
-    )
-    .default([]),
+  fixedCharges: z.array(
+    z.object({
+      name: z.string().trim().min(1).max(FIXED_CHARGE_NAME_MAX_LENGTH),
+      steps: z
+        .array(
+          z.object({
+            id: idSchema.optional(),
+            startsOn: isoDate,
+            amountCents: nonNegativeCentsSchema,
+          }),
+        )
+        .min(1),
+    }),
+  ),
   lateFee: z
     .object({
       amountCents: centsSchema.positive(),

@@ -199,6 +199,7 @@ describe("property setup procedures", () => {
         startDate: "2025-06-01",
         endDate: "2027-05-31",
         rentSteps: [{ startsOn: "2025-06-01", amountCents: 250_000 }],
+        fixedCharges: [],
       },
     });
 

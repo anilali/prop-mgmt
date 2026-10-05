@@ -66,6 +66,7 @@ describe("account procedures", () => {
             steps: [{ startsOn: "2023-01-01", amountCents: 26_861 }],
           },
         ],
+        fixedCharges: [],
         lateFee: { amountCents: 5000, day: 10 },
         insuranceExpiresOn: "2026-11-30",
       },
@@ -698,6 +699,78 @@ describe("lease procedures", () => {
       ["Sign", "2025-07-01", 4_000],
     ]);
     expect(after[0]?.id).toBe(signId);
+  });
+
+  it("rejects a save that leaves out fixedCharges and keeps the stored charges", async () => {
+    const { caller, accountId, opened, tenantId, b } = await openOnA();
+    const leaseId = opened.account.leases[0]?.id;
+    if (!leaseId) throw new Error("missing lease");
+    const saved = await caller.lease.update({
+      accountId,
+      expectedVersion: await versionOf(caller, accountId),
+      leaseId,
+      lease: leaseInput({
+        startDate: "2025-01-01",
+        endDate: "2025-12-31",
+        fixedCharges: [
+          {
+            name: "Sign",
+            steps: [{ startsOn: "2025-01-01", amountCents: 3_500 }],
+          },
+        ],
+      }),
+    });
+    const signId = saved.account.leases[0]?.fixedChargeSteps[0]?.id;
+    const { fixedCharges: _omitted, ...withoutCharges } = leaseInput({
+      startDate: "2025-01-01",
+      endDate: "2025-12-31",
+    });
+    const version = await versionOf(caller, accountId);
+
+    expect(
+      await codeOf(
+        caller.lease.update({
+          accountId,
+          expectedVersion: version,
+          leaseId,
+          lease: withoutCharges as Parameters<
+            typeof caller.lease.update
+          >[0]["lease"],
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await codeOf(
+        caller.lease.add({
+          accountId,
+          expectedVersion: version,
+          lease: {
+            ...withoutCharges,
+            startDate: "2026-01-01",
+            endDate: "2026-12-31",
+            rentSteps: [{ startsOn: "2026-01-01", amountCents: 250_000 }],
+          } as Parameters<typeof caller.lease.add>[0]["lease"],
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await codeOf(
+        caller.account.open({
+          tenantId,
+          unitId: b.id,
+          openingBalanceCents: 0,
+          lease: withoutCharges as Parameters<
+            typeof caller.account.open
+          >[0]["lease"],
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+
+    const detail = await caller.account.get({ id: accountId });
+    expect(detail.account.version).toBe(version);
+    expect(detail.account.leases[0]?.fixedChargeSteps.map((s) => s.id)).toEqual(
+      [signId],
+    );
   });
 
   it("rejects a stale fixed charge edit and a duplicate charge name", async () => {
