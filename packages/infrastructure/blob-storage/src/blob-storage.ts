@@ -4,8 +4,16 @@ export interface PutObjectInput {
   contentType: string;
 }
 
+export interface SignedDownloadOptions {
+  expiresInSeconds?: number;
+  fileName?: string;
+}
+
 export interface BlobStorage {
   putObject(input: PutObjectInput): Promise<{ key: string }>;
-  getSignedDownloadUrl(key: string, expiresInSeconds?: number): Promise<string>;
+  getSignedDownloadUrl(
+    key: string,
+    options?: SignedDownloadOptions,
+  ): Promise<string>;
   deleteObject(key: string): Promise<void>;
 }

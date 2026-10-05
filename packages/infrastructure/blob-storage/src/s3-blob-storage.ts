@@ -6,7 +6,20 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-import type { BlobStorage, PutObjectInput } from "./blob-storage";
+import type {
+  BlobStorage,
+  PutObjectInput,
+  SignedDownloadOptions,
+} from "./blob-storage";
+
+export function attachmentDisposition(fileName: string): string {
+  const fallback = fileName.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  const encoded = encodeURIComponent(fileName).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
 
 export interface S3BlobStorageConfig {
   endpoint: string;
@@ -49,15 +62,22 @@ export class S3BlobStorage implements BlobStorage {
 
   async getSignedDownloadUrl(
     key: string,
-    expiresInSeconds = 3600,
+    options: SignedDownloadOptions = {},
   ): Promise<string> {
     return getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
+        ...(options.fileName
+          ? {
+              ResponseContentDisposition: attachmentDisposition(
+                options.fileName,
+              ),
+            }
+          : {}),
       }),
-      { expiresIn: expiresInSeconds },
+      { expiresIn: options.expiresInSeconds ?? 3600 },
     );
   }
 
