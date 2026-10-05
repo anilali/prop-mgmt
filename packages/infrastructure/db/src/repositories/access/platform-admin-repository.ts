@@ -3,11 +3,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { PlatformAdminRepository } from "@moonship/access";
 import { PlatformAdmin } from "@moonship/access";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { platformAdmins } from "../../schemas/access/schema";
 
 export class PGPlatformAdminRepository implements PlatformAdminRepository {
-  constructor(private db: DatabaseClient) {}
+  constructor(private db: DbExecutor) {}
 
   async findByAuthUserId(authUserId: string): Promise<PlatformAdmin | null> {
     const row = await this.db

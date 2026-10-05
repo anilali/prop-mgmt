@@ -29,6 +29,34 @@
       "when": 1791134451988,
       "tag": "1791134451_operator_access",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791179490903,
+      "tag": "1791179490_property_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791179501459,
+      "tag": "1791179501_billing_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791179511482,
+      "tag": "1791179511_tenant_business_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791179528527,
+      "tag": "1791179528_accounts_and_leases",
+      "breakpoints": true
     }
   ]
 }

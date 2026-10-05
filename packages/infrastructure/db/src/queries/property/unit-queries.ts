@@ -1,24 +1,20 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
-import type {
-  UnitQueries,
-  UnitStatus,
-  UnitView,
-  UtilityAssignment,
-} from "@moonship/property";
+import type { UnitQueries, UnitView } from "@moonship/property";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { units } from "../../schemas/property/schema";
 
 export class PGUnitQueries implements UnitQueries {
-  constructor(private db: DatabaseClient) {}
+  constructor(private db: DbExecutor) {}
 
   async list(propertyId: string): Promise<UnitView[]> {
     const rows = await this.db
       .select()
       .from(units)
-      .where(eq(units.propertyId, propertyId));
-    return rows.map((row) => this.toView(row));
+      .where(eq(units.propertyId, propertyId))
+      .orderBy(asc(units.label));
+    return rows.map(toView);
   }
 
   async getById(propertyId: string, id: string): Promise<UnitView | null> {
@@ -30,20 +26,17 @@ export class PGUnitQueries implements UnitQueries {
       .then((rows) => rows[0]);
 
     if (!row) return null;
-    return this.toView(row);
+    return toView(row);
   }
+}
 
-  private toView(row: typeof units.$inferSelect): UnitView {
-    return {
-      id: row.id,
-      propertyId: row.propertyId,
-      label: row.label,
-      sqft: row.sqft,
-      bedrooms: row.bedrooms ?? undefined,
-      bathrooms: row.bathrooms ?? undefined,
-      addressOverride: row.addressOverride ?? null,
-      utilities: row.utilities as UtilityAssignment[],
-      status: row.status as UnitStatus,
-    };
-  }
+function toView(row: typeof units.$inferSelect): UnitView {
+  return {
+    id: row.id,
+    propertyId: row.propertyId,
+    label: row.label,
+    sqft: row.sqft,
+    sqftChangedOn: row.sqftChangedOn,
+    address: row.address,
+  };
 }

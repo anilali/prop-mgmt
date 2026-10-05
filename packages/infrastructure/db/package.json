@@ -62,6 +62,7 @@
   },
   "dependencies": {
     "@moonship/access": "workspace:*",
+    "@moonship/billing": "workspace:*",
     "@moonship/events": "workspace:*",
     "@moonship/lease-mgmt": "workspace:*",
     "@moonship/property": "workspace:*",

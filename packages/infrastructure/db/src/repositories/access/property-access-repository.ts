@@ -8,12 +8,12 @@ import type {
 import type { EventDispatcher } from "@moonship/events";
 import { OptimisticConcurrencyError, PropertyAccess } from "@moonship/access";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { accessMemberships, propertyAccess } from "../../schemas/access/schema";
 
 export class PGPropertyAccessRepository implements PropertyAccessRepository {
   constructor(
-    private db: DatabaseClient,
+    private db: DbExecutor,
     private eventDispatcher?: EventDispatcher,
   ) {}
 

@@ -7,11 +7,11 @@ import type {
   Role,
 } from "@moonship/access";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { accessMemberships } from "../../schemas/access/schema";
 
 export class PGAccessQueries implements AccessQueries {
-  constructor(private db: DatabaseClient) {}
+  constructor(private db: DbExecutor) {}
 
   async getMemberships(propertyId: string): Promise<MembershipView[]> {
     const rows = await this.db
@@ -42,7 +42,6 @@ export class PGAccessQueries implements AccessQueries {
       );
     return rows.map((row) => row.propertyId);
   }
-
 }
 
 function toView(row: typeof accessMemberships.$inferSelect): MembershipView {

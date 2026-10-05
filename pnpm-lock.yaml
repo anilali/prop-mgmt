@@ -612,6 +612,9 @@ importers:
       '@moonship/access':
         specifier: workspace:*
         version: link:../../contexts/access
+      '@moonship/billing':
+        specifier: workspace:*
+        version: link:../../contexts/billing
       '@moonship/events':
         specifier: workspace:*
         version: link:../events

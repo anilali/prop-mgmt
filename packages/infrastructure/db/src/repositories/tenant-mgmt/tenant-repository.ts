@@ -4,12 +4,12 @@ import type { EventDispatcher } from "@moonship/events";
 import type { TenantRepository, TenantStatus } from "@moonship/tenant-mgmt";
 import { Tenant } from "@moonship/tenant-mgmt";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { tenants } from "../../schemas/tenant-mgmt/schema";
 
 export class PGTenantRepository implements TenantRepository {
   constructor(
-    private db: DatabaseClient,
+    private db: DbExecutor,
     private eventDispatcher?: EventDispatcher,
   ) {}
 
@@ -24,7 +24,9 @@ export class PGTenantRepository implements TenantRepository {
     return Tenant.reconstitute({
       id: row.id,
       propertyId: row.propertyId,
-      fullName: row.fullName,
+      businessName: row.businessName,
+      contactName: row.contactName ?? undefined,
+      mailingAddress: row.mailingAddress ?? undefined,
       email: row.email ?? undefined,
       phone: row.phone ?? undefined,
       notes: row.notes ?? undefined,
@@ -34,27 +36,22 @@ export class PGTenantRepository implements TenantRepository {
 
   async save(tenant: Tenant): Promise<void> {
     const events = tenant.pullEvents();
+    const values = {
+      businessName: tenant.businessName,
+      contactName: tenant.contactName ?? null,
+      mailingAddress: tenant.mailingAddress ?? null,
+      email: tenant.email ?? null,
+      phone: tenant.phone ?? null,
+      notes: tenant.notes ?? null,
+      status: tenant.status,
+    };
     await this.db
       .insert(tenants)
-      .values({
-        id: tenant.id,
-        propertyId: tenant.propertyId,
-        fullName: tenant.fullName,
-        email: tenant.email ?? null,
-        phone: tenant.phone ?? null,
-        notes: tenant.notes ?? null,
-        status: tenant.status,
-      })
+      .values({ id: tenant.id, propertyId: tenant.propertyId, ...values })
       .onConflictDoUpdate({
         target: tenants.id,
-        set: {
-          fullName: tenant.fullName,
-          email: tenant.email ?? null,
-          phone: tenant.phone ?? null,
-          notes: tenant.notes ?? null,
-          status: tenant.status,
-          updatedAt: new Date(),
-        },
+        set: { ...values, updatedAt: new Date() },
+        setWhere: eq(tenants.propertyId, tenant.propertyId),
       });
     if (this.eventDispatcher && events.length > 0) {
       await this.eventDispatcher.dispatch(events);

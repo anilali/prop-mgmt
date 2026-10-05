@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type {
   TenantQueries,
@@ -6,17 +6,18 @@ import type {
   TenantView,
 } from "@moonship/tenant-mgmt";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { tenants } from "../../schemas/tenant-mgmt/schema";
 
 export class PGTenantQueries implements TenantQueries {
-  constructor(private db: DatabaseClient) {}
+  constructor(private db: DbExecutor) {}
 
   async list(propertyId: string): Promise<TenantView[]> {
     const rows = await this.db
       .select()
       .from(tenants)
-      .where(eq(tenants.propertyId, propertyId));
+      .where(eq(tenants.propertyId, propertyId))
+      .orderBy(asc(tenants.businessName));
     return rows.map((row) => this.toView(row));
   }
 
@@ -35,7 +36,9 @@ export class PGTenantQueries implements TenantQueries {
     return {
       id: row.id,
       propertyId: row.propertyId,
-      fullName: row.fullName,
+      businessName: row.businessName,
+      contactName: row.contactName ?? undefined,
+      mailingAddress: row.mailingAddress ?? undefined,
       email: row.email ?? undefined,
       phone: row.phone ?? undefined,
       notes: row.notes ?? undefined,

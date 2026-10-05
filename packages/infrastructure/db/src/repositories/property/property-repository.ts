@@ -4,12 +4,13 @@ import type { EventDispatcher } from "@moonship/events";
 import type { PropertyRepository } from "@moonship/property";
 import { Property } from "@moonship/property";
 
-import type { DatabaseClient } from "../../client";
+import type { DbExecutor } from "../../client";
 import { properties } from "../../schemas/property/schema";
+import { toPropertyProps } from "./property-rows";
 
 export class PGPropertyRepository implements PropertyRepository {
   constructor(
-    private db: DatabaseClient,
+    private db: DbExecutor,
     private eventDispatcher?: EventDispatcher,
   ) {}
 
@@ -22,38 +23,33 @@ export class PGPropertyRepository implements PropertyRepository {
       .then((rows) => rows[0]);
 
     if (!row) return null;
-    return this.toAggregate(row);
+    return Property.reconstitute(toPropertyProps(row));
   }
 
   async save(property: Property): Promise<void> {
     const events = property.pullEvents();
+    const values = {
+      name: property.name,
+      address: property.address,
+      trackingStartDate: property.trackingStartDate,
+      timeZone: property.timeZone,
+      ownerName: property.letter.ownerName,
+      ownerTitle: property.letter.ownerTitle,
+      companyName: property.letter.companyName,
+      ownerPhone: property.letter.ownerPhone,
+      ownerEmail: property.letter.ownerEmail,
+    };
 
     await this.db
       .insert(properties)
-      .values({
-        id: property.id,
-        name: property.name,
-        address: property.address,
-      })
+      .values({ id: property.id, ...values })
       .onConflictDoUpdate({
         target: properties.id,
-        set: {
-          name: property.name,
-          address: property.address,
-          updatedAt: new Date(),
-        },
+        set: { ...values, updatedAt: new Date() },
       });
 
     if (this.eventDispatcher && events.length > 0) {
       await this.eventDispatcher.dispatch(events);
     }
-  }
-
-  private toAggregate(row: typeof properties.$inferSelect): Property {
-    return Property.reconstitute({
-      id: row.id,
-      name: row.name,
-      address: row.address,
-    });
   }
 }
