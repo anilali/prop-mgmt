@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import type * as React from "react";
 import { Select as SelectPrimitive } from "radix-ui";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 

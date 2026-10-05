@@ -1,20 +1,20 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 
-export type SessionUser = {
+export interface SessionUser {
   id: string;
   name: string;
   email: string;
   image?: string | null;
-};
+}
 
-export type TenantSession = {
+export interface TenantSession {
   user: SessionUser;
-};
+}
 
-export type TRPCContext = {
+export interface TRPCContext {
   session: TenantSession | null;
-};
+}
 
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
