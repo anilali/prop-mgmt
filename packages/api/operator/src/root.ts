@@ -14,11 +14,13 @@ import type { RequestAccess } from "./operator-context";
 import type { UnitOfWork } from "./unit-of-work";
 import { accessRouter } from "./routers/access";
 import { accountRouter } from "./routers/account";
+import { bankImportRouter } from "./routers/bank-import";
 import { categoryRouter } from "./routers/category";
 import { leaseRouter } from "./routers/lease";
 import { poolRouter } from "./routers/pool";
 import { propertyRouter } from "./routers/property";
 import { tenantRouter } from "./routers/tenant";
+import { transactionRouter } from "./routers/transaction";
 import { unitRouter } from "./routers/unit";
 import { createCallerFactory, router } from "./trpc";
 
@@ -87,6 +89,17 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
     }),
     account: accountRouter(accountDeps),
     lease: leaseRouter(accountDeps),
+    bankImport: bankImportRouter({
+      billingQueries: deps.billingQueries,
+      propertyQueries: deps.propertyQueries,
+      unitOfWork: deps.unitOfWork,
+    }),
+    transaction: transactionRouter({
+      billingQueries: deps.billingQueries,
+      accountQueries: deps.accountQueries,
+      propertyQueries: deps.propertyQueries,
+      unitOfWork: deps.unitOfWork,
+    }),
   });
 
   const createTRPCContext = (opts: {

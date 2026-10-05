@@ -37,6 +37,7 @@
     "@moonship/shared": "workspace:*",
     "@moonship/tenant-mgmt": "workspace:*",
     "@trpc/server": "catalog:",
+    "papaparse": "^5.7.0",
     "superjson": "2.2.3",
     "zod": "catalog:"
   },
@@ -45,6 +46,7 @@
     "@moonship/prettier-config": "workspace:*",
     "@moonship/tsconfig": "workspace:*",
     "@types/node": "catalog:",
+    "@types/papaparse": "^5.5.2",
     "eslint": "catalog:",
     "prettier": "catalog:",
     "typescript": "catalog:",
