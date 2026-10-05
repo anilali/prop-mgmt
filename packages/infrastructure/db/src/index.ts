@@ -16,6 +16,7 @@ export { PGPropertyRepository } from "./repositories/property/property-repositor
 export { PGUnitRepository } from "./repositories/property/unit-repository";
 export { PGTenantRepository } from "./repositories/tenant-mgmt/tenant-repository";
 export { PGAccountRepository } from "./repositories/lease-mgmt/account-repository";
+export { PGLeaseDocumentStore } from "./repositories/lease-mgmt/lease-document-store";
 export { PGBillingStore } from "./repositories/billing/billing-store";
 
 export { PGAccessQueries } from "./queries/access/access-queries";

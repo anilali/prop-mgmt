@@ -6,9 +6,11 @@ import {
   integer,
   pgSchema,
   smallint,
+  text,
   timestamp,
   unique,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 export const leaseMgmtSchema = pgSchema("lease_mgmt");
@@ -117,5 +119,37 @@ export const leaseEstimateSteps = leaseMgmtSchema.table(
       table.startsOn,
     ),
     check("lease_estimate_steps_amount_check", sql`${table.amountCents} >= 0`),
+  ],
+);
+
+export const leaseDocuments = leaseMgmtSchema.table(
+  "lease_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    leaseId: uuid("lease_id").references(() => leases.id, {
+      onDelete: "set null",
+    }),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    contentType: varchar("content_type", { length: 100 }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    storageKey: text("storage_key").notNull(),
+    uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("lease_documents_property_id_account_id_idx").on(
+      table.propertyId,
+      table.accountId,
+    ),
+    index("lease_documents_lease_id_idx").on(table.leaseId),
+    check("lease_documents_size_bytes_check", sql`${table.sizeBytes} > 0`),
   ],
 );
