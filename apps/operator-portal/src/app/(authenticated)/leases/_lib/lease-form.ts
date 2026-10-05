@@ -26,12 +26,19 @@ export interface PoolEstimate {
   steps: StepRow[];
 }
 
+export interface FixedChargeRow {
+  key: string;
+  name: string;
+  steps: StepRow[];
+}
+
 export interface LeaseFormState {
   startDate: IsoDate;
   endDate: IsoDate;
   moveOutDate: IsoDate;
   rentSteps: StepRow[];
   estimates: Record<string, PoolEstimate>;
+  fixedCharges: FixedChargeRow[];
   hasLateFee: boolean;
   lateFeeAmount: string;
   lateFeeDay: string;
@@ -77,11 +84,16 @@ export function emptyLeaseForm(pools: readonly PoolOption[]): LeaseFormState {
     estimates: Object.fromEntries(
       pools.map((pool) => [pool.id, { pays: false, steps: [] }]),
     ),
+    fixedCharges: [],
     hasLateFee: false,
     lateFeeAmount: "",
     lateFeeDay: "",
     insuranceExpiresOn: "",
   };
+}
+
+function chargeNames(lease: Lease): string[] {
+  return [...new Set(lease.fixedChargeSteps.map((step) => step.name))];
 }
 
 export function leaseToForm(
@@ -116,6 +128,18 @@ export function leaseToForm(
       amount: centsToInput(step.amountCents),
     })),
     estimates,
+    fixedCharges: chargeNames(lease).map((name) => ({
+      key: newRowKey(),
+      name,
+      steps: lease.fixedChargeSteps
+        .filter((step) => step.name === name)
+        .map((step) => ({
+          key: newRowKey(),
+          id: step.id,
+          startsOn: step.startsOn,
+          amount: centsToInput(step.amountCents),
+        })),
+    })),
     hasLateFee: lease.lateFee !== null,
     lateFeeAmount: lease.lateFee ? centsToInput(lease.lateFee.amountCents) : "",
     lateFeeDay: lease.lateFee ? String(lease.lateFee.day) : "",
@@ -152,6 +176,26 @@ export function renewalForm(
     };
   }
 
+  const fixedCharges = chargeNames(newest).flatMap((name) => {
+    const amount = currentAmount(
+      newest.fixedChargeSteps.filter((step) => step.name === name),
+    );
+    if (!amount) return [];
+    return [
+      {
+        key: newRowKey(),
+        name,
+        steps: [
+          {
+            key: newRowKey(),
+            startsOn: startDate,
+            amount: centsToInput(amount),
+          },
+        ],
+      },
+    ];
+  });
+
   const rent = currentAmount(newest.rentSteps);
   return {
     startDate,
@@ -165,6 +209,7 @@ export function renewalForm(
       },
     ],
     estimates,
+    fixedCharges,
     hasLateFee: newest.lateFee !== null,
     lateFeeAmount: newest.lateFee
       ? centsToInput(newest.lateFee.amountCents)
@@ -198,6 +243,12 @@ export function withStartDate(
         },
       ]),
     ),
+    fixedCharges: form.fixedCharges.map((charge) => ({
+      ...charge,
+      steps: charge.steps.map((step) =>
+        step.startsOn === previous ? { ...step, startsOn: startDate } : step,
+      ),
+    })),
   };
 }
 
@@ -314,6 +365,29 @@ export function toLeaseInput(
       };
     });
 
+  const fixedCharges = form.fixedCharges.map((charge) => {
+    const name = charge.name.trim();
+    if (!name) {
+      throw new Error("Enter a name for each fixed charge");
+    }
+    if (charge.steps.length === 0) {
+      throw new Error(`Add an amount for ${name}`);
+    }
+    return {
+      name,
+      steps: charge.steps.map((step) => {
+        if (!step.startsOn) {
+          throw new Error(`Enter a date for each ${name} step`);
+        }
+        return {
+          id: step.id,
+          startsOn: step.startsOn,
+          amountCents: parseAmount(step.amount, name),
+        };
+      }),
+    };
+  });
+
   let lateFee: LeaseInput["lateFee"] = null;
   if (form.hasLateFee) {
     const day = Number(form.lateFeeDay);
@@ -343,6 +417,7 @@ export function toLeaseInput(
       };
     }),
     estimates,
+    fixedCharges,
     lateFee,
     insuranceExpiresOn: form.insuranceExpiresOn || null,
   };

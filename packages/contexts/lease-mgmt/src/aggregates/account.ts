@@ -27,6 +27,15 @@ export interface EstimateStep {
   amountCents: number;
 }
 
+export interface FixedChargeStep {
+  id: string;
+  name: string;
+  startsOn: IsoDate;
+  amountCents: number;
+}
+
+export const FIXED_CHARGE_NAME_MAX_LENGTH = 40;
+
 export interface Lease {
   id: string;
   startDate: IsoDate;
@@ -36,6 +45,7 @@ export interface Lease {
   insuranceExpiresOn: IsoDate | null;
   rentSteps: RentStep[];
   estimateSteps: EstimateStep[];
+  fixedChargeSteps: FixedChargeStep[];
 }
 
 export interface LeaseTermsInput {
@@ -51,6 +61,7 @@ export interface LeaseTermsInput {
     startsOn: IsoDate;
     amountCents: number;
   }[];
+  fixedChargeSteps: FixedChargeStep[];
 }
 
 export type NewLease = LeaseTermsInput & { id: string };
@@ -78,6 +89,7 @@ function copyLease(lease: Lease): Lease {
     lateFee: lease.lateFee ? { ...lease.lateFee } : null,
     rentSteps: lease.rentSteps.map((step) => ({ ...step })),
     estimateSteps: lease.estimateSteps.map((step) => ({ ...step })),
+    fixedChargeSteps: lease.fixedChargeSteps.map((step) => ({ ...step })),
   };
 }
 
@@ -154,9 +166,41 @@ function assertLease(lease: Lease): void {
     estimateDates.add(key);
   }
 
+  const chargeDates = new Set<string>();
+  const chargeNames = new Map<string, string>();
+  for (const step of lease.fixedChargeSteps) {
+    if (step.name.trim() === "") {
+      throw new Error("Each fixed charge needs a name");
+    }
+    if (step.name.length > FIXED_CHARGE_NAME_MAX_LENGTH) {
+      throw new Error(
+        `Fixed charge names can be at most ${FIXED_CHARGE_NAME_MAX_LENGTH} characters`,
+      );
+    }
+    const nameKey = step.name.toLowerCase();
+    const knownName = chargeNames.get(nameKey);
+    if (knownName !== undefined && knownName !== step.name) {
+      throw new Error(`Two fixed charges are named ${step.name}`);
+    }
+    chargeNames.set(nameKey, step.name);
+    assertDate(step.startsOn, "Fixed charge step date");
+    assertAmount(step.amountCents, step.name);
+    if (step.startsOn < lease.startDate) {
+      throw new Error(
+        "Fixed charge steps must start on or after the lease start date",
+      );
+    }
+    const key = `${nameKey}|${step.startsOn}`;
+    if (chargeDates.has(key)) {
+      throw new Error(`Two ${step.name} steps start on ${step.startsOn}`);
+    }
+    chargeDates.add(key);
+  }
+
   const stepIds = [
     ...lease.rentSteps.map((s) => s.id),
     ...lease.estimateSteps.map((s) => s.id),
+    ...lease.fixedChargeSteps.map((s) => s.id),
   ];
   if (new Set(stepIds).size !== stepIds.length) {
     throw new Error("Step ids must be unique");
@@ -274,6 +318,19 @@ function buildLease(
         compareText(a.startsOn, b.startsOn) || compareText(a.poolId, b.poolId),
     );
 
+  const fixedChargeSteps: FixedChargeStep[] = terms.fixedChargeSteps
+    .map((step) => ({
+      id: step.id,
+      name: step.name.trim(),
+      startsOn: step.startsOn,
+      amountCents: step.amountCents,
+    }))
+    .sort(
+      (a, b) =>
+        compareText(a.name.toLowerCase(), b.name.toLowerCase()) ||
+        compareText(a.startsOn, b.startsOn),
+    );
+
   return {
     id,
     startDate: terms.startDate,
@@ -283,6 +340,7 @@ function buildLease(
     insuranceExpiresOn: terms.insuranceExpiresOn,
     rentSteps,
     estimateSteps,
+    fixedChargeSteps,
   };
 }
 

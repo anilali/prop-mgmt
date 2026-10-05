@@ -282,6 +282,8 @@ The old `unit_id`, `tenant_id`, `rent_cents`, `deposit_cents`, `status`, and `do
 
 **`lease_mgmt.lease_estimate_steps`** (new): `id`, `lease_id` (cascade), `pool_id uuid not null`, `starts_on date not null`, `amount_cents integer not null check >= 0`. Unique `(lease_id, pool_id, starts_on)`. A lease pays a pool from its first step for that pool (5.2).
 
+**`lease_mgmt.lease_fixed_charge_steps`** (new): `id`, `lease_id` (cascade), `name varchar(40) not null`, `starts_on date not null`, `amount_cents integer not null check >= 0`. Unique `(lease_id, name, starts_on)`. One row per step. Rows with the same name make one charge, such as Sign or Trash.
+
 Lease and step tables have no `property_id`; they are always read through their account.
 
 **`lease_mgmt.lease_documents`** (new): uploaded PDFs for an account. It lives in `lease_mgmt` so both links can be real foreign keys.
@@ -446,18 +448,19 @@ Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a 
 | 8 | M5 | `billing`: `reconciliation_statements`. |
 | 9 | v1 | `billing`: add `import_batches.format` and `import_batches.account_last4`. |
 | 10 | v1 | `lease_mgmt`: `lease_documents`. |
+| 11 | v1 | `lease_mgmt`: `lease_fixed_charge_steps`. |
 
 ## 4. Account aggregate
 
-`Account` in `lease-mgmt` is the aggregate. It owns its leases, and each lease owns its rent and estimate steps. `PGAccountRepository.save` upserts the account row, upserts its leases, deletes leases that were removed, and deletes and reinserts every lease's steps, all inside `this.db.transaction`. It keeps step ids and `tenant_notified_at`. Leases keep their ids across saves. Only `lease_documents.lease_id` refers to a lease from outside the aggregate, and it becomes null when the lease is removed. Events: `AccountOpened`, `LeaseAdded`, `LeaseUpdated`, `LeaseRemoved`.
+`Account` in `lease-mgmt` is the aggregate. It owns its leases, and each lease owns its rent, estimate, and fixed charge steps. `PGAccountRepository.save` upserts the account row, upserts its leases, deletes leases that were removed, and deletes and reinserts every lease's steps, all inside `this.db.transaction`. It keeps step ids and `tenant_notified_at`. Leases keep their ids across saves. Only `lease_documents.lease_id` refers to a lease from outside the aggregate, and it becomes null when the lease is removed. Events: `AccountOpened`, `LeaseAdded`, `LeaseUpdated`, `LeaseRemoved`.
 
-Methods: `open(props, firstLease)` (static), `assertVersion(expected)`, `setOpeningBalance(cents)`, `addLease(terms)`, `updateLease(leaseId, terms)` (dates, move-out, late fee, insurance date, both step lists), `removeLease(leaseId)`, `setEstimateStep(leaseId, poolId, startsOn, amountCents)` (used by finalize; replaces a step on the same date), `markRentStepNotified(leaseId, stepId, at | null)`.
+Methods: `open(props, firstLease)` (static), `assertVersion(expected)`, `setOpeningBalance(cents)`, `addLease(terms)`, `updateLease(leaseId, terms)` (dates, move-out, late fee, insurance date, and the step lists), `removeLease(leaseId)`, `setEstimateStep(leaseId, poolId, startsOn, amountCents)` (used by finalize; replaces a step on the same date), `markRentStepNotified(leaseId, stepId, at | null)`.
 
 Rules the aggregate checks:
 
 1. Each lease: `endDate >= startDate`; `moveOutDate` is null or `>= startDate`.
 2. Rent steps: at least one; the first starts on the lease's `startDate`; dates are distinct; amounts `>= 0`. Changing a lease's start date moves the first rent step with it.
-3. Estimate steps, per pool: dates are distinct and on or after the lease's `startDate`; amounts `>= 0`. The first step does not have to be on the start date, so a lease can start paying a pool partway through. Steps after the end date are allowed (holdover and finalize add them).
+3. Estimate steps, per pool: dates are distinct and on or after the lease's `startDate`; amounts `>= 0`. The first step does not have to be on the start date, so a lease can start paying a pool partway through. Steps after the end date are allowed (holdover and finalize add them). Fixed charge steps follow the same date and amount rules per charge name. A name is trimmed, not blank, at most 40 characters, and cannot differ from another charge's name only by case. Their step ids are kept on edit, as with rent steps.
 4. Late fee: amount `> 0` and day 1 to 27, or neither.
 5. An account has at least one lease. Leases on one account do not overlap (`[startDate, endDate]`).
 6. Only the newest lease may have a move-out date. A lease cannot be added after a lease with a move-out date. A tenant who comes back gets a new account.
@@ -513,15 +516,18 @@ stepOn(steps, d)    = the step with the latest startsOn <= d
 rentOn(L, d)        = stepOn(L.rentSteps, d).amountCents
 paysOn(L, P, d)     = L has an estimate step for pool P with startsOn <= d
 estimateOn(L, P, d) = stepOn(L.estimateSteps for P, d).amountCents     only when paysOn(L, P, d)
+fixedOn(L, d)       = Σ over charge names N: stepOn(L.fixedChargeSteps named N, d).amountCents
 
 monthlyExpected(A, m) =
   L = lease(A, m), d = due(A, m)
-  rentOn(L, d) + Σ over pools P with paysOn(L, P, d): estimateOn(L, P, d)
+  rentOn(L, d) + fixedOn(L, d) + Σ over pools P with paysOn(L, P, d): estimateOn(L, P, d)
 ```
 
 Months are counted per account, so a month is never counted twice. A counted month expects the full amount, with no proration.
 
 Rent and estimates for a month are the ones in effect on the later of the 1st and the account start. So a lease that starts in the middle of a month takes over from the next month: if the old lease ends June 14 and the new one starts June 15, June is billed at the old lease's terms because June is due June 1.
+
+Fixed charges follow the same date rule. They are not reconciled: they are never in a statement row, the estimates, or the true-up. A charge whose amount in effect is 0 is left out of the month.
 
 A pool counts for a month only when the covering lease has a step for it dated on or before the due date. A tenant whose first Water step is 2024-07-01 pays Water from July, and the statement counts 6 Water months.
 
@@ -547,7 +553,7 @@ The last payment date is the newest positive payment line in `[T, asOf]`, skippi
 The history for an account lists, oldest first, with a running balance:
 
 - Opening balance, dated the day before `T`. Only accounts that start on or before `T` can have one (section 4, rule 7).
-- One row per counted month, dated `due(A, m)`, with base rent and each estimate shown.
+- One row per counted month, dated `due(A, m)`, with base rent, each fixed charge, and each estimate shown ("Rent $2,342.43, Sign $35.00, Taxes $650.00").
 - One row per payment line, dated `posted_on`, with the bank description.
 - One row per ledger entry. Dismissed late fees show as a note with no amount.
 
@@ -764,7 +770,7 @@ if J:
   continuingPools = { P : paysOn(J, P, jan1) }
                   ∪ { P : paysIn(last, P) and unit.id in P.unitIds }
   newEstimate[P] = prorate(actual(P, Y), [unit.sqft], [poolSqft(P), 12])  for each P in continuingPools
-  newMonthlyRent = rentOn(J, jan1) + Σ newEstimate[P]
+  newMonthlyRent = rentOn(J, jan1) + fixedOn(J, jan1) + Σ newEstimate[P]
   insuranceRequest = J.insuranceExpiresOn is null or J.insuranceExpiresOn < jan1
 ```
 
@@ -980,7 +986,7 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 
 `OperatorRouterDeps` gains `accountRepository`, `accountQueries`, `billingStore`, `billingQueries`, `unitOfWork`, and `statementRenderer`, and loses `leaseRepository` and `leaseQueries`. `createOperatorAPI` builds them, with `ReactPdfStatementRenderer` from `@moonship/statement-pdf`.
 
-`LeaseInput` below is: startDate, endDate, moveOutDate?, rentSteps, estimates by pool, lateFee?, insuranceExpiresOn?.
+`LeaseInput` below is: startDate, endDate, moveOutDate?, rentSteps, estimates by pool, fixedCharges (`{ name, steps: { id?, startsOn, amountCents }[] }[]`, default empty), lateFee?, insuranceExpiresOn?. Leases in outputs carry `fixedChargeSteps: { id, name, startsOn, amountCents }[]`.
 
 | Router | Procedure | Input | Output |
 |---|---|---|---|
@@ -1138,6 +1144,7 @@ export interface StatementData {
   continuing: {
     effectiveDate: IsoDate;
     baseRentCents: number;
+    fixedCharges: { name: string; amountCents: number }[];
     newEstimates: { poolId: string; name: string; letterName: string; amountCents: number }[];
     newMonthlyRentCents: number;
     insuranceRequest: boolean;

@@ -374,6 +374,10 @@ export function leaseInput(
     moveOutDate: string | null;
     rentCents: number;
     estimates: { poolId: string; startsOn: string; amountCents: number }[];
+    fixedCharges: {
+      name: string;
+      steps: { id?: string; startsOn: string; amountCents: number }[];
+    }[];
   }> = {},
 ) {
   const startDate = overrides.startDate ?? "2026-01-01";
@@ -390,6 +394,7 @@ export function leaseInput(
         { startsOn: estimate.startsOn, amountCents: estimate.amountCents },
       ],
     })),
+    fixedCharges: overrides.fixedCharges ?? [],
     lateFee: { amountCents: 5000, day: 10 },
     insuranceExpiresOn: null,
   };

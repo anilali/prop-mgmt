@@ -45,6 +45,7 @@ function lease(
       },
     ],
     estimateSteps: [],
+    fixedChargeSteps: [],
   };
 }
 
@@ -187,6 +188,7 @@ function termsLease(
     moveOutDate?: string | null;
     rent?: [string, number][];
     estimates?: [string, string, number][];
+    fixedCharges?: [string, string, number][];
   } = {},
 ): LeaseTerms {
   return {
@@ -208,6 +210,14 @@ function termsLease(
       ([poolId, startsOn, amountCents], index) => ({
         id: `${leaseId}-e${index}`,
         poolId,
+        startsOn,
+        amountCents,
+      }),
+    ),
+    fixedChargeSteps: (options.fixedCharges ?? []).map(
+      ([name, startsOn, amountCents], index) => ({
+        id: `${leaseId}-f${index}`,
+        name,
         startsOn,
         amountCents,
       }),
@@ -375,5 +385,37 @@ describe("monthCharges", () => {
     expect(estimateOn(l, "cam", "2024-03-01")).toBe(10);
     expect(estimateOn(l, "cam", "2024-12-01")).toBe(20);
     expect(paysOn(l, "cam", "2024-02-29")).toBe(false);
+  });
+
+  it("adds each fixed charge in effect on the due date", () => {
+    const a = account([
+      termsLease("l", "2024-02-15", "2027-12-31", {
+        rent: [["2024-02-15", 234_243]],
+        estimates: [["tax", "2024-02-15", 50_000]],
+        fixedCharges: [
+          ["Sign", "2024-02-15", 3_500],
+          ["Trash", "2024-03-01", 5_000],
+          ["Trash", "2024-06-15", 0],
+        ],
+      }),
+    ]);
+
+    const february = monthCharges(a, "2024-02");
+    expect(february.fixedCharges).toEqual([
+      { name: "Sign", amountCents: 3_500 },
+    ]);
+    expect(february.totalCents).toBe(234_243 + 50_000 + 3_500);
+
+    const march = monthCharges(a, "2024-03");
+    expect(march.fixedCharges).toEqual([
+      { name: "Sign", amountCents: 3_500 },
+      { name: "Trash", amountCents: 5_000 },
+    ]);
+    expect(march.rentCents).toBe(234_243);
+    expect(march.totalCents).toBe(234_243 + 50_000 + 8_500);
+    expect(monthlyExpected(a, "2024-06")).toBe(234_243 + 50_000 + 8_500);
+    expect(monthCharges(a, "2024-07").fixedCharges).toEqual([
+      { name: "Sign", amountCents: 3_500 },
+    ]);
   });
 });

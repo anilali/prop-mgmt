@@ -36,6 +36,7 @@ describe.skipIf(!databaseUrl)("PGLeaseDocumentStore", () => {
       insuranceExpiresOn: null,
       rentSteps: [{ id: randomUUID(), startsOn: startDate, amountCents: 1000 }],
       estimateSteps: [],
+      fixedChargeSteps: [],
     };
   }
 

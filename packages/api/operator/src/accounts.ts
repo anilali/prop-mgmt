@@ -87,6 +87,7 @@ export function toAccountTerms(account: AccountView | Account): AccountTerms {
       insuranceExpiresOn: lease.insuranceExpiresOn,
       rentSteps: lease.rentSteps,
       estimateSteps: lease.estimateSteps,
+      fixedChargeSteps: lease.fixedChargeSteps,
     })),
   };
 }
@@ -97,6 +98,9 @@ export function toLeaseTerms(
 ): LeaseTermsInput {
   const existingStepIds = new Set(
     existing?.rentSteps.map((step) => step.id) ?? [],
+  );
+  const existingChargeStepIds = new Set(
+    existing?.fixedChargeSteps.map((step) => step.id) ?? [],
   );
   return {
     startDate: input.startDate,
@@ -117,6 +121,17 @@ export function toLeaseTerms(
         amountCents: step.amountCents,
       })),
     ),
+    fixedChargeSteps: input.fixedCharges.flatMap((charge) =>
+      charge.steps.map((step) => ({
+        id:
+          step.id && existingChargeStepIds.has(step.id)
+            ? step.id
+            : randomUUID(),
+        name: charge.name,
+        startsOn: step.startsOn,
+        amountCents: step.amountCents,
+      })),
+    ),
   };
 }
 
@@ -131,6 +146,11 @@ function leaseTermsKey(lease: Lease): string {
     lease.rentSteps.map((step) => [step.startsOn, step.amountCents]),
     lease.estimateSteps.map((step) => [
       step.poolId,
+      step.startsOn,
+      step.amountCents,
+    ]),
+    lease.fixedChargeSteps.map((step) => [
+      step.name,
       step.startsOn,
       step.amountCents,
     ]),

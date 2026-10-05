@@ -66,6 +66,9 @@ export function LeaseCard({
   ].sort((a, b) => poolOrder(a) - poolOrder(b));
   const poolName = (poolId: string) =>
     pools.find((pool) => pool.id === poolId)?.name ?? "Other pool";
+  const chargeNames = [
+    ...new Set(lease.fixedChargeSteps.map((step) => step.name)),
+  ];
 
   return (
     <section className="space-y-4 rounded-lg border p-4">
@@ -187,6 +190,42 @@ export function LeaseCard({
                       <TableRow key={step.id}>
                         <TableCell className="font-medium">
                           {index === 0 ? poolName(poolId) : null}
+                        </TableCell>
+                        <TableCell>{formatDate(step.startsOn)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCents(step.amountCents)}
+                        </TableCell>
+                      </TableRow>
+                    )),
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Fixed monthly charges</h3>
+          {chargeNames.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              This lease has no fixed charges.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Charge</TableHead>
+                  <TableHead>Starts</TableHead>
+                  <TableHead className="text-right">Monthly</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {chargeNames.flatMap((name) =>
+                  lease.fixedChargeSteps
+                    .filter((step) => step.name === name)
+                    .map((step, index) => (
+                      <TableRow key={step.id}>
+                        <TableCell className="font-medium">
+                          {index === 0 ? name : null}
                         </TableCell>
                         <TableCell>{formatDate(step.startsOn)}</TableCell>
                         <TableCell className="text-right tabular-nums">

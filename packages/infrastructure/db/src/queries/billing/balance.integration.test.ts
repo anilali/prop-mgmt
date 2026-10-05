@@ -48,6 +48,7 @@ function toTerms(view: AccountView): AccountTerms {
       insuranceExpiresOn: lease.insuranceExpiresOn,
       rentSteps: lease.rentSteps,
       estimateSteps: lease.estimateSteps,
+      fixedChargeSteps: lease.fixedChargeSteps,
     })),
   };
 }
@@ -131,6 +132,7 @@ describe.skipIf(!databaseUrl)("balance through PGBillingQueries", () => {
           [insurance, 9_000],
           [water, 15_000],
         ]),
+        fixedChargeSteps: [],
       },
     );
     account.addLease({
@@ -150,6 +152,7 @@ describe.skipIf(!databaseUrl)("balance through PGBillingQueries", () => {
         [insurance, 9_500],
         [water, 16_000],
       ]),
+      fixedChargeSteps: [],
     });
     await accountRepository.save(account);
 

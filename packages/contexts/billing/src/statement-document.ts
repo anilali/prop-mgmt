@@ -36,6 +36,7 @@ export interface StatementData {
   continuing: {
     effectiveDate: IsoDate;
     baseRentCents: number;
+    fixedCharges: { name: string; amountCents: number }[];
     newEstimates: {
       poolId: string;
       name: string;

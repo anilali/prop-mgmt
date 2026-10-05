@@ -122,6 +122,35 @@ export const leaseEstimateSteps = leaseMgmtSchema.table(
   ],
 );
 
+export const leaseFixedChargeSteps = leaseMgmtSchema.table(
+  "lease_fixed_charge_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leaseId: uuid("lease_id")
+      .notNull()
+      .references(() => leases.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 40 }).notNull(),
+    startsOn: date("starts_on", { mode: "string" }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("lease_fixed_charge_steps_lease_id_name_starts_on_unique").on(
+      table.leaseId,
+      table.name,
+      table.startsOn,
+    ),
+    check(
+      "lease_fixed_charge_steps_amount_check",
+      sql`${table.amountCents} >= 0`,
+    ),
+  ],
+);
+
 export const leaseDocuments = leaseMgmtSchema.table(
   "lease_documents",
   {

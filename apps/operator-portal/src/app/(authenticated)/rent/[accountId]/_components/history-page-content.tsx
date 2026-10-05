@@ -118,11 +118,20 @@ function RowDescription({
         <>
           <span className="font-medium">
             {formatMonth(row.month)} rent
-            {row.estimates.length > 0 ? " + estimates" : ""}
+            {row.estimates.length > 0
+              ? " + estimates"
+              : row.fixedCharges.length > 0
+                ? " + charges"
+                : ""}
           </span>
-          {row.estimates.length > 0 ? (
+          {row.estimates.length > 0 || row.fixedCharges.length > 0 ? (
             <p className="text-muted-foreground text-xs tabular-nums">
               Rent {formatCents(row.rentCents)}
+              {row.fixedCharges.map((charge) => (
+                <span key={charge.name}>
+                  , {charge.name} {formatCents(charge.amountCents)}
+                </span>
+              ))}
               {row.estimates.map((estimate) => (
                 <span key={estimate.poolId}>
                   , {estimate.poolName} {formatCents(estimate.amountCents)}

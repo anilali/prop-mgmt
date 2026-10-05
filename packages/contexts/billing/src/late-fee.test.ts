@@ -25,6 +25,7 @@ function lease(
     lateFee?: { amountCents: number; day: number } | null;
     rentCents?: number;
     camCents?: number;
+    fixedCharges?: [string, number][];
   } = {},
 ): LeaseTerms {
   const startDate = options.startDate ?? "2025-06-01";
@@ -54,6 +55,14 @@ function lease(
         amountCents: options.camCents ?? CAM,
       },
     ],
+    fixedChargeSteps: (options.fixedCharges ?? []).map(
+      ([name, amountCents]) => ({
+        id: `f-${name}-${startDate}`,
+        name,
+        startsOn: startDate,
+        amountCents,
+      }),
+    ),
   };
 }
 
@@ -163,6 +172,23 @@ describe("lateFeeSuggestion", () => {
     ]);
     expect(balanceOn(approved, "2026-03-15")).toBe(70_482);
     expect(lateFeeSuggestion(approved, "2026-03", "2026-03-15")).toBeNull();
+  });
+
+  it("expects fixed charges as part of the month", () => {
+    const terms = account({ fixedCharges: [["Sign", 3_500]] });
+    const months = ["01", "02"].map((m) =>
+      pay(`2026-${m}-01`, MONTHLY + 3_500),
+    );
+    const rentOnly = ledger([...months, pay("2026-03-05")], [], terms);
+    expect(lateFeeSuggestion(rentOnly, "2026-03", "2026-03-11")).toMatchObject({
+      amountCents: FEE,
+    });
+    const withSign = ledger(
+      [...months, pay("2026-03-05", MONTHLY + 3_500)],
+      [],
+      terms,
+    );
+    expect(lateFeeSuggestion(withSign, "2026-03", "2026-03-11")).toBeNull();
   });
 
   it("suggests nothing for an autopay on the 5th with fee day 10", () => {

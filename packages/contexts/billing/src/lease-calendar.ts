@@ -159,11 +159,33 @@ export function estimateOn(
   return step ? step.amountCents : null;
 }
 
+export interface FixedChargeAmount {
+  name: string;
+  amountCents: number;
+}
+
+export function fixedChargesOn(
+  lease: LeaseTerms,
+  date: IsoDate,
+): FixedChargeAmount[] {
+  const names = [...new Set(lease.fixedChargeSteps.map((s) => s.name))];
+  return names.flatMap((name) => {
+    const step = stepOn(
+      lease.fixedChargeSteps.filter((s) => s.name === name),
+      date,
+    );
+    return step && step.amountCents > 0
+      ? [{ name, amountCents: step.amountCents }]
+      : [];
+  });
+}
+
 export interface MonthCharges {
   month: YearMonth;
   dueDate: IsoDate;
   leaseId: string;
   rentCents: number;
+  fixedCharges: FixedChargeAmount[];
   estimates: { poolId: string; amountCents: number }[];
   totalCents: number;
 }
@@ -180,13 +202,18 @@ export function monthCharges(
     const amountCents = estimateOn(lease, poolId, due);
     return amountCents === null ? [] : [{ poolId, amountCents }];
   });
+  const fixedCharges = fixedChargesOn(lease, due);
   return {
     month,
     dueDate: due,
     leaseId: lease.leaseId,
     rentCents,
+    fixedCharges,
     estimates,
-    totalCents: estimates.reduce((sum, e) => sum + e.amountCents, rentCents),
+    totalCents: [...fixedCharges, ...estimates].reduce(
+      (sum, charge) => sum + charge.amountCents,
+      rentCents,
+    ),
   };
 }
 

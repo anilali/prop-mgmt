@@ -1,7 +1,7 @@
 import type { IsoDate, YearMonth } from "@moonship/shared";
 import { addDays, monthOf } from "@moonship/shared";
 
-import type { MonthCharges } from "./lease-calendar";
+import type { FixedChargeAmount, MonthCharges } from "./lease-calendar";
 import type { AccountTerms, LedgerEntry, LedgerEntryKind, Txn } from "./types";
 import { accountStart, countedMonths, monthCharges } from "./lease-calendar";
 
@@ -39,6 +39,7 @@ export type HistoryRow =
       month: YearMonth;
       leaseId: string;
       rentCents: number;
+      fixedCharges: FixedChargeAmount[];
       estimates: { poolId: string; amountCents: number }[];
     })
   | (HistoryRowBase & {
@@ -200,6 +201,7 @@ export function historyRows(
       month: charges.month,
       leaseId: charges.leaseId,
       rentCents: charges.rentCents,
+      fixedCharges: charges.fixedCharges,
       estimates: charges.estimates,
       amountCents: charges.totalCents,
       balanceCents: 0,

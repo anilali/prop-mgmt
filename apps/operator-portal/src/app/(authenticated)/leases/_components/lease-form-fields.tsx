@@ -17,6 +17,7 @@ import {
 } from "@moonship/ui/select";
 
 import type {
+  FixedChargeRow,
   IncreaseMode,
   LeaseFormState,
   PoolEstimate,
@@ -70,6 +71,29 @@ export function LeaseFormFields({
         ...prev.estimates,
         [poolId]: update(prev.estimates[poolId] ?? { pays: false, steps: [] }),
       },
+    }));
+
+  const setCharge = (
+    key: string,
+    update: (charge: FixedChargeRow) => FixedChargeRow,
+  ) =>
+    onChange((prev) => ({
+      ...prev,
+      fixedCharges: prev.fixedCharges.map((charge) =>
+        charge.key === key ? update(charge) : charge,
+      ),
+    }));
+
+  const setChargeStep = (
+    chargeKey: string,
+    stepKey: string,
+    patch: Partial<StepRow>,
+  ) =>
+    setCharge(chargeKey, (charge) => ({
+      ...charge,
+      steps: charge.steps.map((step) =>
+        step.key === stepKey ? { ...step, ...patch } : step,
+      ),
     }));
 
   const applyIncrease = () => {
@@ -341,6 +365,133 @@ export function LeaseFormFields({
             </div>
           );
         })}
+      </section>
+
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold">Fixed monthly charges</h3>
+          <p className="text-muted-foreground text-sm">
+            Charges like sign rent or trash. They are part of each month's rent
+            and are not reconciled at year end.
+          </p>
+        </div>
+        {value.fixedCharges.map((charge) => (
+          <div key={charge.key} className="space-y-2 rounded-md border p-3">
+            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+              <Input
+                aria-label="Charge name"
+                placeholder="Name, like Sign or Trash"
+                maxLength={40}
+                value={charge.name}
+                onChange={(e) =>
+                  setCharge(charge.key, (current) => ({
+                    ...current,
+                    name: e.target.value,
+                  }))
+                }
+                required
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Remove fixed charge"
+                onClick={() =>
+                  onChange((prev) => ({
+                    ...prev,
+                    fixedCharges: prev.fixedCharges.filter(
+                      (c) => c.key !== charge.key,
+                    ),
+                  }))
+                }
+              >
+                <X />
+              </Button>
+            </div>
+            {charge.steps.map((step) => (
+              <div
+                key={step.key}
+                className="grid grid-cols-[1fr_1fr_auto] items-center gap-2"
+              >
+                <Input
+                  type="date"
+                  aria-label="Starts on"
+                  value={step.startsOn}
+                  onChange={(e) =>
+                    setChargeStep(charge.key, step.key, {
+                      startsOn: e.target.value,
+                    })
+                  }
+                  required
+                />
+                <Input
+                  inputMode="decimal"
+                  aria-label="Monthly amount"
+                  placeholder="Monthly amount"
+                  value={step.amount}
+                  onChange={(e) =>
+                    setChargeStep(charge.key, step.key, {
+                      amount: e.target.value,
+                    })
+                  }
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remove charge step"
+                  onClick={() =>
+                    setCharge(charge.key, (current) => ({
+                      ...current,
+                      steps: current.steps.filter((s) => s.key !== step.key),
+                    }))
+                  }
+                >
+                  <X />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCharge(charge.key, (current) => ({
+                  ...current,
+                  steps: [
+                    ...current.steps,
+                    { key: newRowKey(), startsOn: "", amount: "" },
+                  ],
+                }))
+              }
+            >
+              Add charge step
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            onChange((prev) => ({
+              ...prev,
+              fixedCharges: [
+                ...prev.fixedCharges,
+                {
+                  key: newRowKey(),
+                  name: "",
+                  steps: [
+                    { key: newRowKey(), startsOn: prev.startDate, amount: "" },
+                  ],
+                },
+              ],
+            }))
+          }
+        >
+          Add fixed charge
+        </Button>
       </section>
 
       <section className="space-y-3">

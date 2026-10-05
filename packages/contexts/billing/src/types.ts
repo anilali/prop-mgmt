@@ -21,6 +21,12 @@ export interface LeaseTerms {
     startsOn: IsoDate;
     amountCents: number;
   }[];
+  fixedChargeSteps: {
+    id: string;
+    name: string;
+    startsOn: IsoDate;
+    amountCents: number;
+  }[];
 }
 
 export interface AccountTerms {

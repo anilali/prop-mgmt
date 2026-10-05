@@ -235,6 +235,7 @@ describe.skipIf(!databaseUrl)("reconciliation.finalize on Postgres", () => {
               amountCents: 90_000,
             },
           ],
+          fixedChargeSteps: [],
         },
       ),
     );

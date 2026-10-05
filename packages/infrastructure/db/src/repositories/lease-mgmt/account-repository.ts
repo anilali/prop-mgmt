@@ -8,6 +8,7 @@ import type { DbExecutor } from "../../client";
 import {
   accounts,
   leaseEstimateSteps,
+  leaseFixedChargeSteps,
   leaseRentSteps,
   leases,
 } from "../../schemas/lease-mgmt/schema";
@@ -115,6 +116,9 @@ export class PGAccountRepository implements AccountRepository {
       await tx
         .delete(leaseEstimateSteps)
         .where(inArray(leaseEstimateSteps.leaseId, leaseIds));
+      await tx
+        .delete(leaseFixedChargeSteps)
+        .where(inArray(leaseFixedChargeSteps.leaseId, leaseIds));
 
       const rentRows = accountLeases.flatMap((lease) =>
         lease.rentSteps.map((step) => ({
@@ -139,6 +143,18 @@ export class PGAccountRepository implements AccountRepository {
       );
       if (estimateRows.length > 0) {
         await tx.insert(leaseEstimateSteps).values(estimateRows);
+      }
+      const fixedChargeRows = accountLeases.flatMap((lease) =>
+        lease.fixedChargeSteps.map((step) => ({
+          id: step.id,
+          leaseId: lease.id,
+          name: step.name,
+          startsOn: step.startsOn,
+          amountCents: step.amountCents,
+        })),
+      );
+      if (fixedChargeRows.length > 0) {
+        await tx.insert(leaseFixedChargeSteps).values(fixedChargeRows);
       }
     });
     account.markSaved();

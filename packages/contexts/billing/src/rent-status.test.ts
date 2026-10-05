@@ -39,6 +39,7 @@ function account(
           },
         ],
         estimateSteps: [],
+        fixedChargeSteps: [],
       },
     ],
   };

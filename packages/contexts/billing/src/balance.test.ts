@@ -317,6 +317,39 @@ describe("history rows", () => {
       amountCents: 427_500,
     });
     expect(june?.kind === "month" ? june.estimates : []).toHaveLength(4);
+    expect(june?.kind === "month" ? june.fixedCharges : null).toEqual([]);
+  });
+
+  it("adds fixed charges to the month and the balance", () => {
+    const lease = superLucky.leases[0];
+    if (!lease) throw new Error("Super Lucky needs a lease");
+    const account: AccountTerms = {
+      ...superLucky,
+      leases: [
+        {
+          ...lease,
+          fixedChargeSteps: [
+            {
+              id: "sign",
+              name: "Sign",
+              startsOn: "2023-01-01",
+              amountCents: 3_500,
+            },
+          ],
+        },
+      ],
+    };
+    const ledger = ledgerFor(account);
+    const january = historyRows(ledger, "2024-01-31").find(
+      (r) => r.kind === "month",
+    );
+
+    expect(january).toMatchObject({
+      rentCents: 250_000,
+      fixedCharges: [{ name: "Sign", amountCents: 3_500 }],
+      amountCents: 365_482 + 3_500,
+    });
+    expect(balanceOn(ledger, "2024-12-31")).toBe(41_374 + 12 * 3_500);
   });
 
   it("ends at the year-end balance for each section 6 account", () => {

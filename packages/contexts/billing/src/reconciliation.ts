@@ -2,6 +2,7 @@ import type { Address, IsoDate, YearMonth } from "@moonship/shared";
 import { formatCents, monthOf, prorate } from "@moonship/shared";
 
 import type { AccountLedger } from "./balance";
+import type { FixedChargeAmount } from "./lease-calendar";
 import type { StatementData } from "./statement-document";
 import type {
   AccountTerms,
@@ -20,6 +21,7 @@ import {
   coveringLease,
   dueDate,
   estimateOn,
+  fixedChargesOn,
   isHoldover,
   leaseForMonth,
   openOn,
@@ -136,6 +138,7 @@ export interface ContinuingTerms {
   leaseStartDate: IsoDate;
   effectiveDate: IsoDate;
   baseRentCents: number;
+  fixedCharges: FixedChargeAmount[];
   newEstimates: NewEstimate[];
   newMonthlyRentCents: number | null;
   insuranceExpiresOn: IsoDate | null;
@@ -415,6 +418,8 @@ export function accountStatement(input: {
       ];
     });
     const baseRentCents = rentOn(nextLease, jan1);
+    const fixedCharges = fixedChargesOn(nextLease, jan1);
+    const fixedCents = sum(fixedCharges.map((c) => c.amountCents));
     const leaseEstimates: LeaseEstimate[] = input.pools.flatMap((pool) => {
       const amountCents = estimateOn(nextLease, pool.poolId, jan1);
       return amountCents === null
@@ -426,9 +431,12 @@ export function accountStatement(input: {
       leaseStartDate: nextLease.startDate,
       effectiveDate: jan1,
       baseRentCents,
+      fixedCharges,
       newEstimates,
       newMonthlyRentCents: newEstimates.every((e) => e.amountCents !== null)
-        ? baseRentCents + sum(newEstimates.map((e) => e.amountCents ?? 0))
+        ? baseRentCents +
+          fixedCents +
+          sum(newEstimates.map((e) => e.amountCents ?? 0))
         : null,
       insuranceExpiresOn: nextLease.insuranceExpiresOn,
       insuranceRequest:
@@ -437,7 +445,9 @@ export function accountStatement(input: {
       leaseOnJanuary1: {
         estimates: leaseEstimates,
         monthlyRentCents:
-          baseRentCents + sum(leaseEstimates.map((e) => e.amountCents)),
+          baseRentCents +
+          fixedCents +
+          sum(leaseEstimates.map((e) => e.amountCents)),
       },
     };
   }
@@ -503,6 +513,9 @@ export function statementData(input: {
     continuing = {
       effectiveDate: statement.continuing.effectiveDate,
       baseRentCents: statement.continuing.baseRentCents,
+      fixedCharges: statement.continuing.fixedCharges.map((charge) => ({
+        ...charge,
+      })),
       newEstimates: statement.continuing.newEstimates.map((estimate) => ({
         poolId: estimate.poolId,
         name: estimate.name,

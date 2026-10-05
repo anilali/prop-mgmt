@@ -24,7 +24,11 @@ export {
   LEDGER_ENTRY_KINDS,
 } from "./types";
 
-export type { AccountState, MonthCharges } from "./lease-calendar";
+export type {
+  AccountState,
+  FixedChargeAmount,
+  MonthCharges,
+} from "./lease-calendar";
 export {
   accountEnd,
   accountStart,
@@ -34,6 +38,7 @@ export {
   coveringLease,
   dueDate,
   estimateOn,
+  fixedChargesOn,
   isCounted,
   isHoldover,
   leaseForMonth,

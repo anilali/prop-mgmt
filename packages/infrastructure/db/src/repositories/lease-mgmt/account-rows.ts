@@ -1,4 +1,4 @@
-import { asc, inArray } from "drizzle-orm";
+import { asc, inArray, sql } from "drizzle-orm";
 
 import type { AccountView, Lease } from "@moonship/lease-mgmt";
 
@@ -6,6 +6,7 @@ import type { DbExecutor } from "../../client";
 import type { accounts } from "../../schemas/lease-mgmt/schema";
 import {
   leaseEstimateSteps,
+  leaseFixedChargeSteps,
   leaseRentSteps,
   leases,
 } from "../../schemas/lease-mgmt/schema";
@@ -35,6 +36,14 @@ export async function loadLeases(
     .from(leaseEstimateSteps)
     .where(inArray(leaseEstimateSteps.leaseId, leaseIds))
     .orderBy(asc(leaseEstimateSteps.startsOn), asc(leaseEstimateSteps.poolId));
+  const fixedChargeRows = await db
+    .select()
+    .from(leaseFixedChargeSteps)
+    .where(inArray(leaseFixedChargeSteps.leaseId, leaseIds))
+    .orderBy(
+      asc(sql`lower(${leaseFixedChargeSteps.name})`),
+      asc(leaseFixedChargeSteps.startsOn),
+    );
 
   for (const row of leaseRows) {
     const lease: Lease = {
@@ -60,6 +69,14 @@ export async function loadLeases(
         .map((step) => ({
           id: step.id,
           poolId: step.poolId,
+          startsOn: step.startsOn,
+          amountCents: step.amountCents,
+        })),
+      fixedChargeSteps: fixedChargeRows
+        .filter((step) => step.leaseId === row.id)
+        .map((step) => ({
+          id: step.id,
+          name: step.name,
           startsOn: step.startsOn,
           amountCents: step.amountCents,
         })),

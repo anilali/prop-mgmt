@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { FIXED_CHARGE_NAME_MAX_LENGTH } from "@moonship/lease-mgmt";
 import { isIsoDate, isYearMonth, MAX_CENTS } from "@moonship/shared";
 
 export const isoDate = z
@@ -44,6 +45,22 @@ export const leaseInputSchema = z.object({
         steps: z
           .array(
             z.object({
+              startsOn: isoDate,
+              amountCents: nonNegativeCentsSchema,
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .default([]),
+  fixedCharges: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(FIXED_CHARGE_NAME_MAX_LENGTH),
+        steps: z
+          .array(
+            z.object({
+              id: idSchema.optional(),
               startsOn: isoDate,
               amountCents: nonNegativeCentsSchema,
             }),

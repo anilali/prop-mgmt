@@ -90,12 +90,13 @@ A lease belongs to an account and has:
 - **Start date and end date.** A move-out date is added when the tenant leaves, early or as planned.
 - **Base rent.** A list of monthly amounts, each with the date it starts. An "Add increase" helper takes a date and a percentage or a new amount.
 - **Estimates.** For each pool the unit is in, a monthly estimate with the date it starts. The lease pays a pool from its first estimate for that pool, which can be partway through the lease. Estimates change each January 1 after the reconciliation.
+- **Fixed charges.** Optional monthly extras that are not reconciled, such as sign rent ($35) or trash ($50). Each has a name and a list of monthly amounts, each with the date it starts. An amount of 0 stops the charge.
 - **Late fee.** Optional. A flat amount, and the day of the month after which it applies, such as the 10th.
 - **Insurance certificate.** The date the tenant's current certificate expires, if one is on file.
 
-An account expects rent every month it's active for at least one day, counting from the later of its start and the tracking start. Each counted month expects the full base rent and estimates in effect on the later of the 1st and the account's start. A renewal that starts mid-month bills that month at the old lease's terms.
+An account expects rent every month it's active for at least one day, counting from the later of its start and the tracking start. Each counted month expects the full base rent, estimates, and fixed charges in effect on the later of the 1st and the account's start. A renewal that starts mid-month bills that month at the old lease's terms.
 
-If the newest lease passes its end date with no move-out date, the account keeps expecting that lease's last rent and estimates until the owner adds a renewal or a move-out date.
+If the newest lease passes its end date with no move-out date, the account keeps expecting that lease's last rent, estimates, and fixed charges until the owner adds a renewal or a move-out date.
 
 A tenant moving to another unit gets a new account. The remaining balance moves with an adjustment on each account.
 
@@ -175,8 +176,10 @@ A pool's actual cost is the year's transactions in its category, with refunds su
 true-up             = the balances for every pool, added up
 balance on account  = true-up + the account's balance at the end of December 31
 new monthly estimate, per pool = pool's actual cost x share / 12
-new monthly rent    = base rent on January 1 + the new estimates
+new monthly rent    = base rent on January 1 + fixed charges on January 1 + the new estimates
 ```
+
+Fixed charges are not reconciled. They are not in the estimates, the true-up, or the pool table. They count in the monthly rent and the rent balance.
 
 The December 31 balance counts expected amounts through December only, before the true-up. The new estimate uses a full year's share even when the tenant was only there part of the year.
 

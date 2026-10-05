@@ -124,6 +124,10 @@ function seed2024(app: App) {
           id: uid(step.id),
           poolId: poolIdOf(step.poolId),
         })),
+        fixedChargeSteps: lease.fixedChargeSteps.map((step) => ({
+          ...step,
+          id: uid(step.id),
+        })),
       })),
     });
   }
@@ -857,6 +861,7 @@ describe("reconciliation.finalize", () => {
             },
           ],
           estimateSteps: [],
+          fixedChargeSteps: [],
         },
       ];
     });

@@ -60,6 +60,7 @@ function lease(props: {
         amountCents,
       }),
     ),
+    fixedChargeSteps: [],
   };
 }
 

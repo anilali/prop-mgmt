@@ -179,6 +179,7 @@ describe("6.1 Super Lucky, full year", () => {
       leaseStartDate: "2023-01-01",
       effectiveDate: "2025-01-01",
       baseRentCents: 250_000,
+      fixedCharges: [],
       newEstimates: [
         {
           poolId: POOLS.cam,
@@ -249,6 +250,71 @@ describe("6.1 Super Lucky, full year", () => {
     expect(statement.data?.rows.map((row) => row.actualCents)).toEqual([
       1_289_119, 3_354_231, 628_400,
     ]);
+  });
+});
+
+describe("fixed monthly charges", () => {
+  const lease = superLucky.leases[0];
+  if (!lease) throw new Error("Super Lucky needs a lease");
+  const withCharges: AccountTerms = {
+    ...superLucky,
+    leases: [
+      {
+        ...lease,
+        fixedChargeSteps: [
+          {
+            id: "s1",
+            name: "Sign",
+            startsOn: "2023-01-01",
+            amountCents: 3_500,
+          },
+          {
+            id: "t1",
+            name: "Trash",
+            startsOn: "2023-01-01",
+            amountCents: 5_000,
+          },
+          {
+            id: "t2",
+            name: "Trash",
+            startsOn: "2025-01-01",
+            amountCents: 6_000,
+          },
+        ],
+      },
+    ],
+  };
+  const statement = statementFor(superLucky.accountId, {
+    accounts: [withCharges, tenantB, tenantD],
+  });
+
+  it("leaves the pool rows and true-up alone", () => {
+    expect(statement.trueUpCents).toBe(23_774);
+    expect(statement.rows.map((row) => row.estimatesCents)).toEqual([
+      322_332, 933_132, 130_320,
+    ]);
+  });
+
+  it("counts the charges in the rent balance", () => {
+    expect(statement.priorBalanceCents).toBe(41_374 + 12 * 8_500);
+  });
+
+  it("adds the charges in effect on January 1 to the new monthly rent", () => {
+    expect(statement.continuing?.fixedCharges).toEqual([
+      { name: "Sign", amountCents: 3_500 },
+      { name: "Trash", amountCents: 6_000 },
+    ]);
+    expect(statement.continuing?.newMonthlyRentCents).toBe(367_464 + 9_500);
+    expect(statement.continuing?.leaseOnJanuary1.monthlyRentCents).toBe(
+      365_482 + 9_500,
+    );
+    expect(statement.data?.continuing).toMatchObject({
+      fixedCharges: [
+        { name: "Sign", amountCents: 3_500 },
+        { name: "Trash", amountCents: 6_000 },
+      ],
+      newMonthlyRentCents: 376_964,
+    });
   });
 });
 

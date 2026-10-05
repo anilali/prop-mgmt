@@ -73,6 +73,7 @@ function lease(startDate: string, rentCents: number): LeaseTerms {
       },
     ],
     estimateSteps: [],
+    fixedChargeSteps: [],
   };
 }
 

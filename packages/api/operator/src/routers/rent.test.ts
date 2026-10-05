@@ -297,6 +297,65 @@ describe("rent.history", () => {
     ]);
   });
 
+  it("shows fixed charges in the month and counts them in the balance", async () => {
+    const { caller, cam } = await setup();
+    const accountId = await openAccount(caller, "H", {
+      rentCents: 234_243,
+      estimates: [
+        { poolId: cam.id, startsOn: "2026-01-01", amountCents: 16_000 },
+      ],
+      fixedCharges: [
+        {
+          name: "Sign",
+          steps: [{ startsOn: "2026-01-01", amountCents: 3_500 }],
+        },
+        {
+          name: "Trash",
+          steps: [{ startsOn: "2026-02-01", amountCents: 5_000 }],
+        },
+      ],
+    });
+
+    const history = await caller.rent.history({ accountId });
+    const months = history.rows.flatMap((row) =>
+      row.kind === "month" ? [row] : [],
+    );
+    expect(
+      months.map((row) => [
+        row.month,
+        row.rentCents,
+        row.fixedCharges,
+        row.amountCents,
+      ]),
+    ).toEqual([
+      [
+        "2026-01",
+        234_243,
+        [{ name: "Sign", amountCents: 3_500 }],
+        234_243 + 16_000 + 3_500,
+      ],
+      [
+        "2026-02",
+        234_243,
+        [
+          { name: "Sign", amountCents: 3_500 },
+          { name: "Trash", amountCents: 5_000 },
+        ],
+        234_243 + 16_000 + 8_500,
+      ],
+      [
+        "2026-03",
+        234_243,
+        [
+          { name: "Sign", amountCents: 3_500 },
+          { name: "Trash", amountCents: 5_000 },
+        ],
+        234_243 + 16_000 + 8_500,
+      ],
+    ]);
+    expect(history.balanceCents).toBe(3 * 250_243 + 3_500 + 2 * 8_500);
+  });
+
   it("shows a split payment and a same-day bounce", async () => {
     const { app, caller, ids } = await setup();
     const splitId = randomUUID();

@@ -9,6 +9,7 @@ import { PGAccountQueries } from "../../queries/lease-mgmt/account-queries";
 import {
   accounts,
   leaseEstimateSteps,
+  leaseFixedChargeSteps,
   leaseRentSteps,
   leases,
 } from "../../schemas/lease-mgmt/schema";
@@ -63,6 +64,26 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
             amountCents: 22_000,
           },
         ],
+        fixedChargeSteps: [
+          {
+            id: randomUUID(),
+            name: "Trash",
+            startsOn: "2023-06-15",
+            amountCents: 5_000,
+          },
+          {
+            id: randomUUID(),
+            name: "Sign",
+            startsOn: "2023-06-15",
+            amountCents: 3_500,
+          },
+          {
+            id: randomUUID(),
+            name: "Sign",
+            startsOn: "2024-01-01",
+            amountCents: 4_000,
+          },
+        ],
       },
     );
     return { account, propertyId, accountId, poolId, firstLeaseId };
@@ -90,6 +111,7 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
           amountCents: 23_000,
         },
       ],
+      fixedChargeSteps: [],
     });
     const notifiedStep = account.findLease(firstLeaseId)?.rentSteps[1];
     if (!notifiedStep) throw new Error("missing rent step");
@@ -101,10 +123,22 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
     expect(loaded?.openingBalanceCents).toBe(-36_279);
     expect(loaded?.leases).toEqual(account.leases);
     expect(
+      loaded
+        ?.findLease(firstLeaseId)
+        ?.fixedChargeSteps.map((step) => [step.name, step.startsOn]),
+    ).toEqual([
+      ["Sign", "2023-06-15"],
+      ["Sign", "2024-01-01"],
+      ["Trash", "2023-06-15"],
+    ]);
+    expect(
       loaded?.findLease(firstLeaseId)?.rentSteps[1]?.tenantNotifiedAt,
     ).toEqual(notifiedAt);
 
     if (!loaded) throw new Error("missing account");
+    const keptCharges = (loaded.findLease(firstLeaseId)?.fixedChargeSteps ?? [])
+      .filter((step) => step.name === "Sign")
+      .map((step) => ({ ...step, amountCents: step.amountCents + 100 }));
     const editedTerms = {
       startDate: "2023-06-15",
       endDate: "2024-06-14",
@@ -112,6 +146,7 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
       lateFee: { amountCents: 7500, day: 5 },
       insuranceExpiresOn: null,
       estimateSteps: [],
+      fixedChargeSteps: keptCharges,
     };
     loaded.updateLease(firstLeaseId, {
       ...editedTerms,
@@ -128,6 +163,7 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
     expect(firstLease?.rentSteps[1]?.tenantNotifiedAt).toEqual(notifiedAt);
     expect(firstLease?.lateFee).toEqual({ amountCents: 7500, day: 5 });
     expect(firstLease?.estimateSteps).toEqual([]);
+    expect(firstLease?.fixedChargeSteps).toEqual(keptCharges);
 
     if (!reloaded) throw new Error("missing account");
     reloaded.updateLease(firstLeaseId, {
@@ -204,6 +240,7 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
         { id: randomUUID(), startsOn: "2024-06-15", amountCents: 315_000 },
       ],
       estimateSteps: [],
+      fixedChargeSteps: [],
     });
     await repo.save(account);
 
@@ -226,6 +263,12 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
         .select()
         .from(leaseEstimateSteps)
         .where(eq(leaseEstimateSteps.leaseId, firstLeaseId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(leaseFixedChargeSteps)
+        .where(eq(leaseFixedChargeSteps.leaseId, firstLeaseId)),
     ).toHaveLength(0);
   });
 

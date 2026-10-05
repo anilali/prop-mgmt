@@ -1,8 +1,13 @@
 // Aggregates
-export { Account, StaleAccountError } from "./aggregates/account";
+export {
+  Account,
+  FIXED_CHARGE_NAME_MAX_LENGTH,
+  StaleAccountError,
+} from "./aggregates/account";
 export type {
   AccountProps,
   EstimateStep,
+  FixedChargeStep,
   LateFee,
   Lease,
   LeaseTermsInput,

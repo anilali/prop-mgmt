@@ -639,6 +639,121 @@ describe("lease procedures", () => {
     expect(updatedIds?.[1]).not.toBe(unknownId);
   });
 
+  it("saves fixed charges and keeps their step ids on edit", async () => {
+    const { caller, accountId, opened } = await openOnA();
+    const leaseId = opened.account.leases[0]?.id;
+    if (!leaseId) throw new Error("missing lease");
+    const unknownId = "66666666-6666-4666-8666-666666666666";
+
+    const saved = await caller.lease.update({
+      accountId,
+      expectedVersion: await versionOf(caller, accountId),
+      leaseId,
+      lease: leaseInput({
+        startDate: "2025-01-01",
+        endDate: "2025-12-31",
+        fixedCharges: [
+          {
+            name: " Trash ",
+            steps: [{ startsOn: "2025-01-01", amountCents: 5_000 }],
+          },
+          {
+            name: "Sign",
+            steps: [
+              { id: unknownId, startsOn: "2025-01-01", amountCents: 3_500 },
+            ],
+          },
+        ],
+      }),
+    });
+    const steps = saved.account.leases[0]?.fixedChargeSteps ?? [];
+    expect(steps.map((s) => [s.name, s.startsOn, s.amountCents])).toEqual([
+      ["Sign", "2025-01-01", 3_500],
+      ["Trash", "2025-01-01", 5_000],
+    ]);
+    expect(steps.map((s) => s.id)).not.toContain(unknownId);
+    const signId = steps[0]?.id;
+
+    const edited = await caller.lease.update({
+      accountId,
+      expectedVersion: await versionOf(caller, accountId),
+      leaseId,
+      lease: leaseInput({
+        startDate: "2025-01-01",
+        endDate: "2025-12-31",
+        fixedCharges: [
+          {
+            name: "Sign",
+            steps: [
+              { id: signId, startsOn: "2025-01-01", amountCents: 3_500 },
+              { startsOn: "2025-07-01", amountCents: 4_000 },
+            ],
+          },
+        ],
+      }),
+    });
+    const after = edited.account.leases[0]?.fixedChargeSteps ?? [];
+    expect(after.map((s) => [s.name, s.startsOn, s.amountCents])).toEqual([
+      ["Sign", "2025-01-01", 3_500],
+      ["Sign", "2025-07-01", 4_000],
+    ]);
+    expect(after[0]?.id).toBe(signId);
+  });
+
+  it("rejects a stale fixed charge edit and a duplicate charge name", async () => {
+    const { caller, accountId, opened } = await openOnA();
+    const leaseId = opened.account.leases[0]?.id;
+    if (!leaseId) throw new Error("missing lease");
+    const version = await versionOf(caller, accountId);
+    const sign = {
+      name: "Sign",
+      steps: [{ startsOn: "2025-01-01", amountCents: 3_500 }],
+    };
+
+    await caller.lease.update({
+      accountId,
+      expectedVersion: version,
+      leaseId,
+      lease: leaseInput({
+        startDate: "2025-01-01",
+        endDate: "2025-12-31",
+        fixedCharges: [sign],
+      }),
+    });
+    const stale = await codeOf(
+      caller.lease.update({
+        accountId,
+        expectedVersion: version,
+        leaseId,
+        lease: leaseInput({
+          startDate: "2025-01-01",
+          endDate: "2025-12-31",
+          fixedCharges: [],
+        }),
+      }),
+    );
+    expect(stale).toBe("CONFLICT");
+
+    await expect(
+      caller.lease.update({
+        accountId,
+        expectedVersion: await versionOf(caller, accountId),
+        leaseId,
+        lease: leaseInput({
+          startDate: "2025-01-01",
+          endDate: "2025-12-31",
+          fixedCharges: [
+            sign,
+            {
+              name: "sign",
+              steps: [{ startsOn: "2025-07-01", amountCents: 4_000 }],
+            },
+          ],
+        }),
+      }),
+    ).rejects.toThrow("Two fixed charges are named sign");
+  });
+
   it("checks pool membership only for leases the call adds or changes", async () => {
     const { caller, accountId, opened, a, poolId } = await openOnA();
     const water = poolId("Water");

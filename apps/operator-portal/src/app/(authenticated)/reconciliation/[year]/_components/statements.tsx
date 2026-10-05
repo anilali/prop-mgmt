@@ -242,6 +242,14 @@ function StatementCard({
             <dd className="text-right tabular-nums">
               {formatCents(continuing.baseRentCents)}
             </dd>
+            {continuing.fixedCharges.map((charge) => (
+              <div key={charge.name} className="contents">
+                <dt className="text-muted-foreground">{charge.name}</dt>
+                <dd className="text-right tabular-nums">
+                  {formatCents(charge.amountCents)}
+                </dd>
+              </div>
+            ))}
             {continuing.newEstimates.map((estimate) => (
               <div key={estimate.poolId} className="contents">
                 <dt className="text-muted-foreground">

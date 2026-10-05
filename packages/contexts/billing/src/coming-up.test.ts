@@ -44,6 +44,7 @@ function lease(
       tenantNotifiedAt: options.notifiedAt ?? null,
     })),
     estimateSteps: [],
+    fixedChargeSteps: [],
   };
 }
 

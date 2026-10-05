@@ -21,6 +21,7 @@ function buildTerms(overrides: Partial<LeaseTermsInput> = {}): LeaseTermsInput {
     estimateSteps: [
       { id: "est-1", poolId: CAM, startsOn: "2024-01-01", amountCents: 26_861 },
     ],
+    fixedChargeSteps: [],
     ...overrides,
   };
 }
@@ -335,6 +336,127 @@ describe("Account", () => {
           }),
         ),
       ).toThrow("Estimate must be a whole number of cents >= 0");
+    });
+  });
+
+  describe("fixed charges", () => {
+    function charge(
+      id: string,
+      name: string,
+      startsOn: string,
+      amountCents: number,
+    ) {
+      return { id, name, startsOn, amountCents };
+    }
+
+    it("keeps fixed charge steps sorted by name and date", () => {
+      const account = openAccount(
+        buildLease("lease-1", {
+          fixedChargeSteps: [
+            charge("t1", "Trash", "2024-01-01", 5_000),
+            charge("s2", "Sign", "2024-07-01", 4_000),
+            charge("s1", " Sign ", "2024-01-01", 3_500),
+          ],
+        }),
+      );
+
+      expect(account.leases[0]?.fixedChargeSteps).toEqual([
+        charge("s1", "Sign", "2024-01-01", 3_500),
+        charge("s2", "Sign", "2024-07-01", 4_000),
+        charge("t1", "Trash", "2024-01-01", 5_000),
+      ]);
+    });
+
+    it("keeps step ids across updates", () => {
+      const account = openAccount(
+        buildLease("lease-1", {
+          fixedChargeSteps: [charge("s1", "Sign", "2024-01-01", 3_500)],
+        }),
+      );
+      account.updateLease(
+        "lease-1",
+        buildTerms({
+          fixedChargeSteps: [
+            charge("s1", "Sign", "2024-01-01", 3_600),
+            charge("t1", "Trash", "2024-03-01", 5_000),
+          ],
+        }),
+      );
+
+      expect(
+        account.leases[0]?.fixedChargeSteps.map((s) => [s.id, s.amountCents]),
+      ).toEqual([
+        ["s1", 3_600],
+        ["t1", 5_000],
+      ]);
+    });
+
+    it("rejects a blank name", () => {
+      expect(() =>
+        openAccount(
+          buildLease("lease-1", {
+            fixedChargeSteps: [charge("s1", "  ", "2024-01-01", 3_500)],
+          }),
+        ),
+      ).toThrow("Each fixed charge needs a name");
+    });
+
+    it("rejects a name that differs from another only by case", () => {
+      expect(() =>
+        openAccount(
+          buildLease("lease-1", {
+            fixedChargeSteps: [
+              charge("s1", "Sign", "2024-01-01", 3_500),
+              charge("s2", "sign", "2024-07-01", 3_500),
+            ],
+          }),
+        ),
+      ).toThrow("Two fixed charges are named sign");
+    });
+
+    it("rejects two steps for one charge on one date", () => {
+      expect(() =>
+        openAccount(
+          buildLease("lease-1", {
+            fixedChargeSteps: [
+              charge("s1", "Sign", "2024-01-01", 3_500),
+              charge("s2", "Sign", "2024-01-01", 4_000),
+            ],
+          }),
+        ),
+      ).toThrow("Two Sign steps start on 2024-01-01");
+    });
+
+    it("rejects a step before the start date", () => {
+      expect(() =>
+        openAccount(
+          buildLease("lease-1", {
+            fixedChargeSteps: [charge("s1", "Sign", "2023-12-01", 3_500)],
+          }),
+        ),
+      ).toThrow(
+        "Fixed charge steps must start on or after the lease start date",
+      );
+    });
+
+    it("rejects negative amounts", () => {
+      expect(() =>
+        openAccount(
+          buildLease("lease-1", {
+            fixedChargeSteps: [charge("s1", "Sign", "2024-01-01", -1)],
+          }),
+        ),
+      ).toThrow("Sign must be a whole number of cents >= 0");
+    });
+
+    it("rejects a step id used by another step", () => {
+      expect(() =>
+        openAccount(
+          buildLease("lease-1", {
+            fixedChargeSteps: [charge("rent-1", "Sign", "2024-01-01", 3_500)],
+          }),
+        ),
+      ).toThrow("Step ids must be unique");
     });
   });
 
