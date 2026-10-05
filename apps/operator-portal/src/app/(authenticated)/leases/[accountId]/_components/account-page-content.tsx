@@ -164,6 +164,7 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
           <LeaseCard
             key={lease.id}
             accountId={accountId}
+            version={account.version}
             lease={lease}
             pools={unitPools}
             isNewest={lease.id === newest?.id}
@@ -183,6 +184,7 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
 
       <LeaseDialog
         accountId={accountId}
+        version={account.version}
         target={leaseTarget}
         pools={unitPools}
         onClose={() => setLeaseTarget(null)}
@@ -190,6 +192,7 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
 
       <OpeningBalanceDialog
         accountId={accountId}
+        version={account.version}
         openingBalanceCents={account.openingBalanceCents}
         description={balanceDescription}
         open={editingBalance}
@@ -218,6 +221,7 @@ export function AccountPageContent({ accountId }: { accountId: string }) {
                 if (leaseToRemove) {
                   removeLease.mutate({
                     accountId,
+                    expectedVersion: account.version,
                     leaseId: leaseToRemove.id,
                   });
                 }

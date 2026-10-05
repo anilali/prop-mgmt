@@ -6,11 +6,13 @@ import type { Account, AccountRepository } from "@moonship/lease-mgmt";
 import type { AccountDeps } from "../accounts";
 import {
   assertAccountRules,
+  assertAccountVersion,
   getAccountDetail,
+  saveAccount,
   toLeaseTerms,
 } from "../accounts";
 import { notFound, toBadRequest } from "../errors";
-import { leaseInputSchema } from "../schemas";
+import { expectedVersionSchema, leaseInputSchema } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
 export interface LeaseRouterDeps extends AccountDeps {
@@ -20,15 +22,16 @@ export interface LeaseRouterDeps extends AccountDeps {
 export function leaseRouter(deps: LeaseRouterDeps) {
   async function change(
     propertyId: string,
-    accountId: string,
+    target: { accountId: string; expectedVersion: number },
     apply: (account: Account) => void,
     options: { checkRules: boolean },
   ) {
     const account = await deps.accountRepository.findById(
       propertyId,
-      accountId,
+      target.accountId,
     );
     if (!account) throw notFound("Account not found");
+    assertAccountVersion(account, target.expectedVersion);
     const storedLeases = account.leases;
     try {
       apply(account);
@@ -41,19 +44,23 @@ export function leaseRouter(deps: LeaseRouterDeps) {
     if (options.checkRules) {
       await assertAccountRules(deps, propertyId, account, storedLeases);
     }
-    await deps.accountRepository.save(account);
+    await saveAccount(deps.accountRepository, account);
     return getAccountDetail(deps, propertyId, account.id);
   }
 
   return router({
     add: propertyProcedure
       .input(
-        z.object({ accountId: z.string().uuid(), lease: leaseInputSchema }),
+        z.object({
+          accountId: z.string().uuid(),
+          expectedVersion: expectedVersionSchema,
+          lease: leaseInputSchema,
+        }),
       )
       .mutation(({ ctx, input }) =>
         change(
           ctx.propertyId,
-          input.accountId,
+          input,
           (account) =>
             account.addLease({
               id: randomUUID(),
@@ -67,6 +74,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       .input(
         z.object({
           accountId: z.string().uuid(),
+          expectedVersion: expectedVersionSchema,
           leaseId: z.string().uuid(),
           lease: leaseInputSchema,
         }),
@@ -74,7 +82,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       .mutation(({ ctx, input }) =>
         change(
           ctx.propertyId,
-          input.accountId,
+          input,
           (account) =>
             account.updateLease(
               input.leaseId,
@@ -88,13 +96,14 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       .input(
         z.object({
           accountId: z.string().uuid(),
+          expectedVersion: expectedVersionSchema,
           leaseId: z.string().uuid(),
         }),
       )
       .mutation(({ ctx, input }) =>
         change(
           ctx.propertyId,
-          input.accountId,
+          input,
           (account) => account.removeLease(input.leaseId),
           { checkRules: true },
         ),
@@ -104,6 +113,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       .input(
         z.object({
           accountId: z.string().uuid(),
+          expectedVersion: expectedVersionSchema,
           leaseId: z.string().uuid(),
           stepId: z.string().uuid(),
           notified: z.boolean(),
@@ -112,7 +122,7 @@ export function leaseRouter(deps: LeaseRouterDeps) {
       .mutation(({ ctx, input }) =>
         change(
           ctx.propertyId,
-          input.accountId,
+          input,
           (account) =>
             account.markRentStepNotified(
               input.leaseId,

@@ -116,8 +116,8 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
       unitOfWork: deps.unitOfWork,
     }),
     rent: rentRouter({
-      billingStore: deps.billingStore,
       billingQueries: deps.billingQueries,
+      unitOfWork: deps.unitOfWork,
       accountQueries: deps.accountQueries,
       tenantQueries: deps.tenantQueries,
       unitQueries: deps.unitQueries,

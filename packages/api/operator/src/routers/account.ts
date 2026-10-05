@@ -7,13 +7,19 @@ import { Account } from "@moonship/lease-mgmt";
 import type { AccountDeps } from "../accounts";
 import {
   assertAccountRules,
+  assertAccountVersion,
   getAccountDetail,
   listAccountSummaries,
+  saveAccount,
   toLeaseTerms,
 } from "../accounts";
 import { badRequest, conflict, notFound, toBadRequest } from "../errors";
 import { loadProperty } from "../property-context";
-import { centsSchema, leaseInputSchema } from "../schemas";
+import {
+  centsSchema,
+  expectedVersionSchema,
+  leaseInputSchema,
+} from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
 export interface AccountRouterDeps extends AccountDeps {
@@ -86,6 +92,7 @@ export function accountRouter(deps: AccountRouterDeps) {
       .input(
         z.object({
           id: z.string().uuid(),
+          expectedVersion: expectedVersionSchema,
           openingBalanceCents: centsSchema,
         }),
       )
@@ -95,6 +102,7 @@ export function accountRouter(deps: AccountRouterDeps) {
           input.id,
         );
         if (!account) throw notFound("Account not found");
+        assertAccountVersion(account, input.expectedVersion);
         const storedLeases = account.leases;
         try {
           account.setOpeningBalance(input.openingBalanceCents);
@@ -102,7 +110,7 @@ export function accountRouter(deps: AccountRouterDeps) {
           throw toBadRequest(e, "Update failed");
         }
         await assertAccountRules(deps, ctx.propertyId, account, storedLeases);
-        await deps.accountRepository.save(account);
+        await saveAccount(deps.accountRepository, account);
         return getAccountDetail(deps, ctx.propertyId, account.id);
       }),
 

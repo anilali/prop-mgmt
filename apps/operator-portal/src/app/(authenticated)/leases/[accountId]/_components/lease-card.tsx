@@ -28,6 +28,7 @@ const notifiedFormat = new Intl.DateTimeFormat("en-US", {
 
 export function LeaseCard({
   accountId,
+  version,
   lease,
   pools,
   isNewest,
@@ -36,6 +37,7 @@ export function LeaseCard({
   onRemove,
 }: {
   accountId: string;
+  version: number;
   lease: Lease;
   pools: readonly PoolOption[];
   isNewest: boolean;
@@ -143,6 +145,7 @@ export function LeaseCard({
                           onChange={(e) =>
                             setNotified.mutate({
                               accountId,
+                              expectedVersion: version,
                               leaseId: lease.id,
                               stepId: step.id,
                               notified: e.target.checked,

@@ -13,6 +13,7 @@ import {
   PROPERTY_ID,
   STRANGER,
   TEST_ADDRESS,
+  versionOf,
 } from "../test-setup-stores";
 
 const ID = "66666666-6666-4666-8666-666666666666";
@@ -617,6 +618,80 @@ describe("adjustments", () => {
   });
 });
 
+describe("ledger writes lock the reconciliation year", () => {
+  beforeEach(() => useToday("2026-03-15"));
+
+  it("locks the entry's year in a unit of work for each write", async () => {
+    const { app, caller, ids } = await setup();
+    const runs = app.unitOfWork.runs.length;
+
+    const added = await caller.rent.addAdjustment({
+      accountId: ids.paid,
+      date: "2026-03-02",
+      amountCents: 100,
+      note: "Charge",
+    });
+    await caller.rent.updateAdjustment({
+      id: added.entry.id,
+      date: "2026-03-01",
+      amountCents: 200,
+      note: "Charge",
+    });
+    await caller.rent.removeEntry({ id: added.entry.id });
+    await caller.rent.approveLateFee({ accountId: ids.due, month: "2026-03" });
+
+    expect(app.unitOfWork.runs.length - runs).toBe(4);
+    expect(app.billing.lockedYears).toEqual([2026, 2026, 2026, 2026]);
+
+    const other = await setup();
+    await other.caller.rent.dismissLateFee({
+      accountId: other.ids.due,
+      month: "2026-03",
+    });
+    expect(other.app.billing.lockedYears).toEqual([2026]);
+  });
+
+  it("locks the first reconciliation year for a date before it", async () => {
+    const app = createTestApp({ trackingStartDate: "2025-04-01" });
+    const caller = await app.callerFor();
+    useToday("2026-01-12");
+    const accountId = await openAccount(caller, "A", {
+      startDate: "2025-04-01",
+      endDate: "2027-12-31",
+    });
+
+    await caller.rent.addAdjustment({
+      accountId,
+      date: "2025-06-01",
+      amountCents: 1_000,
+      note: "Charge",
+    });
+
+    expect(app.billing.lockedYears).toEqual([2026]);
+  });
+
+  it("moves a date in a year before the latest finalized year to today", async () => {
+    const app = createTestApp({ trackingStartDate: "2024-01-01" });
+    const caller = await app.callerFor();
+    useToday("2026-01-12");
+    const accountId = await openAccount(caller, "A", {
+      startDate: "2024-01-01",
+      endDate: "2027-12-31",
+    });
+    app.billing.finalizedYears = [2025];
+
+    const result = await caller.rent.addAdjustment({
+      accountId,
+      date: "2024-06-01",
+      amountCents: 1_000,
+      note: "Charge",
+    });
+
+    expect(result.movedFrom).toBe("2024-06-01");
+    expect(result.entry.entryDate).toBe("2026-01-12");
+  });
+});
+
 describe("late fees", () => {
   beforeEach(() => useToday("2026-03-15"));
 
@@ -716,11 +791,13 @@ describe("late fees", () => {
     if (!first) throw new Error("missing lease");
     await caller.lease.update({
       accountId: ids.paid,
+      expectedVersion: await versionOf(caller, ids.paid),
       leaseId: first.id,
       lease: leaseInput({ endDate: "2026-02-28" }),
     });
     await caller.lease.add({
       accountId: ids.paid,
+      expectedVersion: await versionOf(caller, ids.paid),
       lease: {
         ...leaseInput({
           startDate: "2026-03-01",

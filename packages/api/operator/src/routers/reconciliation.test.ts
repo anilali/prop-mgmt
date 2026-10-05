@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Txn } from "@moonship/billing";
+import type { Lease } from "@moonship/lease-mgmt";
 import {
   ACCOUNTS,
   CATEGORIES,
   EXPENSES,
   LETTER,
   POOL_LIST,
+  POOLS,
   RECONCILIATION_UNITS,
   superLucky,
   tenantB,
@@ -20,6 +22,7 @@ import type { TestCaller } from "../test-setup-stores";
 import {
   codeOf,
   createTestApp,
+  leaseInput,
   PLATFORM_ADMIN,
   PROPERTY_ID,
   STRANGER,
@@ -104,6 +107,7 @@ function seed2024(app: App) {
       tenantId: uid(account.tenantId),
       unitId: uid(account.unitId),
       openingBalanceCents: account.openingBalanceCents,
+      version: 0,
       leases: account.leases.map((lease) => ({
         id: uid(lease.leaseId),
         startDate: lease.startDate,
@@ -373,6 +377,25 @@ describe("reconciliation.setLetterDate", () => {
     expect(result.letterDate).toBe("2025-01-03");
   });
 
+  it("needs a letter date in the year after", async () => {
+    const { app, caller } = await setup();
+    for (const letterDate of ["2024-12-31", "2026-01-01"]) {
+      await expect(
+        caller.reconciliation.setLetterDate({ year: 2024, letterDate }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "The letter date must be in 2025, the year after 2024",
+      });
+    }
+    expect(app.billing.reconciliationYears.size).toBe(0);
+
+    const record = await caller.reconciliation.setLetterDate({
+      year: 2024,
+      letterDate: "2025-12-31",
+    });
+    expect(record.letterDate).toBe("2025-12-31");
+  });
+
   it("rejects a finalized year", async () => {
     const { app, caller } = await setup();
     const record = await caller.reconciliation.setLetterDate({
@@ -547,6 +570,24 @@ describe("reconciliation.previewPdf", () => {
     });
   });
 
+  it("rejects a finalized year and points to the download", async () => {
+    const { app, caller, ids } = await setupForFinalize();
+    await caller.reconciliation.finalize({ year: 2024 });
+    const rendered = app.renderer.rendered.length;
+
+    await expect(
+      caller.reconciliation.previewPdf({
+        year: 2024,
+        accountId: ids.accountId(tenantB.accountId),
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "2024 is finalized. Download the statement that was sent instead.",
+    });
+    expect(app.renderer.rendered).toHaveLength(rendered);
+  });
+
   it("uses today as the letter date until one is set", async () => {
     const { app, caller, ids } = await setup();
     await caller.reconciliation.previewPdf({
@@ -611,6 +652,16 @@ function januarySteps(app: App, accountId: string) {
       .map((step) => step.amountCents)
       .sort((a, b) => a - b),
   );
+}
+
+function editLeases(
+  app: App,
+  accountId: string,
+  edit: (leases: Lease[]) => Lease[],
+) {
+  const account = app.accounts.accounts.get(accountId);
+  if (!account) throw new Error("missing account");
+  account.leases = edit(account.leases);
 }
 
 describe("reconciliation.finalize", () => {
@@ -706,6 +757,10 @@ describe("reconciliation.finalize", () => {
     ]);
     expect(januarySteps(app, tenantDId)).toEqual([[]]);
     expect(await app.billing.listFinalizedYears(PROPERTY_ID)).toEqual([2024]);
+    expect(app.renderer.rendered).toEqual(snapshots.map((s) => s.data));
+    expect(app.unitOfWork.runs.at(-1)).toEqual({
+      isolationLevel: "repeatable read",
+    });
   });
 
   it("returns CONFLICT the second time and writes nothing more", async () => {
@@ -730,27 +785,165 @@ describe("reconciliation.finalize", () => {
     expect(app.blob.puts).toEqual([]);
   });
 
-  it("is rejected before January 1 and with a letter date in the year", async () => {
-    const early = await setup("2024-12-31");
-    await early.caller.reconciliation.setLetterDate({
+  it("is rejected before January 1", async () => {
+    const { app, caller } = await setup("2024-12-31");
+    await caller.reconciliation.setLetterDate({
       year: 2024,
       letterDate: "2025-01-01",
     });
     await expect(
-      early.caller.reconciliation.finalize({ year: 2024 }),
+      caller.reconciliation.finalize({ year: 2024 }),
     ).rejects.toThrow("2024 can be finalized from January 1, 2025.");
-
-    const { app, caller } = await setup();
-    await caller.reconciliation.setLetterDate({
-      year: 2024,
-      letterDate: "2024-12-31",
-    });
-    expect(await codeOf(caller.reconciliation.finalize({ year: 2024 }))).toBe(
-      "BAD_REQUEST",
-    );
     expect([...app.billing.reconciliationYears.values()][0]?.status).toBe(
       "draft",
     );
+  });
+
+  it("needs the previous year finalized first", async () => {
+    const { caller } = await setup("2026-01-08");
+    await caller.reconciliation.setLetterDate({
+      year: 2025,
+      letterDate: "2026-01-02",
+    });
+    await expect(
+      caller.reconciliation.finalize({ year: 2025 }),
+    ).rejects.toThrow("Finalize 2024 first.");
+
+    await caller.reconciliation.setLetterDate({
+      year: 2024,
+      letterDate: "2025-01-01",
+    });
+    await caller.reconciliation.finalize({ year: 2024 });
+    const next = await caller.reconciliation.workspace({ year: 2025 });
+    expect(next.gates.previousYearFinalized).toBe(true);
+  });
+
+  it("carries December's pools onto a January 1 renewal entered with no estimates", async () => {
+    const { app, caller, ids } = await setupForFinalize();
+    const tenantBId = ids.accountId(tenantB.accountId);
+    const renewalId = randomUUID();
+    editLeases(app, tenantBId, (leases) => {
+      const [b1, b2] = leases;
+      if (!b1 || !b2) throw new Error("missing lease");
+      return [
+        b1,
+        { ...b2, endDate: "2024-12-31" },
+        {
+          id: renewalId,
+          startDate: "2025-01-01",
+          endDate: "2027-12-31",
+          moveOutDate: null,
+          lateFee: null,
+          insuranceExpiresOn: "2025-06-30",
+          rentSteps: [
+            {
+              id: randomUUID(),
+              startsOn: "2025-01-01",
+              amountCents: 330_000,
+              tenantNotifiedAt: null,
+            },
+          ],
+          estimateSteps: [],
+        },
+      ];
+    });
+
+    const workspace = await caller.reconciliation.workspace({ year: 2024 });
+    expect(
+      workspace.checklist
+        .filter((item) => item.code === "estimate_carried_over")
+        .map((item) => item.message),
+    ).toEqual([
+      "Tenant B Inc's lease from January 1, 2025 has no CAM estimate; finalize will add $229.79.",
+      "Tenant B Inc's lease from January 1, 2025 has no Taxes estimate; finalize will add $597.90.",
+      "Tenant B Inc's lease from January 1, 2025 has no Insurance estimate; finalize will add $112.01.",
+      "Tenant B Inc's lease from January 1, 2025 has no Water estimate; finalize will add $72.00.",
+    ]);
+    expect(workspace.canFinalize).toBe(true);
+
+    const result = await caller.reconciliation.finalize({ year: 2024 });
+    expect(
+      result.statements.find((s) => s.accountId === tenantBId),
+    ).toMatchObject({ newMonthlyRentCents: 431_170, newEstimateSteps: 4 });
+    expect(januarySteps(app, tenantBId)).toEqual([
+      [],
+      [],
+      [7_200, 11_201, 22_979, 59_790],
+    ]);
+    const renewal = app.accounts.accounts
+      .get(tenantBId)
+      ?.leases.find((lease) => lease.id === renewalId);
+    expect(renewal?.estimateSteps).toHaveLength(4);
+    const after = await caller.reconciliation.workspace({ year: 2024 });
+    expect(after.finalized?.mismatchCount).toBe(0);
+  });
+
+  it("replaces a January 1 step the owner already typed and keeps the step count", async () => {
+    const { app, caller, ids } = await setupForFinalize();
+    const superLuckyId = ids.accountId(superLucky.accountId);
+    const camId = ids.poolId(POOLS.cam);
+    const typedId = randomUUID();
+    editLeases(app, superLuckyId, (leases) =>
+      leases.map((lease) => ({
+        ...lease,
+        estimateSteps: [
+          ...lease.estimateSteps,
+          {
+            id: typedId,
+            poolId: camId,
+            startsOn: "2025-01-01",
+            amountCents: 30_000,
+          },
+        ],
+      })),
+    );
+
+    const result = await caller.reconciliation.finalize({ year: 2024 });
+
+    expect(
+      result.statements.find((s) => s.accountId === superLuckyId),
+    ).toMatchObject({ newEstimateSteps: 3 });
+    const lease = app.accounts.accounts.get(superLuckyId)?.leases[0];
+    expect(lease?.estimateSteps).toHaveLength(6);
+    expect(
+      lease?.estimateSteps.filter(
+        (step) => step.poolId === camId && step.startsOn === "2025-01-01",
+      ),
+    ).toEqual([
+      {
+        id: typedId,
+        poolId: camId,
+        startsOn: "2025-01-01",
+        amountCents: 28_724,
+      },
+    ]);
+  });
+
+  it("rejects a lease save from a page opened before finalize", async () => {
+    const { caller, ids } = await setupForFinalize();
+    const superLuckyId = ids.accountId(superLucky.accountId);
+    const opened = await caller.account.get({ id: superLuckyId });
+    const lease = opened.account.leases[0];
+    if (!lease) throw new Error("missing lease");
+
+    await caller.reconciliation.finalize({ year: 2024 });
+
+    await expect(
+      caller.lease.update({
+        accountId: superLuckyId,
+        expectedVersion: opened.account.version,
+        leaseId: lease.id,
+        lease: leaseInput({ startDate: "2023-01-01", endDate: "2027-12-31" }),
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "This account changed since you opened it. Reload and try again.",
+    });
+    expect(
+      (await caller.reconciliation.workspace({ year: 2024 })).finalized
+        ?.mismatchCount,
+    ).toBe(0);
   });
 
   it("is rejected while a checklist blocker stands", async () => {
@@ -881,6 +1074,45 @@ describe("finalized workspace", () => {
   });
 });
 
+describe("finalized workspace after lease edits", () => {
+  it("flags removed January 1 steps and a January 1 rent change against the snapshot", async () => {
+    const { app, caller, ids } = await setupForFinalize();
+    await caller.reconciliation.finalize({ year: 2024 });
+    const superLuckyId = ids.accountId(superLucky.accountId);
+
+    editLeases(app, superLuckyId, (leases) =>
+      leases.map((lease) => ({
+        ...lease,
+        rentSteps: [
+          ...lease.rentSteps,
+          {
+            id: randomUUID(),
+            startsOn: "2025-01-01",
+            amountCents: 260_000,
+            tenantNotifiedAt: null,
+          },
+        ],
+        estimateSteps: lease.estimateSteps.filter(
+          (step) => step.startsOn !== "2025-01-01",
+        ),
+      })),
+    );
+
+    const result = await caller.reconciliation.workspace({ year: 2024 });
+    expect(result.finalized?.mismatchCount).toBe(1);
+    expect(
+      result.finalized?.comparisons
+        .find((c) => c.accountId === superLuckyId)
+        ?.differences.map((d) => d.message),
+    ).toEqual([
+      "New CAM estimate: $287.24, now $268.61 (-$18.63)",
+      "New Taxes estimate: $747.38, now $777.61 (+$30.23)",
+      "New Insurance estimate: $140.02, now $108.60 (-$31.42)",
+      "New monthly rent: $3,674.64, now $3,754.82 (+$80.18)",
+    ]);
+  });
+});
+
 describe("reconciliation.downloadUrl", () => {
   it("signs the stored PDF for one hour with its file name", async () => {
     const { app, caller, ids } = await setupForFinalize();
@@ -907,6 +1139,41 @@ describe("reconciliation.downloadUrl", () => {
         },
       },
     ]);
+  });
+
+  it("is NOT_FOUND for another year and for another property's statement", async () => {
+    const { app, caller, ids } = await setupForFinalize();
+    await caller.reconciliation.finalize({ year: 2024 });
+    const tenantBId = ids.accountId(tenantB.accountId);
+
+    for (const year of [2023, 2025]) {
+      expect(
+        await codeOf(
+          caller.reconciliation.downloadUrl({ year, accountId: tenantBId }),
+        ),
+      ).toBe("NOT_FOUND");
+    }
+
+    const stored = [...app.billing.statementSnapshots.values()][0];
+    if (!stored) throw new Error("missing snapshot");
+    const otherProperty = randomUUID();
+    const otherAccount = randomUUID();
+    app.billing.statementSnapshots.set("other-property", {
+      ...stored,
+      id: "other-property",
+      propertyId: otherProperty,
+      accountId: otherAccount,
+      pdfStorageKey: `reconciliations/${otherProperty}/2024/${otherAccount}.pdf`,
+    });
+    expect(
+      await codeOf(
+        caller.reconciliation.downloadUrl({
+          year: 2024,
+          accountId: otherAccount,
+        }),
+      ),
+    ).toBe("NOT_FOUND");
+    expect(app.blob.signed).toEqual([]);
   });
 
   it("is NOT_FOUND before finalize", async () => {

@@ -11,6 +11,7 @@ import {
   PROPERTY_ID,
   STRANGER,
   TEST_ADDRESS,
+  versionOf,
 } from "../test-setup-stores";
 
 function useToday(date: string) {
@@ -199,6 +200,7 @@ describe("home.comingUp", () => {
 
     await caller.lease.setRentStepNotified({
       accountId: a.id,
+      expectedVersion: await versionOf(caller, a.id),
       leaseId: firstLease.id,
       stepId: step.id,
       notified: true,

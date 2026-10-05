@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { StaleAccountError } from "@moonship/lease-mgmt";
 
 import {
   codeOf,
   createTestApp,
   leaseInput,
   TEST_ADDRESS,
+  versionOf,
 } from "../test-setup-stores";
 
 async function setup(options: { trackingStartDate?: string | null } = {}) {
@@ -253,6 +256,7 @@ describe("account procedures", () => {
       await codeOf(
         caller.account.setOpeningBalance({
           id: opened.account.id,
+          expectedVersion: await versionOf(caller, opened.account.id),
           openingBalanceCents: -500,
         }),
       ),
@@ -322,11 +326,89 @@ describe("lease procedures", () => {
     return { ...ctx, accountId: opened.account.id, opened };
   }
 
+  it("rejects a save from a stale copy of the account", async () => {
+    const { app, caller, accountId, opened } = await openOnA();
+    const stale = opened.account.version;
+    const lease = opened.account.leases[0];
+    const step = lease?.rentSteps[0];
+    if (!lease || !step) throw new Error("missing lease");
+
+    const added = await caller.lease.add({
+      accountId,
+      expectedVersion: stale,
+      lease: leaseInput({ startDate: "2026-01-01", endDate: "2026-12-31" }),
+    });
+    expect(added.account.version).toBe(stale + 1);
+
+    const calls = [
+      () =>
+        caller.lease.add({
+          accountId,
+          expectedVersion: stale,
+          lease: leaseInput({ startDate: "2027-01-01", endDate: "2027-12-31" }),
+        }),
+      () =>
+        caller.lease.update({
+          accountId,
+          expectedVersion: stale,
+          leaseId: lease.id,
+          lease: leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
+        }),
+      () =>
+        caller.lease.remove({
+          accountId,
+          expectedVersion: stale,
+          leaseId: lease.id,
+        }),
+      () =>
+        caller.lease.setRentStepNotified({
+          accountId,
+          expectedVersion: stale,
+          leaseId: lease.id,
+          stepId: step.id,
+          notified: true,
+        }),
+      () =>
+        caller.account.setOpeningBalance({
+          id: accountId,
+          expectedVersion: stale,
+          openingBalanceCents: 0,
+        }),
+    ];
+    for (const call of calls) {
+      await expect(call()).rejects.toMatchObject({
+        code: "CONFLICT",
+        message:
+          "This account changed since you opened it. Reload and try again.",
+      });
+    }
+    expect((await caller.account.get({ id: accountId })).account).toMatchObject(
+      { version: stale + 1 },
+    );
+    expect(
+      (await caller.account.get({ id: accountId })).account.leases,
+    ).toHaveLength(2);
+
+    vi.spyOn(app.accounts, "save").mockRejectedValueOnce(
+      new StaleAccountError(),
+    );
+    expect(
+      await codeOf(
+        caller.account.setOpeningBalance({
+          id: accountId,
+          expectedVersion: stale + 1,
+          openingBalanceCents: 0,
+        }),
+      ),
+    ).toBe("CONFLICT");
+  });
+
   it("adds a renewal on the same account", async () => {
     const { caller, accountId } = await openOnA();
 
     const detail = await caller.lease.add({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       lease: leaseInput({ startDate: "2026-01-01", endDate: "2026-12-31" }),
     });
 
@@ -343,6 +425,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.add({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           lease: leaseInput({ startDate: "2025-12-01", endDate: "2026-11-30" }),
         }),
       ),
@@ -355,6 +438,7 @@ describe("lease procedures", () => {
     if (!leaseId) throw new Error("missing lease");
     await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId,
       lease: leaseInput({
         startDate: "2025-01-01",
@@ -367,6 +451,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.add({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           lease: leaseInput({ startDate: "2026-01-01", endDate: "2026-12-31" }),
         }),
       ),
@@ -379,6 +464,7 @@ describe("lease procedures", () => {
     if (!leaseId) throw new Error("missing lease");
     await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId,
       lease: leaseInput({
         startDate: "2025-01-01",
@@ -397,6 +483,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.update({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           leaseId,
           lease: leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
         }),
@@ -410,14 +497,25 @@ describe("lease procedures", () => {
     if (!firstId) throw new Error("missing lease");
 
     expect(
-      await codeOf(caller.lease.remove({ accountId, leaseId: firstId })),
+      await codeOf(
+        caller.lease.remove({
+          accountId,
+          expectedVersion: await versionOf(caller, accountId),
+          leaseId: firstId,
+        }),
+      ),
     ).toBe("BAD_REQUEST");
 
     await caller.lease.add({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       lease: leaseInput({ startDate: "2026-01-01", endDate: "2026-12-31" }),
     });
-    const detail = await caller.lease.remove({ accountId, leaseId: firstId });
+    const detail = await caller.lease.remove({
+      accountId,
+      expectedVersion: await versionOf(caller, accountId),
+      leaseId: firstId,
+    });
     expect(detail.account.leases.map((l) => l.startDate)).toEqual([
       "2026-01-01",
     ]);
@@ -431,6 +529,7 @@ describe("lease procedures", () => {
 
     const notified = await caller.lease.setRentStepNotified({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: lease.id,
       stepId: step.id,
       notified: true,
@@ -441,6 +540,7 @@ describe("lease procedures", () => {
 
     const edited = await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: lease.id,
       lease: {
         ...leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
@@ -456,6 +556,7 @@ describe("lease procedures", () => {
 
     const repriced = await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: lease.id,
       lease: {
         ...leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
@@ -471,6 +572,7 @@ describe("lease procedures", () => {
 
     await caller.lease.setRentStepNotified({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: lease.id,
       stepId: step.id,
       notified: true,
@@ -478,6 +580,7 @@ describe("lease procedures", () => {
 
     const cleared = await caller.lease.setRentStepNotified({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: lease.id,
       stepId: step.id,
       notified: false,
@@ -504,6 +607,7 @@ describe("lease procedures", () => {
 
     const added = await caller.lease.add({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       lease: {
         ...leaseInput({ startDate: "2026-01-01", endDate: "2026-12-31" }),
         rentSteps: [
@@ -519,6 +623,7 @@ describe("lease procedures", () => {
 
     const updated = await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: lease.id,
       lease: {
         ...leaseInput({ startDate: "2025-01-01", endDate: "2025-12-31" }),
@@ -547,6 +652,7 @@ describe("lease procedures", () => {
     });
     await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: waterLeaseId,
       lease: waterLease,
     });
@@ -557,6 +663,7 @@ describe("lease procedures", () => {
     });
     const withClosing = await caller.lease.add({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       lease: closingLease,
     });
     expect(withClosing.account.state).toBe("closed");
@@ -566,12 +673,14 @@ describe("lease procedures", () => {
 
     const balanced = await caller.account.setOpeningBalance({
       id: accountId,
+      expectedVersion: await versionOf(caller, accountId),
       openingBalanceCents: 10_000,
     });
     expect(balanced.account.openingBalanceCents).toBe(10_000);
 
     const edited = await caller.lease.update({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       leaseId: closingLeaseId,
       lease: { ...closingLease, insuranceExpiresOn: "2026-11-30" },
     });
@@ -579,6 +688,7 @@ describe("lease procedures", () => {
 
     const earlier = await caller.lease.add({
       accountId,
+      expectedVersion: await versionOf(caller, accountId),
       lease: leaseInput({ startDate: "2024-01-01", endDate: "2024-12-31" }),
     });
     expect(earlier.account.leases).toHaveLength(3);
@@ -587,6 +697,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.update({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           leaseId: waterLeaseId,
           lease: { ...waterLease, insuranceExpiresOn: "2025-11-30" },
         }),
@@ -596,6 +707,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.update({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           leaseId: closingLeaseId,
           lease: leaseInput({
             startDate: "2026-01-01",
@@ -612,6 +724,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.add({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           lease: leaseInput({
             startDate: "2023-01-01",
             endDate: "2023-12-31",
@@ -632,6 +745,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.update({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           leaseId: missing,
           lease: leaseInput(),
         }),
@@ -639,7 +753,11 @@ describe("lease procedures", () => {
     ).toBe("NOT_FOUND");
     expect(
       await codeOf(
-        caller.lease.add({ accountId: missing, lease: leaseInput() }),
+        caller.lease.add({
+          accountId: missing,
+          expectedVersion: 0,
+          lease: leaseInput(),
+        }),
       ),
     ).toBe("NOT_FOUND");
   });
@@ -651,6 +769,7 @@ describe("lease procedures", () => {
       await codeOf(
         caller.lease.add({
           accountId,
+          expectedVersion: await versionOf(caller, accountId),
           lease: leaseInput({ startDate: "2026-02-30" }),
         }),
       ),

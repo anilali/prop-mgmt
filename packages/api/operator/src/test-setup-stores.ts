@@ -330,8 +330,16 @@ export function createTestApp(
     billing,
     renderer,
     blob,
+    unitOfWork,
     callerFor,
   };
+}
+
+export async function versionOf(
+  caller: TestCaller,
+  accountId: string,
+): Promise<number> {
+  return (await caller.account.get({ id: accountId })).account.version;
 }
 
 export async function codeOf(promise: Promise<unknown>): Promise<string> {

@@ -61,20 +61,39 @@ const calls: [string, (caller: TestCaller) => Promise<unknown>][] = [
   ],
   [
     "account.setOpeningBalance",
-    (c) => c.account.setOpeningBalance({ id: ID, openingBalanceCents: 0 }),
+    (c) =>
+      c.account.setOpeningBalance({
+        id: ID,
+        expectedVersion: 0,
+        openingBalanceCents: 0,
+      }),
   ],
   ["account.remove", (c) => c.account.remove({ id: ID })],
-  ["lease.add", (c) => c.lease.add({ accountId: ID, lease: leaseInput() })],
+  [
+    "lease.add",
+    (c) =>
+      c.lease.add({ accountId: ID, expectedVersion: 0, lease: leaseInput() }),
+  ],
   [
     "lease.update",
-    (c) => c.lease.update({ accountId: ID, leaseId: ID, lease: leaseInput() }),
+    (c) =>
+      c.lease.update({
+        accountId: ID,
+        expectedVersion: 0,
+        leaseId: ID,
+        lease: leaseInput(),
+      }),
   ],
-  ["lease.remove", (c) => c.lease.remove({ accountId: ID, leaseId: ID })],
+  [
+    "lease.remove",
+    (c) => c.lease.remove({ accountId: ID, expectedVersion: 0, leaseId: ID }),
+  ],
   [
     "lease.setRentStepNotified",
     (c) =>
       c.lease.setRentStepNotified({
         accountId: ID,
+        expectedVersion: 0,
         leaseId: ID,
         stepId: ID,
         notified: true,

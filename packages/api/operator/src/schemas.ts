@@ -13,6 +13,8 @@ export const centsSchema = z.number().int().min(-MAX_CENTS).max(MAX_CENTS);
 
 export const nonNegativeCentsSchema = centsSchema.min(0);
 
+export const expectedVersionSchema = z.number().int().min(0);
+
 export const addressSchema = z.object({
   street1: z.string().trim().min(1),
   street2: z.string().trim().optional(),

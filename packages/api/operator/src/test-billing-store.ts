@@ -42,9 +42,13 @@ import {
   descriptionKey,
   DuplicateLedgerEntryError,
 } from "@moonship/billing";
-import { Account } from "@moonship/lease-mgmt";
+import { Account, StaleAccountError } from "@moonship/lease-mgmt";
 
-import type { TransactionalStores, UnitOfWork } from "./unit-of-work";
+import type {
+  TransactionalStores,
+  UnitOfWork,
+  UnitOfWorkOptions,
+} from "./unit-of-work";
 
 export interface Restorable {
   snapshot(): () => void;
@@ -66,6 +70,7 @@ export class InMemoryBillingStore
   ledgerEntries = new Map<string, LedgerEntry>();
   finalizedYears: number[] = [];
   reconciliationYears = new Map<string, ReconciliationYear>();
+  lockedYears: number[] = [];
   billOverrides = new Map<string, PoolBillOverride>();
   statementSnapshots = new Map<string, StatementSnapshot>();
 
@@ -457,6 +462,17 @@ export class InMemoryBillingStore
     return Promise.resolve(structuredClone(record));
   }
 
+  lockExistingYear(
+    propertyId: string,
+    year: number,
+  ): Promise<ReconciliationYear | null> {
+    const existing = [...this.reconciliationYears.values()].find(
+      (y) => y.propertyId === propertyId && y.year === year,
+    );
+    this.lockedYears.push(year);
+    return Promise.resolve(existing ? structuredClone(existing) : null);
+  }
+
   saveYear(year: ReconciliationYear): Promise<ReconciliationYear> {
     const existing = this.reconciliationYears.get(year.id);
     if (existing?.propertyId !== year.propertyId) {
@@ -611,6 +627,7 @@ function toProps(account: Account): AccountProps {
     tenantId: account.tenantId,
     unitId: account.unitId,
     openingBalanceCents: account.openingBalanceCents,
+    version: account.version + 1,
     leases: account.leases,
   };
 }
@@ -627,8 +644,18 @@ export class InMemoryAccountStore
   }
 
   save(account: Account): Promise<void> {
+    const stored = this.accounts.get(account.id);
+    if (stored && stored.propertyId !== account.propertyId) {
+      return Promise.reject(
+        new Error(`Account ${account.id} belongs to another property`),
+      );
+    }
+    if ((stored?.version ?? 0) !== account.version) {
+      return Promise.reject(new StaleAccountError());
+    }
     account.pullEvents();
     this.accounts.set(account.id, structuredClone(toProps(account)));
+    account.markSaved();
     return Promise.resolve();
   }
 
@@ -707,12 +734,18 @@ export class FakeBlobStorage implements BlobStorage {
 }
 
 export class InMemoryUnitOfWork implements UnitOfWork {
+  runs: (UnitOfWorkOptions | undefined)[] = [];
+
   constructor(
     private stores: TransactionalStores,
     private restorables: Restorable[],
   ) {}
 
-  async run<T>(fn: (stores: TransactionalStores) => Promise<T>): Promise<T> {
+  async run<T>(
+    fn: (stores: TransactionalStores) => Promise<T>,
+    options?: UnitOfWorkOptions,
+  ): Promise<T> {
+    this.runs.push(options);
     const restores = this.restorables.map((r) => r.snapshot());
     try {
       return await fn(this.stores);

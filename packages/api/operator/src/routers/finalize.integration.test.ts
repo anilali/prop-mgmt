@@ -32,7 +32,11 @@ import { Account } from "@moonship/lease-mgmt";
 import { Property, Unit } from "@moonship/property";
 import { Tenant } from "@moonship/tenant-mgmt";
 
-import type { TransactionalStores, UnitOfWork } from "../unit-of-work";
+import type {
+  TransactionalStores,
+  UnitOfWork,
+  UnitOfWorkOptions,
+} from "../unit-of-work";
 import { loadRequestAccess } from "../operator-context";
 import { createTRPCRouter } from "../root";
 import { InMemoryAccessStore, seedAccess } from "../test-access-store";
@@ -48,19 +52,24 @@ afterEach(() => {
 
 function failingAccountSaves(unitOfWork: UnitOfWork): UnitOfWork {
   return {
-    run<T>(fn: (stores: TransactionalStores) => Promise<T>): Promise<T> {
-      return unitOfWork.run((stores) =>
-        fn({
-          ...stores,
-          accountRepository: {
-            findById: (propertyId, id) =>
-              stores.accountRepository.findById(propertyId, id),
-            save: () =>
-              Promise.reject(new Error("Simulated account save failure")),
-            delete: (propertyId, id) =>
-              stores.accountRepository.delete(propertyId, id),
-          },
-        }),
+    run<T>(
+      fn: (stores: TransactionalStores) => Promise<T>,
+      options?: UnitOfWorkOptions,
+    ): Promise<T> {
+      return unitOfWork.run(
+        (stores) =>
+          fn({
+            ...stores,
+            accountRepository: {
+              findById: (propertyId, id) =>
+                stores.accountRepository.findById(propertyId, id),
+              save: () =>
+                Promise.reject(new Error("Simulated account save failure")),
+              delete: (propertyId, id) =>
+                stores.accountRepository.delete(propertyId, id),
+            },
+          }),
+        options,
       );
     },
   };
@@ -112,6 +121,7 @@ describe.skipIf(!databaseUrl)("reconciliation.finalize on Postgres", () => {
       ]),
     );
     const blob = new FakeBlobStorage();
+    const renderer = new FakeStatementRenderer();
     const { appRouter } = createTRPCRouter({
       propertyRepository: new PGPropertyRepository(db),
       propertyQueries,
@@ -127,7 +137,7 @@ describe.skipIf(!databaseUrl)("reconciliation.finalize on Postgres", () => {
       billingQueries,
       unitOfWork,
       blobStorage: blob,
-      statementRenderer: new FakeStatementRenderer(),
+      statementRenderer: renderer,
     });
     async function caller() {
       const requestAccess = await loadRequestAccess(
@@ -140,7 +150,7 @@ describe.skipIf(!databaseUrl)("reconciliation.finalize on Postgres", () => {
       );
       return createCallerFactory(appRouter)({ access: requestAccess });
     }
-    return { blob, caller };
+    return { blob, renderer, caller };
   }
 
   async function seed() {
@@ -316,6 +326,93 @@ describe.skipIf(!databaseUrl)("reconciliation.finalize on Postgres", () => {
     expect(
       await billingQueries.listStatementSnapshots(propertyId),
     ).toHaveLength(1);
+  });
+
+  it("lets one of two concurrent finalize calls win and the other get CONFLICT", async () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("TODAY_OVERRIDE", "2025-01-08");
+    const { propertyId, accountId } = await seed();
+    const first = appFor(propertyId, pgUnitOfWork);
+    const second = appFor(propertyId, pgUnitOfWork);
+    await (
+      await first.caller()
+    ).reconciliation.setLetterDate({ year: 2024, letterDate: "2025-01-01" });
+    const [firstCaller, secondCaller] = await Promise.all([
+      first.caller(),
+      second.caller(),
+    ]);
+
+    const [firstResult, secondResult] = await Promise.allSettled([
+      firstCaller.reconciliation.finalize({ year: 2024 }),
+      secondCaller.reconciliation.finalize({ year: 2024 }),
+    ]);
+    const results = [firstResult, secondResult];
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({ code: "CONFLICT" });
+
+    const winner = firstResult.status === "fulfilled" ? first : second;
+    const loser = winner === first ? second : first;
+    const key = `reconciliations/${propertyId}/2024/${accountId}.pdf`;
+    expect(winner.blob.puts).toEqual([key]);
+    expect(loser.blob.puts).toEqual([]);
+
+    const snapshots = await billingQueries.listStatementSnapshots(propertyId);
+    expect(snapshots).toHaveLength(1);
+    expect(
+      (await billingQueries.listLedgerEntries(propertyId)).filter(
+        (e) => e.kind === "true_up",
+      ),
+    ).toHaveLength(1);
+    expect(await januarySteps(propertyId, accountId)).toHaveLength(1);
+    expect(snapshots.map((s) => s.data)).toEqual(winner.renderer.rendered);
+    expect(loser.renderer.rendered).toEqual([]);
+  });
+
+  it("stores the snapshot data the renderer received", async () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("TODAY_OVERRIDE", "2025-01-08");
+    const { propertyId } = await seed();
+    const app = appFor(propertyId, pgUnitOfWork);
+    const caller = await app.caller();
+    await caller.reconciliation.setLetterDate({
+      year: 2024,
+      letterDate: "2025-01-01",
+    });
+
+    await caller.reconciliation.finalize({ year: 2024 });
+
+    const snapshots = await billingQueries.listStatementSnapshots(propertyId);
+    expect(app.renderer.rendered).toHaveLength(1);
+    expect(snapshots.map((s) => s.data)).toEqual(app.renderer.rendered);
+  });
+
+  it("rejects a lease save made from a copy loaded before finalize", async () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("TODAY_OVERRIDE", "2025-01-08");
+    const { propertyId, accountId, leaseId } = await seed();
+    const caller = await appFor(propertyId, pgUnitOfWork).caller();
+    await caller.reconciliation.setLetterDate({
+      year: 2024,
+      letterDate: "2025-01-01",
+    });
+    const opened = await caller.account.get({ id: accountId });
+
+    await caller.reconciliation.finalize({ year: 2024 });
+
+    await expect(
+      caller.lease.setRentStepNotified({
+        accountId,
+        expectedVersion: opened.account.version,
+        leaseId,
+        stepId: opened.account.leases[0]?.rentSteps[0]?.id ?? "",
+        notified: true,
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await januarySteps(propertyId, accountId)).toHaveLength(1);
   });
 
   it("dates an adjustment inside the finalized year on the save day", async () => {

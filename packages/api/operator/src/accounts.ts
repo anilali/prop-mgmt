@@ -8,6 +8,7 @@ import type {
 import type {
   Account,
   AccountQueries,
+  AccountRepository,
   AccountView,
   Lease,
   LeaseTermsInput,
@@ -21,10 +22,35 @@ import {
   accountStart,
   accountState,
 } from "@moonship/billing";
+import { StaleAccountError } from "@moonship/lease-mgmt";
 
 import type { LeaseInput } from "./schemas";
 import { badRequest, conflict, notFound } from "./errors";
 import { loadProperty } from "./property-context";
+
+export function assertAccountVersion(
+  account: Account,
+  expectedVersion: number,
+): void {
+  try {
+    account.assertVersion(expectedVersion);
+  } catch (e) {
+    if (e instanceof StaleAccountError) throw conflict(e.message);
+    throw e;
+  }
+}
+
+export async function saveAccount(
+  repository: AccountRepository,
+  account: Account,
+): Promise<void> {
+  try {
+    await repository.save(account);
+  } catch (e) {
+    if (e instanceof StaleAccountError) throw conflict(e.message);
+    throw e;
+  }
+}
 
 export interface AccountDeps {
   accountQueries: AccountQueries;
@@ -39,6 +65,7 @@ export interface AccountSummary {
   tenant: { id: string; businessName: string };
   unit: { id: string; label: string };
   openingBalanceCents: number;
+  version: number;
   state: AccountState;
   startDate: IsoDate;
   endDate: IsoDate | null;
@@ -224,6 +251,7 @@ function toSummary(
     tenant: { id: view.tenantId, businessName: tenant?.businessName ?? "" },
     unit: { id: view.unitId, label: unit?.label ?? "" },
     openingBalanceCents: view.openingBalanceCents,
+    version: view.version,
     state: accountState(terms, today),
     startDate: accountStart(terms),
     endDate: accountEnd(terms),

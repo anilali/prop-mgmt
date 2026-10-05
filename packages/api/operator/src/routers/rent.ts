@@ -4,7 +4,6 @@ import { z } from "zod";
 import type {
   AccountLedger,
   BillingQueries,
-  BillingStore,
   LateFeeSuggestion,
 } from "@moonship/billing";
 import type { AccountQueries } from "@moonship/lease-mgmt";
@@ -14,13 +13,16 @@ import type { TenantQueries } from "@moonship/tenant-mgmt";
 import {
   DuplicateLedgerEntryError,
   entryDateFor,
+  firstReconciliationYear,
   historyRows,
   isInFinalizedYear,
   isLateFeeDecided,
   lateFeeEntryDate,
   lateFeeSuggestions,
 } from "@moonship/billing";
+import { addDays } from "@moonship/shared";
 
+import type { TransactionalStores, UnitOfWork } from "../unit-of-work";
 import { badRequest, conflict, notFound, toBadRequest } from "../errors";
 import { loadProperty } from "../property-context";
 import {
@@ -33,8 +35,8 @@ import { centsSchema, isoDate, yearMonth } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
 export interface RentRouterDeps {
-  billingStore: BillingStore;
   billingQueries: BillingQueries;
+  unitOfWork: UnitOfWork;
   accountQueries: AccountQueries;
   tenantQueries: TenantQueries;
   unitQueries: UnitQueries;
@@ -53,6 +55,24 @@ const lateFeeInput = z.object({
   accountId: z.string().uuid(),
   month: yearMonth,
 });
+
+async function lockYearsOf(
+  stores: TransactionalStores,
+  propertyId: string,
+  trackingStart: IsoDate | null,
+  dates: readonly IsoDate[],
+): Promise<void> {
+  const firstYear =
+    trackingStart === null ? null : firstReconciliationYear(trackingStart);
+  const years = [
+    ...new Set(
+      dates.map((date) => Math.max(Number(date.slice(0, 4)), firstYear ?? 0)),
+    ),
+  ].sort((a, b) => a - b);
+  for (const year of years) {
+    await stores.billing.lockExistingYear(propertyId, year);
+  }
+}
 
 function currentSuggestion(
   ledger: AccountLedger,
@@ -78,7 +98,11 @@ export function rentRouter(deps: RentRouterDeps) {
     const data = await loadRentData(deps, propertyId);
     const view = data.views.find((v) => v.id === accountId);
     if (!view) throw notFound("Account not found");
-    return { today: data.today, ledger: data.ledgerOf(view) };
+    return {
+      today: data.today,
+      trackingStart: data.property.trackingStartDate,
+      ledger: data.ledgerOf(view),
+    };
   }
 
   async function loadEntry(propertyId: string, id: string) {
@@ -176,141 +200,185 @@ export function rentRouter(deps: RentRouterDeps) {
     addAdjustment: propertyProcedure
       .input(z.object({ accountId: z.string().uuid(), ...adjustmentFields }))
       .mutation(async ({ ctx, input }) => {
-        const [{ property, today }, account, finalizedYears] =
-          await Promise.all([
-            loadProperty(deps.propertyQueries, ctx.propertyId),
-            deps.accountQueries.getById(ctx.propertyId, input.accountId),
-            deps.billingQueries.listFinalizedYears(ctx.propertyId),
-          ]);
+        const [{ property, today }, account] = await Promise.all([
+          loadProperty(deps.propertyQueries, ctx.propertyId),
+          deps.accountQueries.getById(ctx.propertyId, input.accountId),
+        ]);
         if (!account) throw notFound("Account not found");
-        const { entryDate, movedFrom } = entryDateFor(
-          input.date,
-          today,
-          finalizedYears,
-        );
-        checkAdjustmentDate(property.trackingStartDate, today, entryDate);
-        const entry = await save(() =>
-          deps.billingStore.insertLedgerEntry({
-            id: randomUUID(),
-            propertyId: ctx.propertyId,
-            accountId: account.id,
-            kind: "adjustment",
-            entryDate,
-            amountCents: input.amountCents,
-            note: input.note,
-            feeMonth: null,
-            reconciliationYearId: null,
-          }),
-        );
-        return { entry, movedFrom };
+        const trackingStart = property.trackingStartDate;
+        return deps.unitOfWork.run(async (stores) => {
+          await lockYearsOf(stores, ctx.propertyId, trackingStart, [
+            input.date,
+          ]);
+          const finalizedYears = await stores.billingQueries.listFinalizedYears(
+            ctx.propertyId,
+          );
+          const { entryDate, movedFrom } = entryDateFor(
+            input.date,
+            today,
+            finalizedYears,
+          );
+          checkAdjustmentDate(trackingStart, today, entryDate);
+          const entry = await save(() =>
+            stores.billing.insertLedgerEntry({
+              id: randomUUID(),
+              propertyId: ctx.propertyId,
+              accountId: account.id,
+              kind: "adjustment",
+              entryDate,
+              amountCents: input.amountCents,
+              note: input.note,
+              feeMonth: null,
+              reconciliationYearId: null,
+            }),
+          );
+          return { entry, movedFrom };
+        });
       }),
 
     updateAdjustment: propertyProcedure
       .input(z.object({ id: z.string().uuid(), ...adjustmentFields }))
       .mutation(async ({ ctx, input }) => {
-        const [{ property, today }, existing, finalizedYears] =
-          await Promise.all([
-            loadProperty(deps.propertyQueries, ctx.propertyId),
-            loadEntry(ctx.propertyId, input.id),
-            deps.billingQueries.listFinalizedYears(ctx.propertyId),
+        const [{ property, today }, before] = await Promise.all([
+          loadProperty(deps.propertyQueries, ctx.propertyId),
+          loadEntry(ctx.propertyId, input.id),
+        ]);
+        const trackingStart = property.trackingStartDate;
+        return deps.unitOfWork.run(async (stores) => {
+          await lockYearsOf(stores, ctx.propertyId, trackingStart, [
+            before.entryDate,
+            input.date,
           ]);
-        if (existing.kind !== "adjustment") {
-          throw badRequest("Only an adjustment can be edited");
-        }
-        if (
-          isInFinalizedYear(existing.entryDate, finalizedYears) ||
-          isInFinalizedYear(input.date, finalizedYears)
-        ) {
-          throw conflict(
-            "This date is in a finalized year. Add a new adjustment instead.",
+          const [existing, finalizedYears] = await Promise.all([
+            stores.billingQueries.getLedgerEntry(ctx.propertyId, input.id),
+            stores.billingQueries.listFinalizedYears(ctx.propertyId),
+          ]);
+          if (!existing) throw notFound("Entry not found");
+          if (existing.kind !== "adjustment") {
+            throw badRequest("Only an adjustment can be edited");
+          }
+          if (
+            isInFinalizedYear(existing.entryDate, finalizedYears) ||
+            isInFinalizedYear(input.date, finalizedYears)
+          ) {
+            throw conflict(
+              "This date is in a finalized year. Add a new adjustment instead.",
+            );
+          }
+          checkAdjustmentDate(trackingStart, today, input.date);
+          const entry = await save(() =>
+            stores.billing.updateLedgerEntry({
+              ...existing,
+              entryDate: input.date,
+              amountCents: input.amountCents,
+              note: input.note,
+            }),
           );
-        }
-        checkAdjustmentDate(property.trackingStartDate, today, input.date);
-        const entry = await save(() =>
-          deps.billingStore.updateLedgerEntry({
-            ...existing,
-            entryDate: input.date,
-            amountCents: input.amountCents,
-            note: input.note,
-          }),
-        );
-        if (!entry) throw notFound("Entry not found");
-        return entry;
+          if (!entry) throw notFound("Entry not found");
+          return entry;
+        });
       }),
 
     removeEntry: propertyProcedure
       .input(z.object({ id: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
-        const [entry, finalizedYears] = await Promise.all([
+        const [{ property }, before] = await Promise.all([
+          loadProperty(deps.propertyQueries, ctx.propertyId),
           loadEntry(ctx.propertyId, input.id),
-          deps.billingQueries.listFinalizedYears(ctx.propertyId),
         ]);
-        if (entry.kind === "true_up") {
-          throw conflict("A true-up comes from finalize and cannot be removed");
-        }
-        if (isInFinalizedYear(entry.entryDate, finalizedYears)) {
-          throw conflict(
-            "This entry is in a finalized year. Add an adjustment instead.",
+        return deps.unitOfWork.run(async (stores) => {
+          await lockYearsOf(
+            stores,
+            ctx.propertyId,
+            property.trackingStartDate,
+            [before.entryDate],
           );
-        }
-        const removed = await deps.billingStore.deleteLedgerEntry(
-          ctx.propertyId,
-          entry.id,
-        );
-        if (!removed) throw notFound("Entry not found");
-        return { ok: true as const };
+          const [entry, finalizedYears] = await Promise.all([
+            stores.billingQueries.getLedgerEntry(ctx.propertyId, input.id),
+            stores.billingQueries.listFinalizedYears(ctx.propertyId),
+          ]);
+          if (!entry) throw notFound("Entry not found");
+          if (entry.kind === "true_up") {
+            throw conflict(
+              "A true-up comes from finalize and cannot be removed",
+            );
+          }
+          if (isInFinalizedYear(entry.entryDate, finalizedYears)) {
+            throw conflict(
+              "This entry is in a finalized year. Add an adjustment instead.",
+            );
+          }
+          const removed = await stores.billing.deleteLedgerEntry(
+            ctx.propertyId,
+            entry.id,
+          );
+          if (!removed) throw notFound("Entry not found");
+          return { ok: true as const };
+        });
       }),
+
     approveLateFee: propertyProcedure
       .input(lateFeeInput)
       .mutation(async ({ ctx, input }) => {
-        const [{ today, ledger }, finalizedYears] = await Promise.all([
-          loadLedger(ctx.propertyId, input.accountId),
-          deps.billingQueries.listFinalizedYears(ctx.propertyId),
-        ]);
+        const { today, trackingStart, ledger } = await loadLedger(
+          ctx.propertyId,
+          input.accountId,
+        );
         const suggestion = currentSuggestion(ledger, input.month, today);
-        const { entryDate, movedFrom } = lateFeeEntryDate(
-          suggestion,
-          today,
-          finalizedYears,
-        );
-        const entry = await save(() =>
-          deps.billingStore.insertLedgerEntry({
-            id: randomUUID(),
-            propertyId: ctx.propertyId,
-            accountId: input.accountId,
-            kind: "late_fee",
-            entryDate,
-            amountCents: suggestion.amountCents,
-            note: null,
-            feeMonth: suggestion.month,
-            reconciliationYearId: null,
-          }),
-        );
-        return { entry, movedFrom };
+        return deps.unitOfWork.run(async (stores) => {
+          await lockYearsOf(stores, ctx.propertyId, trackingStart, [
+            addDays(suggestion.feeDate, 1),
+          ]);
+          const finalizedYears = await stores.billingQueries.listFinalizedYears(
+            ctx.propertyId,
+          );
+          const { entryDate, movedFrom } = lateFeeEntryDate(
+            suggestion,
+            today,
+            finalizedYears,
+          );
+          const entry = await save(() =>
+            stores.billing.insertLedgerEntry({
+              id: randomUUID(),
+              propertyId: ctx.propertyId,
+              accountId: input.accountId,
+              kind: "late_fee",
+              entryDate,
+              amountCents: suggestion.amountCents,
+              note: null,
+              feeMonth: suggestion.month,
+              reconciliationYearId: null,
+            }),
+          );
+          return { entry, movedFrom };
+        });
       }),
 
     dismissLateFee: propertyProcedure
       .input(lateFeeInput)
       .mutation(async ({ ctx, input }) => {
-        const { today, ledger } = await loadLedger(
+        const { today, trackingStart, ledger } = await loadLedger(
           ctx.propertyId,
           input.accountId,
         );
         const suggestion = currentSuggestion(ledger, input.month, today);
-        const entry = await save(() =>
-          deps.billingStore.insertLedgerEntry({
-            id: randomUUID(),
-            propertyId: ctx.propertyId,
-            accountId: input.accountId,
-            kind: "late_fee_dismissed",
-            entryDate: today,
-            amountCents: 0,
-            note: null,
-            feeMonth: suggestion.month,
-            reconciliationYearId: null,
-          }),
-        );
-        return { entry };
+        return deps.unitOfWork.run(async (stores) => {
+          await lockYearsOf(stores, ctx.propertyId, trackingStart, [today]);
+          const entry = await save(() =>
+            stores.billing.insertLedgerEntry({
+              id: randomUUID(),
+              propertyId: ctx.propertyId,
+              accountId: input.accountId,
+              kind: "late_fee_dismissed",
+              entryDate: today,
+              amountCents: 0,
+              note: null,
+              feeMonth: suggestion.month,
+              reconciliationYearId: null,
+            }),
+          );
+          return { entry };
+        });
       }),
   });
 }

@@ -30,11 +30,13 @@ export type LeaseDialogTarget =
 
 export function LeaseDialog({
   accountId,
+  version,
   target,
   pools,
   onClose,
 }: {
   accountId: string;
+  version: number;
   target: LeaseDialogTarget | null;
   pools: readonly PoolOption[];
   onClose: () => void;
@@ -55,6 +57,7 @@ export function LeaseDialog({
         {target ? (
           <LeaseForm
             accountId={accountId}
+            version={version}
             target={target}
             pools={pools}
             onDone={onClose}
@@ -67,11 +70,13 @@ export function LeaseDialog({
 
 function LeaseForm({
   accountId,
+  version,
   target,
   pools,
   onDone,
 }: {
   accountId: string;
+  version: number;
   target: LeaseDialogTarget;
   pools: readonly PoolOption[];
   onDone: () => void;
@@ -79,6 +84,7 @@ function LeaseForm({
   const trpc = useTRPC();
   const accountUpdated = useAccountUpdated(accountId);
   const [form, setForm] = useState(target.initial);
+  const [expectedVersion] = useState(version);
 
   const onSuccess = (message: string) => async (detail: AccountDetail) => {
     await accountUpdated(detail);
@@ -108,9 +114,14 @@ function LeaseForm({
         try {
           const lease = toLeaseInput(form, pools);
           if (target.mode === "edit") {
-            update.mutate({ accountId, leaseId: target.lease.id, lease });
+            update.mutate({
+              accountId,
+              expectedVersion,
+              leaseId: target.lease.id,
+              lease,
+            });
           } else {
-            add.mutate({ accountId, lease });
+            add.mutate({ accountId, expectedVersion, lease });
           }
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Check the form");

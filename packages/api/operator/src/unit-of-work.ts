@@ -20,6 +20,13 @@ export interface TransactionalStores {
   propertyQueries: PropertyQueries;
 }
 
+export interface UnitOfWorkOptions {
+  isolationLevel?: "read committed" | "repeatable read";
+}
+
 export interface UnitOfWork {
-  run<T>(fn: (stores: TransactionalStores) => Promise<T>): Promise<T>;
+  run<T>(
+    fn: (stores: TransactionalStores) => Promise<T>,
+    options?: UnitOfWorkOptions,
+  ): Promise<T>;
 }

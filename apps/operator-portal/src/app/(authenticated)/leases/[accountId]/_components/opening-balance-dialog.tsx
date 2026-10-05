@@ -23,12 +23,14 @@ import { useAccountUpdated } from "./use-account-updated";
 
 export function OpeningBalanceDialog({
   accountId,
+  version,
   openingBalanceCents,
   description,
   open,
   onOpenChange,
 }: {
   accountId: string;
+  version: number;
   openingBalanceCents: number;
   description: string;
   open: boolean;
@@ -43,6 +45,7 @@ export function OpeningBalanceDialog({
         </DialogHeader>
         <OpeningBalanceForm
           accountId={accountId}
+          version={version}
           openingBalanceCents={openingBalanceCents}
           onDone={() => onOpenChange(false)}
         />
@@ -53,16 +56,19 @@ export function OpeningBalanceDialog({
 
 function OpeningBalanceForm({
   accountId,
+  version,
   openingBalanceCents,
   onDone,
 }: {
   accountId: string;
+  version: number;
   openingBalanceCents: number;
   onDone: () => void;
 }) {
   const trpc = useTRPC();
   const accountUpdated = useAccountUpdated(accountId);
   const [amount, setAmount] = useState(centsToInput(openingBalanceCents));
+  const [expectedVersion] = useState(version);
 
   const save = useMutation(
     trpc.account.setOpeningBalance.mutationOptions({
@@ -83,6 +89,7 @@ function OpeningBalanceForm({
         try {
           save.mutate({
             id: accountId,
+            expectedVersion,
             openingBalanceCents: parseSignedAmount(amount, "opening balance"),
           });
         } catch (err) {

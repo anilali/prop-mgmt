@@ -21,9 +21,10 @@ import {
   snapshotFileName,
   yearEnd,
 } from "@moonship/billing";
+import { ConcurrentUpdateError } from "@moonship/shared";
 
 import type { TransactionalStores, UnitOfWork } from "../unit-of-work";
-import { toAccountTerms } from "../accounts";
+import { saveAccount, toAccountTerms } from "../accounts";
 import { badRequest, conflict, notFound, toBadRequest } from "../errors";
 import { loadProperty } from "../property-context";
 import { isoDate, nonNegativeCentsSchema } from "../schemas";
@@ -89,7 +90,7 @@ async function setEstimateSteps(
   } catch (e) {
     throw toBadRequest(e, "Could not set the new estimates");
   }
-  await stores.accountRepository.save(account);
+  await saveAccount(stores.accountRepository, account);
 }
 
 export function reconciliationRouter(deps: ReconciliationRouterDeps) {
@@ -179,6 +180,9 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
         transactions,
         entries,
         overrides,
+        finalizedYears: years
+          .filter((record) => record.status === "finalized")
+          .map((record) => record.year),
       }),
     };
   }
@@ -188,6 +192,71 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
     const pool = pools.find((p) => p.id === poolId);
     if (!pool) throw notFound("Pool not found");
     return pool;
+  }
+
+  async function finalizeYear(propertyId: string, year: number) {
+    return deps.unitOfWork.run(
+      async (stores) => {
+        const record = await stores.billing.lockYear(propertyId, year);
+        if (record.status === "finalized") {
+          throw conflict(`${year} is already finalized`);
+        }
+        const { workspace } = await loadWorkspace(stores, propertyId, year);
+        const blockers = finalizeBlockers(workspace);
+        if (blockers.length > 0) {
+          throw badRequest(
+            `${year} cannot be finalized yet. ${blockers.join(" ")}`,
+          );
+        }
+        const finalizedAt = new Date();
+        const plan = finalizePlan({
+          propertyId,
+          record,
+          workspace,
+          createdAt: finalizedAt,
+          newId: randomUUID,
+        });
+        for (const statement of plan.statements) {
+          const pdf = await deps.statementRenderer.render(statement.data);
+          await deps.blobStorage.putObject({
+            key: statement.snapshot.pdfStorageKey,
+            body: pdf,
+            contentType: "application/pdf",
+          });
+          await stores.billing.insertStatementSnapshot(statement.snapshot);
+          if (statement.trueUp) {
+            await stores.billing.insertLedgerEntry(statement.trueUp);
+          }
+          if (statement.estimateSteps.length > 0) {
+            await setEstimateSteps(stores, propertyId, statement);
+          }
+        }
+        const saved = await stores.billing.saveYear({
+          ...record,
+          status: "finalized",
+          letterDate: plan.letterDate,
+          finalizedAt,
+        });
+        return {
+          year: saved.year,
+          status: saved.status,
+          letterDate: plan.letterDate,
+          finalizedAt,
+          statements: plan.statements.map((statement) => ({
+            accountId: statement.accountId,
+            businessName: statement.businessName,
+            unitLabel: statement.unitLabel,
+            fileName: statement.fileName,
+            trueUpCents: statement.snapshot.trueUpCents,
+            balanceOnAccountCents: statement.snapshot.balanceOnAccountCents,
+            newMonthlyRentCents:
+              statement.data.continuing?.newMonthlyRentCents ?? null,
+            newEstimateSteps: statement.estimateSteps.length,
+          })),
+        };
+      },
+      { isolationLevel: "repeatable read" },
+    );
   }
 
   return router({
@@ -253,72 +322,21 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
       .input(yearInput)
       .mutation(async ({ ctx, input }) => {
         await loadYearContext(deps, ctx.propertyId, input.year);
-        return deps.unitOfWork.run(async (stores) => {
-          const record = await stores.billing.lockYear(
+        try {
+          return await finalizeYear(ctx.propertyId, input.year);
+        } catch (error) {
+          if (!(error instanceof ConcurrentUpdateError)) throw error;
+          const records = await deps.billingQueries.listReconciliationYears(
             ctx.propertyId,
-            input.year,
           );
-          if (record.status === "finalized") {
+          const record = records.find((r) => r.year === input.year);
+          if (record?.status === "finalized") {
             throw conflict(`${input.year} is already finalized`);
           }
-          const { workspace } = await loadWorkspace(
-            stores,
-            ctx.propertyId,
-            input.year,
+          throw conflict(
+            `Something changed while ${input.year} was being finalized. Try again.`,
           );
-          const blockers = finalizeBlockers(workspace);
-          if (blockers.length > 0) {
-            throw badRequest(
-              `${input.year} cannot be finalized yet. ${blockers.join(" ")}`,
-            );
-          }
-          const finalizedAt = new Date();
-          const plan = finalizePlan({
-            propertyId: ctx.propertyId,
-            record,
-            workspace,
-            createdAt: finalizedAt,
-            newId: randomUUID,
-          });
-          for (const statement of plan.statements) {
-            const pdf = await deps.statementRenderer.render(statement.data);
-            await deps.blobStorage.putObject({
-              key: statement.snapshot.pdfStorageKey,
-              body: pdf,
-              contentType: "application/pdf",
-            });
-            await stores.billing.insertStatementSnapshot(statement.snapshot);
-            if (statement.trueUp) {
-              await stores.billing.insertLedgerEntry(statement.trueUp);
-            }
-            if (statement.estimateSteps.length > 0) {
-              await setEstimateSteps(stores, ctx.propertyId, statement);
-            }
-          }
-          const saved = await stores.billing.saveYear({
-            ...record,
-            status: "finalized",
-            letterDate: plan.letterDate,
-            finalizedAt,
-          });
-          return {
-            year: saved.year,
-            status: saved.status,
-            letterDate: plan.letterDate,
-            finalizedAt,
-            statements: plan.statements.map((statement) => ({
-              accountId: statement.accountId,
-              businessName: statement.businessName,
-              unitLabel: statement.unitLabel,
-              fileName: statement.fileName,
-              trueUpCents: statement.snapshot.trueUpCents,
-              balanceOnAccountCents: statement.snapshot.balanceOnAccountCents,
-              newMonthlyRentCents:
-                statement.data.continuing?.newMonthlyRentCents ?? null,
-              newEstimateSteps: statement.estimateSteps.length,
-            })),
-          };
-        });
+        }
       }),
 
     downloadUrl: propertyProcedure
@@ -347,6 +365,11 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
       .input(z.object({ year: yearSchema, letterDate: isoDate }))
       .mutation(async ({ ctx, input }) => {
         await loadYearContext(deps, ctx.propertyId, input.year);
+        if (yearOf(input.letterDate) !== input.year + 1) {
+          throw badRequest(
+            `The letter date must be in ${input.year + 1}, the year after ${input.year}`,
+          );
+        }
         return deps.unitOfWork.run(async (stores) => {
           const record = await stores.billing.lockYear(
             ctx.propertyId,
@@ -422,6 +445,11 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
           ctx.propertyId,
           input.year,
         );
+        if (workspace.status === "finalized") {
+          throw badRequest(
+            `${input.year} is finalized. Download the statement that was sent instead.`,
+          );
+        }
         const statement = workspace.statements.find(
           (s) => s.accountId === input.accountId,
         );
