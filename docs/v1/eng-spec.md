@@ -76,6 +76,7 @@ Files in `packages/contexts/billing/src`:
 | `late-fee.ts` | late-fee suggestions (5.5) |
 | `suggestions.ts` | description key, account and category suggestions (5.6) |
 | `csv-import.ts` | mapping, row parsing, dedupe plan (5.7) |
+| `ofx-import.ts` | QuickBooks (QBO/OFX) parsing into the same rows (5.7) |
 | `reconciliation.ts` | pool actuals, statement math, checklist, finalize plan (5.8 to 5.11) |
 | `statement-document.ts` | `StatementData` type, letter paragraphs as text runs (section 9) |
 | `ports.ts` | `BillingStore`, `BillingQueries`, `StatementRenderer` interfaces |
@@ -325,7 +326,7 @@ export interface CsvMapping {
 }
 ```
 
-**`billing.import_batches`**: `bank_account_id uuid not null references bank_accounts`, `file_name text not null`, `imported_at timestamp not null default now()`, `row_count`, `inserted_count`, `duplicate_count`, `before_tracking_start_count`, `not_transaction_count` (all `integer not null`), `first_posted_on date null`, `last_posted_on date null`. No `updated_at`.
+**`billing.import_batches`**: `bank_account_id uuid not null references bank_accounts`, `file_name text not null`, `format varchar(8) not null default 'csv'` (check in `csv`, `ofx`), `account_last4 varchar(4) null` (the last 4 digits of the account in a QuickBooks file), `imported_at timestamp not null default now()`, `row_count`, `inserted_count`, `duplicate_count`, `before_tracking_start_count`, `not_transaction_count` (all `integer not null`), `first_posted_on date null`, `last_posted_on date null`. No `updated_at`.
 
 **`billing.transactions`** holds bank rows and cash expenses.
 
@@ -338,7 +339,7 @@ export interface CsvMapping {
 | `description` | `text not null` | Trimmed raw text. |
 | `description_key` | `text not null` | See 5.6. |
 | `amount_cents` | `integer not null` | Check `<> 0`. Positive is money in. |
-| `external_id` | `text null` | Bank transaction id when the CSV has one. |
+| `external_id` | `text null` | Bank transaction id: the CSV's id column, or `FITID` in a QuickBooks file. |
 | `raw_row_hash` | `text null` | SHA-256 of the row's cells joined with `\u001f`. Kept for tracing, not unique. |
 
 Checks: `source = 'bank'` requires `bank_account_id`, `import_batch_id`, and `raw_row_hash`. `source = 'cash'` requires those to be null and `amount_cents < 0`.
@@ -426,6 +427,7 @@ Late-fee and adjustment writes (add, update, remove, approve, dismiss) run in a 
 | 6 | M3 | `billing`: `account_ledger_entries` (without the year foreign key). |
 | 7 | M4 | `billing`: `reconciliation_years`, `pool_bill_overrides`; add the foreign key from `account_ledger_entries.reconciliation_year_id`. |
 | 8 | M5 | `billing`: `reconciliation_statements`. |
+| 9 | v1 | `billing`: add `import_batches.format` and `import_batches.account_last4`. |
 
 ## 4. Account aggregate
 
@@ -633,9 +635,11 @@ accountSuggestion(t), only when t.amount > 0:
 
 For money in, the account suggestion shows first; the category suggestion shows when there is no account suggestion. A tenant with two units pays from one bank description, so the key matches two accounts and the rule falls back to the amount. A single check covering both units matches neither amount, and the owner splits it.
 
-### 5.7 CSV import and dedupe
+### 5.7 Bank file import and dedupe
 
-Parsing:
+The owner uploads the bank's CSV or QuickBooks (QBO/OFX) file. `preview` and `commit` take an optional `format`. Without it, a file is OFX when its text starts with `OFXHEADER` or contains `<OFX>`, and CSV otherwise.
+
+CSV parsing:
 
 1. Parse with papaparse, no header mode. Rows above the header row are ignored.
 2. Finding the header row. With a saved mapping, it is the first row that contains every mapped column name. On the first preview, before any mapping exists, it is the first row with at least three non-empty cells. The preview shows which row it picked, and the owner can enter a different row number; `preview` and `commit` take it as an optional `headerRow` input. The owner then picks the mapped columns from that row's cells.
@@ -654,6 +658,18 @@ Parsing:
 The preview lists each error with its row number and cells. The owner either fixes the mapping or ticks "Skip" on the row. `commit` takes the skipped row numbers and rejects the import if any error row is not in that list. So a "Total" footer line with an amount is skipped with one click, and nothing with an amount is ever left out without the owner seeing it.
 
 6. Skip zero amounts. Skip rows dated before the tracking start date and count them.
+
+QuickBooks (OFX) parsing, in `ofx-import.ts`:
+
+1. No column mapping is needed, and none is saved. The header row step is skipped.
+2. The parser reads OFX 1.x SGML, where a leaf element may have no closing tag (its value runs to the next `<` or the line end), and OFX 2.x XML. It decodes `&amp;` and the other entities. The browser decodes the file as Windows-1252 when the OFX header says so (`CHARSET:1252` without `ENCODING:UTF-8`), and as UTF-8 otherwise.
+3. Each `STMTTRN` is one row, numbered in file order. `postedOn` is the `YYYYMMDD` part of `DTPOSTED` as written. `amountCents` is `parseCents(TRNAMT)`, already signed. `externalId` is `FITID`.
+4. The description is `MEMO` when `NAME` is a cut-off copy of `MEMO` (masked `*` characters match anything) or a generic word such as `DEBIT` or `Check`. Otherwise it is `NAME`. A check adds ` #<CHECKNUM>`, as in `Check #1026`.
+5. A row with a bad or blank date, a bad or blank amount, an amount out of range, or no `FITID` is an error row. The owner skips it, as with CSV. There are no not-a-transaction rows.
+6. The preview also shows the last 4 digits of `ACCTID`, `DTSTART` to `DTEND`, and the ledger balance. The batch stores the format and the last 4 digits. If earlier QuickBooks batches were for other last 4 digits, the preview shows a warning. It does not block the import.
+7. A file with more than one account is rejected.
+
+OFX rows then go through the same plan as CSV rows with an id column: zero amounts and rows before tracking start are skipped, and dedupe uses the rules below.
 
 Dedupe makes two passes over the file in row order: rows with an id first, then rows with no id. Stored state per key `(postedOn, descriptionKey, amountCents)`: the total count of stored rows, the count of stored rows with no `external_id`, and the key of every stored `external_id`. `claimed[key]` counts the stored rows that id rows in this file already matched, either by the same id or by using up a stored row with no id.
 
@@ -677,7 +693,7 @@ pass 2, each row with no id:
 
 This keeps `max(count already stored, count in this file)` rows per key. Two real $25.00 fees on the same day both import. Importing the same file again inserts nothing. An overlapping file inserts only the rows past what is stored.
 
-Commit runs in one unit of work: lock the `bank_accounts` row with `select ... for update`, read stored counts and external ids for the file's date range, insert the batch and the rows, and save the mapping. The preview runs the same plan without writing.
+Commit runs in one unit of work: lock the `bank_accounts` row with `select ... for update`, read stored counts and external ids for the file's date range, insert the batch and the rows, and save the mapping (CSV only). The preview runs the same plan without writing.
 
 Single bank rows are never deleted. Deleting one would lower the stored count, and the next overlapping import would add it back. If a duplicate gets in (for example the bank changed a description between exports), the owner sorts it to a not-counted category.
 
@@ -979,9 +995,9 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | | `remove` | accountId, expectedVersion, leaseId | account; rule 10 |
 | | `setRentStepNotified` | accountId, expectedVersion, leaseId, stepId, notified | account |
 | `bankImport` | `getMapping` | none | `CsvMapping` or null |
-| | `preview` | csvText (max 2 MB), mapping?, headerRow? | header row used, headers, first 10 raw rows, first 10 parsed rows, counts, not-a-transaction rows, errors |
-| | `commit` | csvText, fileName, mapping, headerRow?, skipRows? | batch summary; rejected if an error row is not in skipRows |
-| | `listBatches` | none | batches, newest first, each with a sorted-row count |
+| | `preview` | fileText (max 2 MB), format?, mapping?, headerRow? | `format`. CSV: header row used, headers, first 10 raw rows, mapping. OFX: account last 4, date range, ledger balance, account warning. Both: first 10 parsed rows, counts, not-a-transaction rows, errors |
+| | `commit` | fileText, fileName, format?, mapping (CSV only), headerRow?, skipRows? | batch summary with format and account last 4; rejected if an error row is not in skipRows |
+| | `listBatches` | none | batches, newest first, each with its format, account last 4, and a sorted-row count |
 | | `removeBatch` | id | ok; rejected if any of its rows is sorted |
 | `transaction` | `listToSort` | none | unsorted transactions with suggestions (5.6) |
 | | `list` | year?, categoryId?, accountId?, search?, sorted? | rows and their total |
@@ -1022,7 +1038,7 @@ All routes are under `apps/operator-portal/src/app/(authenticated)` and call `re
 | `/rent` | Rent status table, one row per account. Each row links to its history. |
 | `/rent/[accountId]` | History with running balance, late-fee suggestions with Approve and Dismiss, Add adjustment, edit and delete for owner-entered entries. |
 | `/transactions` | Two tabs. **To sort**: each row has its suggestion pre-selected in the picker, a Confirm button, and a Split action that opens line editing. **All**: filters (year, category, account, text, sorted), totals for the filter, and click to re-sort. Add cash expense button. |
-| `/transactions/import` | Upload, header row (detected, can be changed), mapping form (first time or Edit), preview with counts, not-a-transaction rows, and errors, Import button, past batches with Remove on batches that have no sorted rows. |
+| `/transactions/import` | Upload a `.csv`, `.qbo`, `.ofx`, or `.qfx` file. CSV: header row (detected, can be changed), mapping form (first time or Edit). QuickBooks: no header row or mapping step; the account's last 4 digits, the file's date range, and any account warning. Both: preview with counts, first rows, not-a-transaction rows, and errors with Skip, Import button, past batches with their format and Remove on batches that have no sorted rows. |
 | `/reconciliation` | Years list with status. |
 | `/reconciliation/[year]` | Loads only for a year in the list. Letter date (starts at January 1 of the next year and only allows dates in that year), checklist, pool cards (actual, transactions, bill amount form, bill next to payments), statements (table starts closed, or open when a row has a problem; Preview PDF), Finalize. When finalized: snapshots, Download PDF, mismatch flags, January table. |
 | `/tenants` | Tenant list and dialog. |
@@ -1149,6 +1165,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 | `billing/src/late-fee.test.ts` | `lateFeeMonths` returns only the current month, so nothing shows for March on April 1; the 5.5 examples; no suggestion when paid by the fee date, when decided, when the covering lease has no fee, or for old adjustments, fees, owed opening balances, and true-ups; a suggestion still shows after a late catch-up; carried-in credit from an early autopay and a prepaid opening balance; a credit true-up counts as received; a check bounced after the fee date gives no suggestion, and one bounced before it gives one unless replaced; split payments across two accounts; fee date on a mid-month start; no fee for a move-in on the last day of the month; approval date moves to today when the fee date is in a finalized year |
 | `billing/src/suggestions.test.ts` | description key; category from the last single-line match; archived category skipped; account from history; one key on two accounts falls back to amount; ties list choices |
 | `billing/src/csv-import.test.ts` | first-time header detection below preamble lines; header search with a mapping; both amount modes, flip sign; dates `1/5/2026` and `01/05/2026` equal, `2/30/2026` and `1/5/26` are errors; bad date with an amount is an error, and commit succeeds once that row is in skipRows; footer with no amount is a not-a-transaction row; dedupe: same file twice, overlapping files, two equal rows in one day, external ids, rows before tracking start |
+| `billing/src/ofx-import.test.ts` | closed and unclosed tags, OFX 2 XML, CRLF, Windows-1252 characters, checks, memo or name, bad rows; dedupe through OFX rows: same file twice, overlapping files, a stored row without an id, rows before tracking start |
 | `billing/src/reconciliation.test.ts` | section 6 in full; bill override; zero actual cost; negative actual blocks; zero-sqft pool does not throw and blocks; every checklist warning, including bank data through a date and pool or sqft changes; which accounts are continuing; `StatementData` for each case; snapshot comparison lists each changed value with its difference; January table for case 6.1 shows 19.82 short |
 | `billing/src/statement-document.test.ts` | letter text for positive, zero, and negative true-up and balance; P3 list joining; P3 and P4 left out when not continuing |
 
@@ -1171,7 +1188,7 @@ The three amounts are bold. Letter text is built by pure functions in `statement
 
 | Test | Milestone | Checks |
 |---|---|---|
-| `transactions.integration.test.ts` | M2 | Commit the same CSV twice: second run inserts 0. Overlapping CSV: inserts only new rows. Two equal rows in one day: both stored once. Remove a batch, then commit the same file: rows come back. |
+| `transactions.integration.test.ts` | M2 | Commit the same CSV twice: second run inserts 0. Overlapping CSV: inserts only new rows. Two equal rows in one day: both stored once. Remove a batch, then commit the same file: rows come back. Commit a QuickBooks file, an overlapping one, and the first again: only new transaction ids are stored, and each batch records its format and the account's last 4 digits. |
 | `allocations.integration.test.ts` | M2 | Replacing lines is atomic; a bad sum leaves the old lines in place; two `allocate` calls for one transaction at the same time end with one set of lines. |
 | `account-repository.integration.test.ts` | M1 | Leases and step rows round-trip with ids and `tenant_notified_at`; a removed lease is deleted with its steps; each save bumps `version` and a stale copy throws `StaleAccountError`. |
 | `balance.integration.test.ts` | M3 | Load the 6.3 account through `PGBillingQueries`, compute the balance, and compare it with a plain SQL sum of opening balance, entries, and payments plus the computed months. |

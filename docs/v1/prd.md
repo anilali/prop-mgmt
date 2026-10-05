@@ -103,10 +103,12 @@ A tenant moving to another unit gets a new account. The remaining balance moves 
 
 ### Import
 
-- The owner uploads the bank's CSV. The first time, they match its columns to date, description, and amount, and the app remembers. The amount can be one signed column or separate debit and credit columns.
+- The owner uploads the bank's CSV or QuickBooks (QBO/OFX) file.
+- For a CSV, the first time, they match its columns to date, description, and amount, and the app remembers. The amount can be one signed column or separate debit and credit columns.
+- A QuickBooks file needs no column matching. The app uses the bank's transaction id to tell rows apart. The preview shows the last 4 digits of the account and the file's date range. It warns when the account differs from earlier QuickBooks files.
 - Importing an overlapping date range never creates duplicates.
 - Rows dated before the tracking start are skipped and counted.
-- A row with an amount but a date that can't be read is shown before importing. The owner fixes the column matching or skips the row. Nothing with an amount is left out without the owner seeing it.
+- A row with an amount but a date that can't be read is shown before importing. The owner fixes the column matching or skips the row. In a QuickBooks file, a row with a bad date, a bad amount, or no transaction id is shown the same way, and the owner skips it. Nothing with an amount is left out without the owner seeing it.
 - An import can be removed as long as none of its transactions have been sorted.
 - The owner adds cash expenses by hand with a date, description, amount, and category.
 
@@ -232,7 +234,7 @@ It runs once per year. If data in a finalized year changes later, the year shows
 
 1. The owner can enter the property, units, pools, tenants, accounts, and leases, including base rent steps, estimates, late fee, insurance date, and opening balance.
 2. Each unit's share in a pool equals its sqft divided by the total sqft of the pool's units, and vacant units count in the total.
-3. Importing the same CSV twice, or two overlapping ones, creates no duplicates.
+3. Importing the same CSV or QuickBooks file twice, or two overlapping ones, creates no duplicates.
 4. Every bank transaction can be categorized or split, and every deposit can be matched to an account. A cash expense has one category and isn't split. Suggestions never apply without the owner confirming.
 5. An account's balance equals its opening balance plus expected amounts, fees, adjustments, and true-ups, minus payments.
 6. A late fee is only added when the owner approves it.
