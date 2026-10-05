@@ -8,6 +8,7 @@ export type {
   CsvDateFormat,
   CsvMapping,
   ImportBatch,
+  ImportFormat,
   LeaseTerms,
   LedgerEntry,
   LedgerEntryKind,
@@ -16,7 +17,12 @@ export type {
   TransactionSource,
   Txn,
 } from "./types";
-export { CATEGORY_KINDS, CSV_DATE_FORMATS, LEDGER_ENTRY_KINDS } from "./types";
+export {
+  CATEGORY_KINDS,
+  CSV_DATE_FORMATS,
+  IMPORT_FORMATS,
+  LEDGER_ENTRY_KINDS,
+} from "./types";
 
 export type { AccountState, MonthCharges } from "./lease-calendar";
 export {
@@ -83,9 +89,13 @@ export {
   unskippedErrors,
 } from "./csv-import";
 
+export type { OfxStatement } from "./ofx-import";
+export { detectImportFormat, fileCharset, parseOfx } from "./ofx-import";
+
 export type { ParsedImport } from "./bank-import";
 export {
   commitImport,
+  commitOfxImport,
   NOTHING_STORED,
   planFileImport,
   readImportRows,

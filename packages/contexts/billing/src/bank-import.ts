@@ -1,8 +1,9 @@
 import type { IsoDate } from "@moonship/shared";
 
 import type { CsvRowOutcome, DedupeState, ImportPlan } from "./csv-import";
+import type { OfxStatement } from "./ofx-import";
 import type { BillingStore, DedupeRange } from "./ports";
-import type { CsvMapping, ImportBatch } from "./types";
+import type { CsvMapping, ImportBatch, ImportFormat } from "./types";
 import {
   dedupeRange,
   findHeaderRow,
@@ -41,7 +42,7 @@ export const NOTHING_STORED: DedupeState = {
 };
 
 export async function planFileImport(
-  parsed: ParsedImport,
+  parsed: { outcomes: readonly CsvRowOutcome[] },
   options: {
     trackingStart: IsoDate;
     skipRows?: readonly number[];
@@ -59,24 +60,27 @@ export async function planFileImport(
   });
 }
 
-export async function commitImport(
+interface CommitInput {
+  propertyId: string;
+  fileName: string;
+  skipRows?: readonly number[];
+  trackingStart: IsoDate;
+  importedAt: Date;
+  newId: () => string;
+  hashRow: (cells: string[]) => string;
+}
+
+async function commitOutcomes(
   store: BillingStore,
-  input: {
-    propertyId: string;
-    fileName: string;
-    rows: readonly string[][];
-    mapping: CsvMapping;
-    headerRow?: number;
-    skipRows?: readonly number[];
-    trackingStart: IsoDate;
-    importedAt: Date;
-    newId: () => string;
-    hashRow: (cells: string[]) => string;
+  input: CommitInput & {
+    outcomes: readonly CsvRowOutcome[];
+    format: ImportFormat;
+    accountLast4: string | null;
+    fixAdvice: string;
   },
 ): Promise<{ batch: ImportBatch; plan: ImportPlan }> {
-  const parsed = readImportRows(input.rows, input.mapping, input.headerRow);
   const bankAccount = await store.lockBankAccount(input.propertyId);
-  const plan = await planFileImport(parsed, {
+  const plan = await planFileImport(input, {
     trackingStart: input.trackingStart,
     skipRows: input.skipRows,
     loadStored: (range) =>
@@ -85,7 +89,7 @@ export async function commitImport(
   const blocking = unskippedErrors(plan);
   if (blocking.length > 0) {
     throw new Error(
-      `Fix the column matching or skip ${blocking.length === 1 ? "row" : "rows"} ${blocking.map((e) => e.rowNumber).join(", ")}`,
+      `${input.fixAdvice} ${blocking.length === 1 ? "row" : "rows"} ${blocking.map((e) => e.rowNumber).join(", ")}`,
     );
   }
   const batch: ImportBatch = {
@@ -93,6 +97,8 @@ export async function commitImport(
     propertyId: input.propertyId,
     bankAccountId: bankAccount.id,
     fileName: input.fileName,
+    format: input.format,
+    accountLast4: input.accountLast4,
     importedAt: input.importedAt,
     rowCount: plan.rowCount,
     insertedCount: plan.toInsert.length,
@@ -114,8 +120,44 @@ export async function commitImport(
       rawRowHash: input.hashRow(row.cells),
     })),
   );
-  await store.saveCsvMapping(input.propertyId, bankAccount.id, input.mapping);
   return { batch, plan };
+}
+
+export async function commitImport(
+  store: BillingStore,
+  input: CommitInput & {
+    rows: readonly string[][];
+    mapping: CsvMapping;
+    headerRow?: number;
+  },
+): Promise<{ batch: ImportBatch; plan: ImportPlan }> {
+  const parsed = readImportRows(input.rows, input.mapping, input.headerRow);
+  const result = await commitOutcomes(store, {
+    ...input,
+    outcomes: parsed.outcomes,
+    format: "csv",
+    accountLast4: null,
+    fixAdvice: "Fix the column matching or skip",
+  });
+  await store.saveCsvMapping(
+    input.propertyId,
+    result.batch.bankAccountId,
+    input.mapping,
+  );
+  return result;
+}
+
+export async function commitOfxImport(
+  store: BillingStore,
+  input: CommitInput & { statement: OfxStatement },
+): Promise<{ batch: ImportBatch; plan: ImportPlan }> {
+  return commitOutcomes(store, {
+    ...input,
+    outcomes: input.statement.outcomes,
+    format: "ofx",
+    accountLast4: input.statement.accountLast4,
+    fixAdvice: "Skip",
+  });
 }
 
 export async function removeImportBatch(

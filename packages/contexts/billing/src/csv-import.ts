@@ -165,12 +165,12 @@ export function headerProblem(
   return null;
 }
 
-type AmountResult =
+export type AmountResult =
   | { kind: "blank" }
   | { kind: "invalid"; message: string; hasAmount: boolean }
   | { kind: "ok"; cents: number };
 
-function readAmount(text: string): AmountResult {
+export function readAmount(text: string): AmountResult {
   const trimmed = text.trim();
   if (trimmed === "") return { kind: "blank" };
   let cents: number;

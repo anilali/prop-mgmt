@@ -78,6 +78,10 @@ export interface CsvMapping {
   idColumn: string | null;
 }
 
+export const IMPORT_FORMATS = ["csv", "ofx"] as const;
+
+export type ImportFormat = (typeof IMPORT_FORMATS)[number];
+
 export type TransactionSource = "bank" | "cash";
 
 export interface AllocationLine {
@@ -111,6 +115,8 @@ export interface ImportBatch {
   propertyId: string;
   bankAccountId: string;
   fileName: string;
+  format: ImportFormat;
+  accountLast4: string | null;
   importedAt: Date;
   rowCount: number;
   insertedCount: number;
