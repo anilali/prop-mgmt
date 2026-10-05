@@ -18,6 +18,7 @@ export function descriptionKey(text: string): string {
 }
 
 function sameKeySorted(txn: Txn, transactions: readonly Txn[]): Txn[] {
+  if (txn.descriptionKey === "") return [];
   return transactions.filter(
     (other) =>
       other.id !== txn.id &&
@@ -65,10 +66,12 @@ export function accountSuggestion(
   if (txn.amountCents <= 0) return { kind: "none" };
 
   const fromHistory = new Set(
-    sameKeySorted(txn, transactions).flatMap((match) => {
-      const line = match.lines.length === 1 ? match.lines[0] : undefined;
-      return line?.accountId ? [line.accountId] : [];
-    }),
+    sameKeySorted(txn, transactions)
+      .filter((match) => match.postedOn <= txn.postedOn)
+      .flatMap((match) => {
+        const line = match.lines.length === 1 ? match.lines[0] : undefined;
+        return line?.accountId ? [line.accountId] : [];
+      }),
   );
   const [onlyAccount] = fromHistory;
   if (fromHistory.size === 1 && onlyAccount !== undefined) {

@@ -129,6 +129,20 @@ describe("categorySuggestion", () => {
     expect(categorySuggestion(current, history, categories)).toBe("cam");
   });
 
+  it("gives no suggestion from history when the description key is empty", () => {
+    const history = [
+      txn("#1001", -5000, "2026-01-05", [toCategory("cam", -5000)]),
+    ];
+
+    expect(
+      categorySuggestion(
+        txn("#1002", -5000, "2026-02-05"),
+        history,
+        categories,
+      ),
+    ).toBeNull();
+  });
+
   it("returns null with no sorted match", () => {
     const history = [txn("CITY WATER", -5000, "2026-01-05")];
     const current = txn("CITY WATER", -5000, "2026-03-05");
@@ -201,6 +215,118 @@ describe("accountSuggestion", () => {
         "2026-01-01",
       ),
     ).toEqual({ kind: "none" });
+  });
+
+  it("uses only matches posted on or before the deposit", () => {
+    const history = [
+      txn("ACH DEP SUPER LUCKY", 365_482, "2026-01-02", [
+        toAccount("a", 365_482),
+      ]),
+      txn("ACH DEP SUPER LUCKY", 216_000, "2026-03-02", [
+        toAccount("b", 216_000),
+      ]),
+    ];
+
+    expect(
+      accountSuggestion(
+        txn("ACH DEP SUPER LUCKY", 1000, "2026-02-02"),
+        history,
+        accounts,
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "account", accountId: "a" });
+    expect(
+      accountSuggestion(
+        txn("ACH DEP SUPER LUCKY", 1000, "2026-01-02"),
+        history,
+        accounts,
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "account", accountId: "a" });
+    expect(
+      accountSuggestion(
+        txn("ACH DEP SUPER LUCKY", 1000, "2026-01-01"),
+        history,
+        accounts,
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("does not match history on an empty description key but still matches the amount", () => {
+    const history = [
+      txn("#1001", 365_482, "2026-01-02", [toAccount("a", 365_482)]),
+    ];
+
+    expect(
+      accountSuggestion(
+        txn("#2002", 1000, "2026-02-02"),
+        history,
+        accounts,
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "none" });
+    expect(
+      accountSuggestion(
+        txn("#2002", 216_000, "2026-02-02"),
+        history,
+        accounts,
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "accountChoices", accountIds: ["b", "d"] });
+  });
+
+  it("matches the rent of the deposit's month when rent changes the next month", () => {
+    const stepped: AccountTerms = {
+      accountId: "s",
+      tenantId: "t",
+      unitId: "u-s",
+      openingBalanceCents: 0,
+      leases: [
+        {
+          ...lease("2025-01-01", 200_000),
+          rentSteps: [
+            {
+              id: "r1",
+              startsOn: "2025-01-01",
+              amountCents: 200_000,
+              tenantNotifiedAt: null,
+            },
+            {
+              id: "r2",
+              startsOn: "2026-03-01",
+              amountCents: 220_000,
+              tenantNotifiedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(
+      accountSuggestion(
+        txn("WIRE IN", 200_000, "2026-02-27"),
+        [],
+        [stepped],
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "account", accountId: "s" });
+    expect(
+      accountSuggestion(
+        txn("WIRE IN", 220_000, "2026-02-27"),
+        [],
+        [stepped],
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "none" });
+    expect(
+      accountSuggestion(
+        txn("WIRE IN", 220_000, "2026-03-01"),
+        [],
+        [stepped],
+        "2026-01-01",
+      ),
+    ).toEqual({ kind: "account", accountId: "s" });
   });
 
   it("ignores months before tracking start", () => {
