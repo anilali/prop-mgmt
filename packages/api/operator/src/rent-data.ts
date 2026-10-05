@@ -122,7 +122,8 @@ export function rentStatusRows(data: RentData) {
       (row) =>
         row.state === "open" ||
         row.state === "holdover" ||
-        row.balanceCents !== 0,
+        row.balanceCents !== 0 ||
+        row.suggestions.length > 0,
     )
     .sort(
       (a, b) =>

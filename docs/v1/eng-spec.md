@@ -551,7 +551,7 @@ status(A, today):
   return Behind
 ```
 
-`Due` means only this month's charges are unpaid and the grace date has not passed. The grace date is never before the month's due date, so a tenant who moves in on February 15 is Due, not Behind, on move-in day. Anything left over from an earlier month makes the account `Behind` right away, whatever the day. The rent status table lists accounts open or in holdover today, plus any other account (closed or upcoming) with a non-zero balance. An upcoming account can carry a balance when a tenant moving units has it moved to the new account. It sorts Behind first, then Due, then the rest, and by balance from largest within each group.
+`Due` means only this month's charges are unpaid and the grace date has not passed. The grace date is never before the month's due date, so a tenant who moves in on February 15 is Due, not Behind, on move-in day. Anything left over from an earlier month makes the account `Behind` right away, whatever the day. The rent status table lists accounts open or in holdover today, plus any other account (closed or upcoming) with a non-zero balance or a pending late-fee suggestion. An upcoming account can carry a balance when a tenant moving units has it moved to the new account. It sorts Behind first, then Due, then the rest, and by balance from largest within each group.
 
 Each row shows tenant, unit, expected so far, received so far, balance, last payment date, and status, all from 5.3 with `asOf = today`.
 
@@ -1024,7 +1024,7 @@ All routes are under `apps/operator-portal/src/app/(authenticated)` and call `re
 | `/transactions` | Two tabs. **To sort**: each row has its suggestion pre-selected in the picker, a Confirm button, and a Split action that opens line editing. **All**: filters (year, category, account, text, sorted), totals for the filter, and click to re-sort. Add cash expense button. |
 | `/transactions/import` | Upload, header row (detected, can be changed), mapping form (first time or Edit), preview with counts, not-a-transaction rows, and errors, Import button, past batches with Remove on batches that have no sorted rows. |
 | `/reconciliation` | Years list with status. |
-| `/reconciliation/[year]` | Letter date, checklist, pool cards (actual, transactions, bill amount form, bill next to payments), statements (expandable table, Preview PDF), Finalize. When finalized: snapshots, Download PDF, mismatch flags, January table. |
+| `/reconciliation/[year]` | Loads only for a year in the list. Letter date (starts at January 1 of the next year and only allows dates in that year), checklist, pool cards (actual, transactions, bill amount form, bill next to payments), statements (table starts closed, or open when a row has a problem; Preview PDF), Finalize. When finalized: snapshots, Download PDF, mismatch flags, January table. |
 | `/tenants` | Tenant list and dialog. |
 | `/leases` | Accounts grouped by unit, each with its state and leases. Open account button. |
 | `/leases/[accountId]` | Account page: tenant, unit, opening balance, its leases in order, Add lease (pre-fills the start as the day after the newest lease ends and copies its steps' current amounts). Each lease opens a form: dates, move-out (newest lease only), base rent steps with Add increase (date plus percent or new amount), per-pool Pays checkbox with estimate steps, late fee, insurance date. |
@@ -1051,7 +1051,9 @@ Remove "Dashboard", "Tasks", "Applicants", "Events", "Outgoing", and the placeho
 
 ### 8.3 Home page
 
-Five cards in this order: Behind (with fee suggestions), To sort (count and a link), Rent changes (with Tenant notified toggles), Insurance, Leases ending and Past end date. A card with nothing in it shows one line, such as "No one is behind."
+Cards in this order: Behind (balances only), Late fees to decide (every account with a pending suggestion, including a tenant who paid late and has caught up, with Approve and Dismiss), To sort (count and a link), Rent changes (with Tenant notified toggles), Insurance, Leases ending and Past end date. A card with nothing in it shows one line, such as "No one is behind." `home.comingUp` returns `lateFees` and the property's `timeZone`.
+
+Below the md breakpoint the sidebar is hidden and opens from a menu button in a left-side sheet. Pages under `(authenticated)` have error (with retry), loading, and not-found states. Unknown account ids on `/leases/[accountId]` and `/rent/[accountId]` show not found. In the portal, negative rent balances and balances on account show as `-$x`; the `($x)` accounting format is used only in the PDF.
 
 ## 9. Statement and letter PDF
 
