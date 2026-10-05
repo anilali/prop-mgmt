@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import type { AccountStatement, ReconciliationInput } from "./reconciliation";
-import type { AccountTerms, LeaseTerms, PoolBillOverride, Txn } from "./types";
+import type {
+  AccountStatement,
+  FinalizePlan,
+  ReconciliationInput,
+} from "./reconciliation";
+import type {
+  AccountTerms,
+  LeaseTerms,
+  PoolBillOverride,
+  StatementSnapshot,
+  Txn,
+} from "./types";
 import {
   ACCOUNTS,
   CATEGORY_IDS,
@@ -17,7 +27,14 @@ import {
   TENANTS,
   TRANSACTIONS,
 } from "./fixtures/2024";
-import { reconciliationWorkspace } from "./reconciliation";
+import {
+  compareSnapshots,
+  finalizeBlockers,
+  finalizedYearView,
+  finalizePlan,
+  januaryTable,
+  reconciliationWorkspace,
+} from "./reconciliation";
 
 function workspace(overrides: Partial<ReconciliationInput> = {}) {
   return reconciliationWorkspace(reconciliationInput(overrides));
@@ -707,5 +724,517 @@ describe("checklist (5.10)", () => {
 
   it("keeps all section 6 accounts in ACCOUNTS", () => {
     expect(ACCOUNTS).toHaveLength(3);
+  });
+});
+
+const FINALIZED_AT = new Date("2025-01-08T15:00:00Z");
+
+function planFor(overrides: Partial<ReconciliationInput> = {}) {
+  const input = reconciliationInput(overrides);
+  if (!input.record) throw new Error("missing record");
+  let next = 0;
+  return finalizePlan({
+    propertyId: "property-2024",
+    record: input.record,
+    workspace: reconciliationWorkspace(input),
+    createdAt: FINALIZED_AT,
+    newId: () => `id-${++next}`,
+  });
+}
+
+function applyPlan(
+  input: ReconciliationInput,
+  plan: FinalizePlan,
+): ReconciliationInput {
+  if (!input.record) throw new Error("missing record");
+  const accounts = input.accounts.map((account) => {
+    const steps = plan.statements.find(
+      (s) => s.accountId === account.accountId,
+    )?.estimateSteps;
+    return {
+      ...account,
+      leases: account.leases.map((lease) => ({
+        ...lease,
+        estimateSteps: [
+          ...lease.estimateSteps.filter(
+            (step) =>
+              !steps?.some(
+                (s) =>
+                  s.leaseId === lease.leaseId &&
+                  s.poolId === step.poolId &&
+                  s.startsOn === step.startsOn,
+              ),
+          ),
+          ...(steps ?? [])
+            .filter((s) => s.leaseId === lease.leaseId)
+            .map((s) => ({
+              id: `${s.leaseId}-${s.poolId}-${s.startsOn}`,
+              poolId: s.poolId,
+              startsOn: s.startsOn,
+              amountCents: s.amountCents,
+            })),
+        ],
+      })),
+    };
+  });
+  return {
+    ...input,
+    record: {
+      ...input.record,
+      status: "finalized",
+      finalizedAt: FINALIZED_AT,
+    },
+    accounts,
+    entries: [
+      ...input.entries,
+      ...plan.statements.flatMap((s) => (s.trueUp ? [s.trueUp] : [])),
+    ],
+  };
+}
+
+function snapshotsOf(plan: FinalizePlan): StatementSnapshot[] {
+  return plan.statements.map((s) => s.snapshot);
+}
+
+function januaryPayment(
+  accountId: string,
+  postedOn: string,
+  amountCents: number,
+): Txn {
+  return {
+    id: `jan-${accountId}-${postedOn}`,
+    propertyId: "property-2024",
+    source: "bank",
+    importBatchId: "batch-2025",
+    postedOn,
+    description: "JANUARY RENT",
+    descriptionKey: "january rent",
+    amountCents,
+    externalId: null,
+    lines: [{ accountId, categoryId: null, amountCents }],
+  };
+}
+
+describe("finalize plan (5.11)", () => {
+  const plan = planFor();
+
+  it("writes one snapshot per statement with its PDF key", () => {
+    expect(plan.year).toBe(2024);
+    expect(plan.letterDate).toBe("2025-01-01");
+    expect(
+      plan.statements.map((s) => [
+        s.accountId,
+        s.fileName,
+        s.snapshot.pdfStorageKey,
+        s.snapshot.trueUpCents,
+        s.snapshot.balanceOnAccountCents,
+      ]),
+    ).toEqual([
+      [
+        superLucky.accountId,
+        "2024 Reconciliation Super Lucky LLC A.pdf",
+        "reconciliations/property-2024/2024/account-super-lucky.pdf",
+        23_774,
+        65_148,
+      ],
+      [
+        tenantB.accountId,
+        "2024 Reconciliation Tenant B Inc B.pdf",
+        "reconciliations/property-2024/2024/account-tenant-b.pdf",
+        -108_454,
+        -83_454,
+      ],
+      [
+        tenantD.accountId,
+        "2024 Reconciliation Tenant D Co D.pdf",
+        "reconciliations/property-2024/2024/account-tenant-d.pdf",
+        21_853,
+        21_853,
+      ],
+    ]);
+    expect(plan.statements[0]?.snapshot).toMatchObject({
+      propertyId: "property-2024",
+      reconciliationYearId: "year-2024",
+      year: 2024,
+      tenantId: superLucky.tenantId,
+      createdAt: FINALIZED_AT,
+    });
+    expect(plan.statements[0]?.snapshot.data).toBe(plan.statements[0]?.data);
+    expect(plan.statements[0]?.data.letterDate).toBe("2025-01-01");
+  });
+
+  it("dates each true-up on the letter date", () => {
+    expect(
+      plan.statements.map((s) => [
+        s.trueUp?.accountId,
+        s.trueUp?.kind,
+        s.trueUp?.entryDate,
+        s.trueUp?.amountCents,
+        s.trueUp?.reconciliationYearId,
+      ]),
+    ).toEqual([
+      [superLucky.accountId, "true_up", "2025-01-01", 23_774, "year-2024"],
+      [tenantB.accountId, "true_up", "2025-01-01", -108_454, "year-2024"],
+      [tenantD.accountId, "true_up", "2025-01-01", 21_853, "year-2024"],
+    ]);
+  });
+
+  it("sets seven estimate steps from January 1 on the lease covering it", () => {
+    expect(
+      plan.statements.map((s) =>
+        s.estimateSteps.map((step) => [
+          step.leaseId,
+          step.poolId,
+          step.startsOn,
+          step.amountCents,
+        ]),
+      ),
+    ).toEqual([
+      [
+        ["lease-super-lucky", POOLS.cam, "2025-01-01", 28_724],
+        ["lease-super-lucky", POOLS.taxes, "2025-01-01", 74_738],
+        ["lease-super-lucky", POOLS.insurance, "2025-01-01", 14_002],
+      ],
+      [
+        ["lease-b2", POOLS.cam, "2025-01-01", 22_979],
+        ["lease-b2", POOLS.taxes, "2025-01-01", 59_790],
+        ["lease-b2", POOLS.insurance, "2025-01-01", 11_201],
+        ["lease-b2", POOLS.water, "2025-01-01", 7_200],
+      ],
+      [],
+    ]);
+  });
+
+  it("stores the new monthly rent the letter states", () => {
+    expect(
+      plan.statements.map(
+        (s) => s.snapshot.data.continuing?.newMonthlyRentCents ?? null,
+      ),
+    ).toEqual([367_464, 416_170, null]);
+  });
+
+  it("writes no true-up when it is 0", () => {
+    const input = reconciliationInput();
+    if (!input.record) throw new Error("missing record");
+    const workspaceNow = reconciliationWorkspace(input);
+    const zeroed = {
+      ...workspaceNow,
+      statements: workspaceNow.statements.map((s) => ({
+        ...s,
+        trueUpCents: 0,
+      })),
+    };
+    const result = finalizePlan({
+      propertyId: "property-2024",
+      record: input.record,
+      workspace: zeroed,
+      createdAt: FINALIZED_AT,
+      newId: () => "id",
+    });
+    expect(result.statements.map((s) => s.trueUp)).toEqual([null, null, null]);
+  });
+
+  it("uses a renewal that starts on January 1 and leaves a later lease alone", () => {
+    const b2 = tenantB.leases[1];
+    if (!b2) throw new Error("missing lease");
+    const renewal = (startDate: string): AccountTerms => ({
+      ...tenantB,
+      leases: [
+        ...tenantB.leases.slice(0, 1),
+        { ...b2, endDate: "2024-12-31" },
+        {
+          ...b2,
+          leaseId: "lease-b3",
+          startDate,
+          endDate: "2027-12-31",
+          rentSteps: [
+            {
+              id: "b3-rent",
+              startsOn: startDate,
+              amountCents: 330_000,
+              tenantNotifiedAt: null,
+            },
+          ],
+          estimateSteps: b2.estimateSteps.map((step) => ({
+            ...step,
+            id: `b3-${step.poolId}`,
+            startsOn: startDate,
+          })),
+        },
+      ],
+    });
+
+    const onJanuary1 = planFor({ accounts: [renewal("2025-01-01")] });
+    expect(
+      onJanuary1.statements[0]?.estimateSteps.map((s) => s.leaseId),
+    ).toEqual(["lease-b3", "lease-b3", "lease-b3", "lease-b3"]);
+    expect(onJanuary1.statements[0]?.data.continuing?.baseRentCents).toBe(
+      330_000,
+    );
+
+    const later = planFor({ accounts: [renewal("2025-02-01")] });
+    expect(later.statements[0]?.estimateSteps.map((s) => s.leaseId)).toEqual([
+      "lease-b2",
+      "lease-b2",
+      "lease-b2",
+      "lease-b2",
+    ]);
+  });
+
+  it("lists every gate and blocker that stops finalize", () => {
+    const input = reconciliationInput();
+    if (!input.record) throw new Error("missing record");
+    const blocked = reconciliationWorkspace({
+      ...input,
+      today: "2024-12-31",
+      record: { ...input.record, letterDate: null },
+      letter: { ...LETTER, ownerPhone: null },
+    });
+    expect(finalizeBlockers(blocked)).toEqual([
+      "Set the letter date.",
+      "2024 can be finalized from January 1, 2025.",
+      "Letter details are missing in Setup: phone.",
+    ]);
+    expect(finalizeBlockers(reconciliationWorkspace(input))).toEqual([]);
+  });
+
+  it("throws while a gate or blocker stands", () => {
+    const record = reconciliationInput().record;
+    if (!record) throw new Error("missing record");
+    expect(() =>
+      planFor({ record: { ...record, letterDate: "2024-12-31" } }),
+    ).toThrow("The letter date must be after December 31, 2024.");
+    expect(() => planFor({ today: "2024-12-31" })).toThrow(
+      "2024 can be finalized from January 1, 2025.",
+    );
+    expect(() =>
+      planFor({
+        record: { ...record, status: "finalized", finalizedAt: new Date() },
+      }),
+    ).toThrow("2024 is already finalized.");
+    expect(() =>
+      planFor({
+        transactions: [
+          ...TRANSACTIONS,
+          ...EXPENSES,
+          {
+            ...januaryPayment(superLucky.accountId, "2024-12-20", 100),
+            lines: [],
+          },
+        ],
+      }),
+    ).toThrow("1 transaction dated in 2024 still needs sorting.");
+  });
+});
+
+describe("finalized year: snapshots against current data (5.11)", () => {
+  const plan = planFor();
+  const finalizedInput = applyPlan(reconciliationInput(), plan);
+
+  function comparisons(overrides: Partial<ReconciliationInput> = {}) {
+    return compareSnapshots(
+      snapshotsOf(plan),
+      reconciliationWorkspace({ ...finalizedInput, ...overrides }).statements,
+    );
+  }
+
+  it("matches right after finalize, true-ups and new steps included", () => {
+    const result = comparisons();
+    expect(result.map((c) => [c.unitLabel, c.matches])).toEqual([
+      ["A", true],
+      ["B", true],
+      ["D", true],
+    ]);
+    expect(result.flatMap((c) => c.differences)).toEqual([]);
+  });
+
+  it("lists each changed value with its difference after a payment is re-sorted", () => {
+    const december = TRANSACTIONS.find(
+      (t) =>
+        t.postedOn === "2024-12-01" &&
+        t.lines[0]?.accountId === superLucky.accountId,
+    );
+    if (!december) throw new Error("missing payment");
+    const result = comparisons({
+      transactions: [
+        ...TRANSACTIONS.filter((t) => t !== december),
+        {
+          ...december,
+          lines: [
+            {
+              accountId: null,
+              categoryId: CATEGORY_IDS.repairs,
+              amountCents: december.amountCents,
+            },
+          ],
+        },
+        ...EXPENSES,
+      ],
+    });
+
+    const superLuckyResult = result.find(
+      (c) => c.accountId === superLucky.accountId,
+    );
+    expect(superLuckyResult?.matches).toBe(false);
+    expect(superLuckyResult?.differences).toEqual([
+      {
+        label: "Rent balance",
+        unit: "cents",
+        snapshot: 41_374,
+        now: 365_482,
+        difference: 324_108,
+        message: "Rent balance: $413.74, now $3,654.82 (+$3,241.08)",
+      },
+      {
+        label: "Balance on account",
+        unit: "cents",
+        snapshot: 65_148,
+        now: 389_256,
+        difference: 324_108,
+        message: "Balance on account: $651.48, now $3,892.56 (+$3,241.08)",
+      },
+    ]);
+    expect(result.filter((c) => c.matches)).toHaveLength(2);
+  });
+
+  it("lists pool lines, true-up, new estimates, and new rent when a cost changes", () => {
+    const result = comparisons({
+      transactions: [
+        ...TRANSACTIONS,
+        ...EXPENSES,
+        {
+          ...januaryPayment(superLucky.accountId, "2024-12-30", -93_500),
+          lines: [
+            {
+              accountId: null,
+              categoryId: CATEGORY_IDS.cam,
+              amountCents: -93_500,
+            },
+          ],
+        },
+      ],
+    });
+    const messages = result
+      .find((c) => c.accountId === superLucky.accountId)
+      ?.differences.map((d) => d.message);
+    expect(messages).toEqual([
+      "CAM cost: $12,891.19, now $13,826.19 (+$935.00)",
+      "CAM annual share: $3,446.84, now $3,696.84 (+$250.00)",
+      "CAM balance due: $223.52, now $473.52 (+$250.00)",
+      "True-up: $237.74, now $487.74 (+$250.00)",
+      "Balance on account: $651.48, now $901.48 (+$250.00)",
+      "New CAM estimate: $287.24, now $308.07 (+$20.83)",
+      "New monthly rent: $3,674.64, now $3,695.47 (+$20.83)",
+    ]);
+  });
+
+  it("flags an account whose statement is gone and a statement with no snapshot", () => {
+    const noPools: AccountTerms = {
+      ...tenantD,
+      leases: tenantD.leases.map((lease) => ({ ...lease, estimateSteps: [] })),
+    };
+    const newcomer: AccountTerms = {
+      ...superLucky,
+      accountId: "account-newcomer",
+      tenantId: tenantD.tenantId,
+      unitId: "unit-e",
+    };
+    const result = comparisons({
+      accounts: [
+        ...finalizedInput.accounts.filter(
+          (a) => a.accountId !== tenantD.accountId,
+        ),
+        noPools,
+        newcomer,
+      ],
+    });
+    const gone = result.find((c) => c.accountId === tenantD.accountId);
+    expect(gone).toMatchObject({
+      hasSnapshot: true,
+      hasStatementNow: false,
+      matches: false,
+    });
+    expect(gone?.differences.map((d) => d.message)).toContain(
+      "True-up: $218.53, now none",
+    );
+    const added = result.find((c) => c.accountId === "account-newcomer");
+    expect(added).toMatchObject({
+      hasSnapshot: false,
+      hasStatementNow: true,
+      matches: false,
+      unitLabel: "E",
+    });
+  });
+
+  it("builds the finalized view with snapshots, comparisons, and the January table", () => {
+    const view = finalizedYearView({
+      workspace: reconciliationWorkspace(finalizedInput),
+      snapshots: [
+        ...snapshotsOf(plan),
+        { ...snapshotsOf(plan)[0], year: 2023 } as StatementSnapshot,
+      ],
+      transactions: finalizedInput.transactions,
+    });
+    expect(view.snapshots.map((s) => [s.fileName, s.trueUpCents])).toEqual([
+      ["2024 Reconciliation Super Lucky LLC A.pdf", 23_774],
+      ["2024 Reconciliation Tenant B Inc B.pdf", -108_454],
+      ["2024 Reconciliation Tenant D Co D.pdf", 21_853],
+    ]);
+    expect(view.mismatchCount).toBe(0);
+    expect(view.january.month).toBe("2025-01");
+  });
+});
+
+describe("January table (5.11)", () => {
+  const plan = planFor();
+
+  it("shows Super Lucky 19.82 short after paying the old amount", () => {
+    const table = januaryTable({
+      year: 2024,
+      today: "2025-01-08",
+      snapshots: snapshotsOf(plan),
+      transactions: [
+        ...TRANSACTIONS,
+        ...EXPENSES,
+        januaryPayment(superLucky.accountId, "2025-01-02", 365_482),
+        januaryPayment(tenantB.accountId, "2025-01-03", 416_170),
+        januaryPayment(tenantD.accountId, "2025-01-03", 21_853),
+      ],
+    });
+    expect(table).toMatchObject({
+      month: "2025-01",
+      from: "2025-01-01",
+      through: "2025-01-08",
+    });
+    expect(
+      table.rows.map((row) => [
+        row.unitLabel,
+        row.newMonthlyRentCents,
+        row.paidCents,
+        row.shortCents,
+      ]),
+    ).toEqual([
+      ["A", 367_464, 365_482, 1_982],
+      ["B", 416_170, 416_170, 0],
+    ]);
+  });
+
+  it("counts only January payments through the end of the month", () => {
+    const table = januaryTable({
+      year: 2024,
+      today: "2025-03-01",
+      snapshots: snapshotsOf(plan),
+      transactions: [
+        januaryPayment(superLucky.accountId, "2024-12-31", 100),
+        januaryPayment(superLucky.accountId, "2025-01-31", 200_000),
+        januaryPayment(superLucky.accountId, "2025-02-01", 167_464),
+      ],
+    });
+    expect(table.through).toBe("2025-01-31");
+    expect(table.rows[0]).toMatchObject({
+      paidCents: 200_000,
+      shortCents: 167_464,
+    });
+    expect(table.rows[1]).toMatchObject({ paidCents: 0, shortCents: 416_170 });
   });
 });

@@ -165,6 +165,29 @@ export {
   yearEnd,
 } from "./reconciliation";
 
+export type { StatementSnapshot } from "./types";
+export type {
+  DifferenceUnit,
+  FinalizedSnapshot,
+  FinalizedYearView,
+  FinalizeEstimateStep,
+  FinalizePlan,
+  FinalizeStatement,
+  JanuaryRow,
+  JanuaryTable,
+  SnapshotComparison,
+  SnapshotDifference,
+} from "./reconciliation";
+export {
+  compareSnapshots,
+  finalizeBlockers,
+  finalizedYearView,
+  finalizePlan,
+  januaryTable,
+  snapshotFileName,
+  statementStorageKey,
+} from "./reconciliation";
+
 export type {
   LetterDocument,
   Paragraph,

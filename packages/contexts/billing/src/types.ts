@@ -1,5 +1,7 @@
 import type { IsoDate, YearMonth } from "@moonship/shared";
 
+import type { StatementData } from "./statement-document";
+
 export interface LeaseTerms {
   leaseId: string;
   startDate: IsoDate;
@@ -180,4 +182,18 @@ export interface PoolBillOverride {
   poolId: string;
   amountCents: number;
   note: string;
+}
+
+export interface StatementSnapshot {
+  id: string;
+  propertyId: string;
+  reconciliationYearId: string;
+  year: number;
+  accountId: string;
+  tenantId: string;
+  data: StatementData;
+  trueUpCents: number;
+  balanceOnAccountCents: number;
+  pdfStorageKey: string;
+  createdAt: Date;
 }

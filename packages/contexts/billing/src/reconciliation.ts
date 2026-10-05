@@ -1,5 +1,5 @@
 import type { Address, IsoDate, YearMonth } from "@moonship/shared";
-import { formatCents, prorate } from "@moonship/shared";
+import { formatCents, monthOf, prorate } from "@moonship/shared";
 
 import type { AccountLedger } from "./balance";
 import type { StatementData } from "./statement-document";
@@ -11,6 +11,7 @@ import type {
   PoolBillOverride,
   ReconciliationStatus,
   ReconciliationYear,
+  StatementSnapshot,
   Txn,
 } from "./types";
 import { accountEntries, accountPayments, balanceOn } from "./balance";
@@ -763,5 +764,500 @@ export function reconciliationWorkspace(
       gates.draft &&
       gates.letterDateAfterYearEnd &&
       gates.todayAfterYearEnd,
+  };
+}
+
+export interface FinalizeEstimateStep {
+  leaseId: string;
+  poolId: string;
+  startsOn: IsoDate;
+  amountCents: number;
+}
+
+export interface FinalizeStatement {
+  accountId: string;
+  businessName: string;
+  unitLabel: string;
+  fileName: string;
+  data: StatementData;
+  snapshot: StatementSnapshot;
+  trueUp: LedgerEntry | null;
+  estimateSteps: FinalizeEstimateStep[];
+}
+
+export interface FinalizePlan {
+  year: number;
+  letterDate: IsoDate;
+  statements: FinalizeStatement[];
+}
+
+export function statementStorageKey(
+  propertyId: string,
+  year: number,
+  accountId: string,
+): string {
+  return `reconciliations/${propertyId}/${year}/${accountId}.pdf`;
+}
+
+export function finalizeBlockers(workspace: ReconciliationWorkspace): string[] {
+  const { year } = workspace;
+  const reasons: string[] = [];
+  if (!workspace.gates.draft) {
+    reasons.push(`${year} is already finalized.`);
+  }
+  if (workspace.letterDate === null) {
+    reasons.push("Set the letter date.");
+  } else if (!workspace.gates.letterDateAfterYearEnd) {
+    reasons.push(`The letter date must be after ${longDate(yearEnd(year))}.`);
+  }
+  if (!workspace.gates.todayAfterYearEnd) {
+    reasons.push(
+      `${year} can be finalized from ${longDate(nextJanuary1(year))}.`,
+    );
+  }
+  for (const item of workspace.checklist) {
+    if (item.severity === "blocker") reasons.push(item.message);
+  }
+  return reasons;
+}
+
+function newEstimateSteps(
+  statement: AccountStatement,
+  year: number,
+): FinalizeEstimateStep[] {
+  const continuing = statement.continuing;
+  if (!continuing) return [];
+  return continuing.newEstimates.map((estimate) => {
+    if (estimate.amountCents === null) {
+      throw new Error(
+        `The new ${estimate.name} estimate for ${statement.businessName} is missing`,
+      );
+    }
+    return {
+      leaseId: continuing.leaseId,
+      poolId: estimate.poolId,
+      startsOn: nextJanuary1(year),
+      amountCents: estimate.amountCents,
+    };
+  });
+}
+
+export function finalizePlan(input: {
+  propertyId: string;
+  record: ReconciliationYear;
+  workspace: ReconciliationWorkspace;
+  createdAt: Date;
+  newId: () => string;
+}): FinalizePlan {
+  const { workspace, record, propertyId } = input;
+  if (record.year !== workspace.year || record.propertyId !== propertyId) {
+    throw new Error("The reconciliation year does not match the workspace");
+  }
+  const blockers = finalizeBlockers(workspace);
+  if (blockers.length > 0) throw new Error(blockers.join(" "));
+  const letterDate = workspace.letterDate;
+  if (letterDate === null) throw new Error("Set the letter date.");
+
+  const statements = workspace.statements.map((statement) => {
+    const { data, trueUpCents, balanceOnAccountCents } = statement;
+    if (
+      data === null ||
+      trueUpCents === null ||
+      balanceOnAccountCents === null
+    ) {
+      throw new Error(
+        `The statement for ${statement.businessName} (unit ${statement.unitLabel}) is incomplete`,
+      );
+    }
+    const trueUp: LedgerEntry | null =
+      trueUpCents === 0
+        ? null
+        : {
+            id: input.newId(),
+            propertyId,
+            accountId: statement.accountId,
+            kind: "true_up",
+            entryDate: letterDate,
+            amountCents: trueUpCents,
+            note: null,
+            feeMonth: null,
+            reconciliationYearId: record.id,
+          };
+    return {
+      accountId: statement.accountId,
+      businessName: statement.businessName,
+      unitLabel: statement.unitLabel,
+      fileName: statement.fileName,
+      data,
+      snapshot: {
+        id: input.newId(),
+        propertyId,
+        reconciliationYearId: record.id,
+        year: workspace.year,
+        accountId: statement.accountId,
+        tenantId: statement.tenantId,
+        data,
+        trueUpCents,
+        balanceOnAccountCents,
+        pdfStorageKey: statementStorageKey(
+          propertyId,
+          workspace.year,
+          statement.accountId,
+        ),
+        createdAt: input.createdAt,
+      },
+      trueUp,
+      estimateSteps: newEstimateSteps(statement, workspace.year),
+    };
+  });
+
+  return { year: workspace.year, letterDate, statements };
+}
+
+export type DifferenceUnit = "cents" | "months";
+
+export interface SnapshotDifference {
+  label: string;
+  unit: DifferenceUnit;
+  snapshot: number | null;
+  now: number | null;
+  difference: number | null;
+  message: string;
+}
+
+export interface SnapshotComparison {
+  accountId: string;
+  businessName: string;
+  unitLabel: string;
+  hasSnapshot: boolean;
+  hasStatementNow: boolean;
+  matches: boolean;
+  differences: SnapshotDifference[];
+}
+
+interface ComparableRow {
+  poolId: string;
+  name: string;
+  actualCents: number;
+  months: number;
+  partCents: number | null;
+  estimatesCents: number;
+  balanceCents: number | null;
+}
+
+interface ComparableEstimate {
+  poolId: string;
+  name: string;
+  amountCents: number | null;
+}
+
+interface ComparableStatement {
+  rows: readonly ComparableRow[];
+  trueUpCents: number | null;
+  priorBalanceCents: number;
+  balanceOnAccountCents: number | null;
+  newEstimates: readonly ComparableEstimate[];
+  newMonthlyRentCents: number | null;
+}
+
+function comparableSnapshot(data: StatementData): ComparableStatement {
+  return {
+    rows: data.rows,
+    trueUpCents: data.trueUpCents,
+    priorBalanceCents: data.priorBalanceCents,
+    balanceOnAccountCents: data.balanceOnAccountCents,
+    newEstimates: data.continuing?.newEstimates ?? [],
+    newMonthlyRentCents: data.continuing?.newMonthlyRentCents ?? null,
+  };
+}
+
+function comparableStatement(statement: AccountStatement): ComparableStatement {
+  return {
+    rows: statement.rows,
+    trueUpCents: statement.trueUpCents,
+    priorBalanceCents: statement.priorBalanceCents,
+    balanceOnAccountCents: statement.balanceOnAccountCents,
+    newEstimates: statement.continuing?.newEstimates ?? [],
+    newMonthlyRentCents: statement.continuing?.newMonthlyRentCents ?? null,
+  };
+}
+
+function formatValue(value: number | null, unit: DifferenceUnit): string {
+  if (value === null) return "none";
+  return unit === "cents" ? formatCents(value) : String(value);
+}
+
+function formatChange(change: number, unit: DifferenceUnit): string {
+  const text = formatValue(change, unit);
+  return change > 0 ? `+${text}` : text;
+}
+
+function difference(
+  label: string,
+  unit: DifferenceUnit,
+  snapshot: number | null,
+  now: number | null,
+): SnapshotDifference | null {
+  if (snapshot === now) return null;
+  const change = snapshot !== null && now !== null ? now - snapshot : null;
+  const changeText = change === null ? "" : ` (${formatChange(change, unit)})`;
+  return {
+    label,
+    unit,
+    snapshot,
+    now,
+    difference: change,
+    message: `${label}: ${formatValue(snapshot, unit)}, now ${formatValue(now, unit)}${changeText}`,
+  };
+}
+
+function poolIdsOf(
+  first: readonly { poolId: string }[],
+  second: readonly { poolId: string }[],
+): string[] {
+  const ids = first.map((item) => item.poolId);
+  for (const item of second) {
+    if (!ids.includes(item.poolId)) ids.push(item.poolId);
+  }
+  return ids;
+}
+
+function rowDifferences(
+  before: readonly ComparableRow[],
+  after: readonly ComparableRow[],
+): (SnapshotDifference | null)[] {
+  return poolIdsOf(before, after).flatMap((poolId) => {
+    const old = before.find((row) => row.poolId === poolId);
+    const now = after.find((row) => row.poolId === poolId);
+    const name = old?.name ?? now?.name ?? "";
+    return [
+      difference(
+        `${name} cost`,
+        "cents",
+        old?.actualCents ?? null,
+        now?.actualCents ?? null,
+      ),
+      difference(
+        `${name} months`,
+        "months",
+        old?.months ?? null,
+        now?.months ?? null,
+      ),
+      difference(
+        `${name} annual share`,
+        "cents",
+        old?.partCents ?? null,
+        now?.partCents ?? null,
+      ),
+      difference(
+        `${name} estimates billed`,
+        "cents",
+        old?.estimatesCents ?? null,
+        now?.estimatesCents ?? null,
+      ),
+      difference(
+        `${name} balance due`,
+        "cents",
+        old?.balanceCents ?? null,
+        now?.balanceCents ?? null,
+      ),
+    ];
+  });
+}
+
+function estimateDifferences(
+  before: readonly ComparableEstimate[],
+  after: readonly ComparableEstimate[],
+): (SnapshotDifference | null)[] {
+  return poolIdsOf(before, after).map((poolId) => {
+    const old = before.find((estimate) => estimate.poolId === poolId);
+    const now = after.find((estimate) => estimate.poolId === poolId);
+    return difference(
+      `New ${old?.name ?? now?.name ?? ""} estimate`,
+      "cents",
+      old?.amountCents ?? null,
+      now?.amountCents ?? null,
+    );
+  });
+}
+
+function statementDifferences(
+  before: ComparableStatement | null,
+  after: ComparableStatement | null,
+): SnapshotDifference[] {
+  return [
+    ...rowDifferences(before?.rows ?? [], after?.rows ?? []),
+    difference(
+      "True-up",
+      "cents",
+      before?.trueUpCents ?? null,
+      after?.trueUpCents ?? null,
+    ),
+    difference(
+      "Rent balance",
+      "cents",
+      before?.priorBalanceCents ?? null,
+      after?.priorBalanceCents ?? null,
+    ),
+    difference(
+      "Balance on account",
+      "cents",
+      before?.balanceOnAccountCents ?? null,
+      after?.balanceOnAccountCents ?? null,
+    ),
+    ...estimateDifferences(
+      before?.newEstimates ?? [],
+      after?.newEstimates ?? [],
+    ),
+    difference(
+      "New monthly rent",
+      "cents",
+      before?.newMonthlyRentCents ?? null,
+      after?.newMonthlyRentCents ?? null,
+    ),
+  ].filter((item): item is SnapshotDifference => item !== null);
+}
+
+export function compareSnapshots(
+  snapshots: readonly StatementSnapshot[],
+  statements: readonly AccountStatement[],
+): SnapshotComparison[] {
+  const fromSnapshots = snapshots.map((snapshot) => {
+    const statement =
+      statements.find((s) => s.accountId === snapshot.accountId) ?? null;
+    const differences = statementDifferences(
+      comparableSnapshot(snapshot.data),
+      statement ? comparableStatement(statement) : null,
+    );
+    return {
+      accountId: snapshot.accountId,
+      businessName: snapshot.data.tenant.businessName,
+      unitLabel: snapshot.data.unit.label,
+      hasSnapshot: true,
+      hasStatementNow: statement !== null,
+      matches: statement !== null && differences.length === 0,
+      differences,
+    };
+  });
+  const newStatements = statements
+    .filter((s) => !snapshots.some((snap) => snap.accountId === s.accountId))
+    .map((statement) => ({
+      accountId: statement.accountId,
+      businessName: statement.businessName,
+      unitLabel: statement.unitLabel,
+      hasSnapshot: false,
+      hasStatementNow: true,
+      matches: false,
+      differences: statementDifferences(null, comparableStatement(statement)),
+    }));
+  return [...fromSnapshots, ...newStatements];
+}
+
+export interface JanuaryRow {
+  accountId: string;
+  businessName: string;
+  unitLabel: string;
+  newMonthlyRentCents: number;
+  paidCents: number;
+  shortCents: number;
+}
+
+export interface JanuaryTable {
+  month: YearMonth;
+  from: IsoDate;
+  through: IsoDate;
+  rows: JanuaryRow[];
+}
+
+export function januaryTable(input: {
+  year: number;
+  today: IsoDate;
+  snapshots: readonly StatementSnapshot[];
+  transactions: readonly Txn[];
+}): JanuaryTable {
+  const from = nextJanuary1(input.year);
+  const monthEnd = `${input.year + 1}-01-31`;
+  const through = input.today < monthEnd ? input.today : monthEnd;
+  const rows = input.snapshots.flatMap((snapshot) => {
+    const continuing = snapshot.data.continuing;
+    if (!continuing) return [];
+    const paidCents = sum(
+      accountPayments(input.transactions, snapshot.accountId)
+        .filter((p) => p.postedOn >= from && p.postedOn <= through)
+        .map((p) => p.amountCents),
+    );
+    return [
+      {
+        accountId: snapshot.accountId,
+        businessName: snapshot.data.tenant.businessName,
+        unitLabel: snapshot.data.unit.label,
+        newMonthlyRentCents: continuing.newMonthlyRentCents,
+        paidCents,
+        shortCents: continuing.newMonthlyRentCents - paidCents,
+      },
+    ];
+  });
+  return { month: monthOf(from), from, through, rows };
+}
+
+export function snapshotFileName(snapshot: StatementSnapshot): string {
+  return statementFileName(
+    snapshot.data.year,
+    snapshot.data.tenant.businessName,
+    snapshot.data.unit.label,
+  );
+}
+
+export interface FinalizedSnapshot {
+  accountId: string;
+  tenantId: string;
+  fileName: string;
+  createdAt: Date;
+  trueUpCents: number;
+  balanceOnAccountCents: number;
+  data: StatementData;
+}
+
+export interface FinalizedYearView {
+  snapshots: FinalizedSnapshot[];
+  comparisons: SnapshotComparison[];
+  mismatchCount: number;
+  january: JanuaryTable;
+}
+
+export function finalizedYearView(input: {
+  workspace: ReconciliationWorkspace;
+  snapshots: readonly StatementSnapshot[];
+  transactions: readonly Txn[];
+}): FinalizedYearView {
+  const { workspace } = input;
+  const snapshots = input.snapshots
+    .filter((snapshot) => snapshot.year === workspace.year)
+    .sort(
+      (a, b) =>
+        a.data.unit.label.localeCompare(b.data.unit.label, undefined, {
+          numeric: true,
+        }) ||
+        a.data.tenant.businessName.localeCompare(b.data.tenant.businessName),
+    );
+  const comparisons = compareSnapshots(snapshots, workspace.statements);
+  return {
+    snapshots: snapshots.map((snapshot) => ({
+      accountId: snapshot.accountId,
+      tenantId: snapshot.tenantId,
+      fileName: snapshotFileName(snapshot),
+      createdAt: snapshot.createdAt,
+      trueUpCents: snapshot.trueUpCents,
+      balanceOnAccountCents: snapshot.balanceOnAccountCents,
+      data: snapshot.data,
+    })),
+    comparisons,
+    mismatchCount: comparisons.filter((c) => !c.matches).length,
+    january: januaryTable({
+      year: workspace.year,
+      today: workspace.today,
+      snapshots,
+      transactions: input.transactions,
+    }),
   };
 }
