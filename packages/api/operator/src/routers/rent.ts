@@ -20,6 +20,7 @@ import {
   accountStart,
   accountState,
   compareRentStatus,
+  DuplicateLedgerEntryError,
   entryDateFor,
   historyRows,
   isInFinalizedYear,
@@ -152,6 +153,9 @@ export function rentRouter(deps: RentRouterDeps) {
     try {
       return await write();
     } catch (error) {
+      if (error instanceof DuplicateLedgerEntryError) {
+        throw conflict(error.message);
+      }
       throw toBadRequest(error, "Invalid entry");
     }
   }
@@ -174,7 +178,7 @@ export function rentRouter(deps: RentRouterDeps) {
           (row) =>
             row.state === "open" ||
             row.state === "holdover" ||
-            (row.state === "closed" && row.balanceCents !== 0),
+            row.balanceCents !== 0,
         )
         .sort(
           (a, b) =>
@@ -194,9 +198,10 @@ export function rentRouter(deps: RentRouterDeps) {
     history: propertyProcedure
       .input(z.object({ accountId: z.string().uuid() }))
       .query(async ({ ctx, input }) => {
-        const [data, pools] = await Promise.all([
+        const [data, pools, finalizedYears] = await Promise.all([
           loadRentData(ctx.propertyId),
           deps.billingQueries.listPools(ctx.propertyId),
+          deps.billingQueries.listFinalizedYears(ctx.propertyId),
         ]);
         const view = data.views.find((v) => v.id === input.accountId);
         if (!view) throw notFound("Account not found");
@@ -206,19 +211,31 @@ export function rentRouter(deps: RentRouterDeps) {
         return {
           today: data.today,
           trackingStart: data.property.trackingStartDate,
+          newestBankDate: newestBankDate(data.transactions),
           account: data.accountOf(view),
           ...summaryOf(ledger, data.today),
-          rows: historyRows(ledger, data.today).map((row) =>
-            row.kind === "month"
-              ? {
+          rows: historyRows(ledger, data.today).map((row) => {
+            switch (row.kind) {
+              case "opening":
+              case "payment":
+                return row;
+              case "month":
+                return {
                   ...row,
                   estimates: row.estimates.map((estimate) => ({
                     ...estimate,
                     poolName: poolName(estimate.poolId),
                   })),
-                }
-              : row,
-          ),
+                };
+              default:
+                return {
+                  ...row,
+                  locked:
+                    row.kind === "true_up" ||
+                    isInFinalizedYear(row.date, finalizedYears),
+                };
+            }
+          }),
         };
       }),
 

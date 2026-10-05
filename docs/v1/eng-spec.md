@@ -517,6 +517,8 @@ balance(A, asOf) = expected(A, asOf) - received(A, asOf)
 
 Positive means the tenant owes money. This is the identity in AC 5: opening balance plus monthly expected amounts, fees, adjustments, and true-ups, minus payments.
 
+The last payment date is the newest positive payment line in `[T, asOf]`, skipping any positive line that a later negative line of the same amount on the same account cancels, such as a bounced check.
+
 The history for an account lists, oldest first, with a running balance:
 
 - Opening balance, dated the day before `T`. Only accounts that start on or before `T` can have one (section 4, rule 7).
@@ -544,7 +546,7 @@ status(A, today):
   return Behind
 ```
 
-`Due` means only this month's charges are unpaid and the grace date has not passed. The grace date is never before the month's due date, so a tenant who moves in on February 15 is Due, not Behind, on move-in day. Anything left over from an earlier month makes the account `Behind` right away, whatever the day. The rent status table lists accounts open today, plus closed accounts with a non-zero balance. It sorts Behind first, then Due, then the rest, and by balance from largest within each group.
+`Due` means only this month's charges are unpaid and the grace date has not passed. The grace date is never before the month's due date, so a tenant who moves in on February 15 is Due, not Behind, on move-in day. Anything left over from an earlier month makes the account `Behind` right away, whatever the day. The rent status table lists accounts open or in holdover today, plus any other account (closed or upcoming) with a non-zero balance. An upcoming account can carry a balance when a tenant moving units has it moved to the new account. It sorts Behind first, then Due, then the rest, and by balance from largest within each group.
 
 Each row shows tenant, unit, expected so far, received so far, balance, last payment date, and status, all from 5.3 with `asOf = today`.
 
@@ -949,7 +951,7 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | | `createCash`, `updateCash` | date, description, amountCents (positive, stored negative), categoryId | transaction with one line, written in one database transaction |
 | | `removeCash` | id | ok |
 | `rent` | `status` | none | `today`, newest bank date, rows (5.4) with suggestions |
-| | `history` | accountId | account, history rows, suggestions |
+| | `history` | accountId | account, newest bank date, history rows (ledger entry rows say whether they are locked: a true-up or dated in a finalized year), suggestions |
 | | `addAdjustment` | accountId, date, amountCents, note | entry; a date inside a finalized year becomes today (3.6) |
 | | `updateAdjustment` | id, date, amountCents, note | entry; rejected for an entry dated inside a finalized year |
 | | `removeEntry` | id | ok; rejected for `true_up` and for entries dated inside a finalized year |

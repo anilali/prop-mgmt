@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LedgerEntry } from "@moonship/billing";
+import { DuplicateLedgerEntryError } from "@moonship/billing";
 
 import type { TestCaller } from "../test-setup-stores";
 import {
@@ -23,6 +24,7 @@ function useToday(date: string) {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 type App = ReturnType<typeof createTestApp>;
@@ -181,7 +183,7 @@ describe("rent procedures need property mode and membership", () => {
 describe("rent.status", () => {
   beforeEach(() => useToday("2026-03-05"));
 
-  it("lists open accounts and closed accounts that owe, Behind first, and writes nothing", async () => {
+  it("lists open accounts and other accounts with a balance, Behind first, and writes nothing", async () => {
     const { app, caller, ids } = await setup();
     const before = {
       transactions: structuredClone(app.billing.transactions),
@@ -203,6 +205,7 @@ describe("rent.status", () => {
       ["E", "due", 150_000],
       ["A", "paid", 0],
       ["G", "credit", -40_000],
+      ["F", "credit", -50_000],
     ]);
     const behind = result.rows.find((row) => row.accountId === ids.behind);
     expect(behind).toMatchObject({
@@ -216,6 +219,24 @@ describe("rent.status", () => {
     const closed = result.rows.find((row) => row.accountId === ids.closedOwing);
     expect(closed?.state).toBe("closed");
     expect(closed?.lastPaymentOn).toBeNull();
+    const upcoming = result.rows.find((row) => row.accountId === ids.upcoming);
+    expect(upcoming?.state).toBe("upcoming");
+  });
+
+  it("uses the property's date, not the UTC date", async () => {
+    const { caller, ids } = await setup();
+    vi.stubEnv("TODAY_OVERRIDE", "");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-03-11T04:00:00Z"));
+      const result = await caller.rent.status();
+      expect(result.today).toBe("2026-03-10");
+      expect(result.rows.find((row) => row.accountId === ids.due)?.status).toBe(
+        "due",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("turns Due into Behind the day after the late-fee day", async () => {
@@ -265,6 +286,98 @@ describe("rent.history", () => {
     expect(month?.kind === "month" ? month.estimates : []).toEqual([
       expect.objectContaining({ poolName: "CAM", amountCents: 16_000 }),
     ]);
+  });
+
+  it("shows a split payment and a same-day bounce", async () => {
+    const { app, caller, ids } = await setup();
+    const splitId = randomUUID();
+    app.billing.transactions.set(splitId, {
+      id: splitId,
+      propertyId: PROPERTY_ID,
+      source: "bank",
+      importBatchId: "batch",
+      postedOn: "2026-03-02",
+      description: "CHECK 1042",
+      descriptionKey: "check",
+      amountCents: 200_000,
+      externalId: null,
+      lines: [
+        { accountId: ids.due, categoryId: null, amountCents: 150_000 },
+        { accountId: ids.behind, categoryId: null, amountCents: 50_000 },
+      ],
+    });
+    pay(app, ids.due, "2026-03-02", -150_000);
+
+    const due = await caller.rent.history({ accountId: ids.due });
+    const behind = await caller.rent.history({ accountId: ids.behind });
+
+    expect(
+      due.rows
+        .filter((row) => row.date >= "2026-03-01")
+        .map((row) => [row.kind, row.date, row.amountCents, row.balanceCents]),
+    ).toEqual([
+      ["month", "2026-03-01", 150_000, 150_000],
+      ["payment", "2026-03-02", -150_000, 0],
+      ["payment", "2026-03-02", 150_000, 150_000],
+    ]);
+    expect(due).toMatchObject({
+      balanceCents: 150_000,
+      lastPaymentOn: "2026-02-01",
+      status: "due",
+    });
+    expect(
+      due.rows.find(
+        (row) =>
+          row.kind === "payment" &&
+          row.amountCents < 0 &&
+          row.date === "2026-03-02",
+      ),
+    ).toMatchObject({
+      transactionId: splitId,
+      description: "CHECK 1042",
+    });
+    expect(behind.rows.at(-1)).toMatchObject({
+      kind: "payment",
+      transactionId: splitId,
+      amountCents: -50_000,
+      balanceCents: 382_000,
+    });
+    expect(behind.lastPaymentOn).toBe("2026-03-02");
+  });
+
+  it("locks true-ups and entries in a finalized year and shows the newest bank date", async () => {
+    const app = createTestApp({ trackingStartDate: "2025-01-01" });
+    const caller = await app.callerFor();
+    useToday("2026-01-12");
+    const accountId = await openAccount(caller, "A", {
+      startDate: "2025-01-01",
+      endDate: "2027-12-31",
+    });
+    const old = addEntry(app, accountId, { entryDate: "2025-12-20" });
+    const trueUp = addEntry(app, accountId, {
+      kind: "true_up",
+      note: null,
+      reconciliationYearId: randomUUID(),
+      entryDate: "2026-01-02",
+    });
+    const recent = addEntry(app, accountId, { entryDate: "2026-01-05" });
+    pay(app, accountId, "2026-01-03", 250_000);
+    pay(app, accountId, "2026-01-08", 1_000, "cash");
+    app.billing.finalizedYears = [2025];
+
+    const history = await caller.rent.history({ accountId });
+
+    const locked = Object.fromEntries(
+      history.rows.flatMap((row) =>
+        "entryId" in row ? [[row.entryId, row.locked]] : [],
+      ),
+    );
+    expect(locked).toEqual({
+      [old.id]: true,
+      [trueUp.id]: true,
+      [recent.id]: false,
+    });
+    expect(history.newestBankDate).toBe("2026-01-03");
   });
 
   it("rejects an account from another property", async () => {
@@ -395,6 +508,49 @@ describe("adjustments", () => {
       await codeOf(caller.rent.updateAdjustment({ id: old.id, ...input })),
     ).toBe("CONFLICT");
     expect(app.billing.ledgerEntries.get(old.id)?.entryDate).toBe("2025-12-31");
+  });
+
+  it("rejects moving an adjustment into a finalized year", async () => {
+    const app = createTestApp({ trackingStartDate: "2025-01-01" });
+    const caller = await app.callerFor();
+    useToday("2026-01-12");
+    const accountId = await openAccount(caller, "A", {
+      startDate: "2025-01-01",
+      endDate: "2027-12-31",
+    });
+    const entry = addEntry(app, accountId, { entryDate: "2026-01-05" });
+    app.billing.finalizedYears = [2025];
+
+    expect(
+      await codeOf(
+        caller.rent.updateAdjustment({
+          id: entry.id,
+          date: "2025-12-20",
+          amountCents: 1_000,
+          note: "Charge",
+        }),
+      ),
+    ).toBe("CONFLICT");
+    expect(app.billing.ledgerEntries.get(entry.id)?.entryDate).toBe(
+      "2026-01-05",
+    );
+  });
+
+  it("returns CONFLICT when the store finds a duplicate entry", async () => {
+    const { app, caller, ids } = await setup();
+    vi.spyOn(app.billing, "insertLedgerEntry").mockRejectedValueOnce(
+      new DuplicateLedgerEntryError(),
+    );
+    expect(
+      await codeOf(
+        caller.rent.addAdjustment({
+          accountId: ids.paid,
+          date: "2026-03-01",
+          amountCents: 100,
+          note: "Charge",
+        }),
+      ),
+    ).toBe("CONFLICT");
   });
 
   it("removes an entry but not a true-up or one in a finalized year", async () => {
