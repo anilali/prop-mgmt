@@ -1,4 +1,13 @@
-import { HydrateClient, prefetch, trpc } from "~/trpc/server";
+import { notFound } from "next/navigation";
+import { z } from "zod";
+
+import {
+  getQueryClient,
+  HydrateClient,
+  orNotFound,
+  prefetch,
+  trpc,
+} from "~/trpc/server";
 import { requirePropertyContext } from "../../_lib/require-operator-context";
 import { AccountPageContent } from "./_components/account-page-content";
 
@@ -9,7 +18,12 @@ export default async function AccountPage({
 }) {
   await requirePropertyContext();
   const { accountId } = await params;
-  prefetch(trpc.account.get.queryOptions({ id: accountId }));
+  if (!z.string().uuid().safeParse(accountId).success) notFound();
+  await orNotFound(
+    getQueryClient().fetchQuery(
+      trpc.account.get.queryOptions({ id: accountId }),
+    ),
+  );
   prefetch(trpc.property.get.queryOptions());
 
   return (

@@ -1,4 +1,13 @@
-import { HydrateClient, prefetch, trpc } from "~/trpc/server";
+import { notFound } from "next/navigation";
+import { z } from "zod";
+
+import {
+  getQueryClient,
+  HydrateClient,
+  orNotFound,
+  prefetch,
+  trpc,
+} from "~/trpc/server";
 import { requirePropertyContext } from "../../_lib/require-operator-context";
 import { HistoryPageContent } from "./_components/history-page-content";
 
@@ -9,7 +18,10 @@ export default async function RentHistoryPage({
 }) {
   await requirePropertyContext();
   const { accountId } = await params;
-  prefetch(trpc.rent.history.queryOptions({ accountId }));
+  if (!z.string().uuid().safeParse(accountId).success) notFound();
+  await orNotFound(
+    getQueryClient().fetchQuery(trpc.rent.history.queryOptions({ accountId })),
+  );
   prefetch(trpc.account.list.queryOptions());
   prefetch(trpc.category.list.queryOptions({ includeArchived: true }));
 
