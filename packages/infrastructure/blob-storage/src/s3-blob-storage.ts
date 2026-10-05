@@ -1,16 +1,24 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
+  S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import type {
   BlobStorage,
+  ObjectInfo,
   PutObjectInput,
   SignedDownloadOptions,
+  SignedUpload,
+  SignedUploadOptions,
 } from "./blob-storage";
+
+const AVAILABILITY_TIMEOUT_MS = 5000;
 
 export function attachmentDisposition(fileName: string): string {
   const fallback = fileName.replace(/[^\x20-\x7e]|["\\]/g, "_");
@@ -79,6 +87,57 @@ export class S3BlobStorage implements BlobStorage {
       }),
       { expiresIn: options.expiresInSeconds ?? 3600 },
     );
+  }
+
+  async getSignedUploadUrl(
+    key: string,
+    options: SignedUploadOptions,
+  ): Promise<SignedUpload> {
+    const url = await getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: options.contentType,
+        ContentLength: options.contentLength,
+      }),
+      {
+        expiresIn: options.expiresInSeconds ?? 900,
+        signableHeaders: new Set(["content-type"]),
+      },
+    );
+    return { url, headers: { "Content-Type": options.contentType } };
+  }
+
+  async headObject(key: string): Promise<ObjectInfo | null> {
+    try {
+      const head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return {
+        sizeBytes: head.ContentLength ?? 0,
+        contentType: head.ContentType ?? null,
+      };
+    } catch (error) {
+      if (
+        error instanceof S3ServiceException &&
+        error.$metadata.httpStatusCode === 404
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async isAvailable(): Promise<boolean> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }), {
+        abortSignal: AbortSignal.timeout(AVAILABILITY_TIMEOUT_MS),
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async deleteObject(key: string): Promise<void> {

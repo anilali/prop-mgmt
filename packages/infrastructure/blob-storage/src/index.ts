@@ -1,7 +1,10 @@
 export type {
   BlobStorage,
+  ObjectInfo,
   PutObjectInput,
   SignedDownloadOptions,
+  SignedUpload,
+  SignedUploadOptions,
 } from "./blob-storage";
 export {
   attachmentDisposition,

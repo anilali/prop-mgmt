@@ -47,3 +47,20 @@ describe("S3BlobStorage.getSignedDownloadUrl", () => {
     );
   });
 });
+
+describe("S3BlobStorage.getSignedUploadUrl", () => {
+  it("signs a PUT that pins the content type and length", async () => {
+    const upload = await storage.getSignedUploadUrl("documents/p/a/d.pdf", {
+      contentType: "application/pdf",
+      contentLength: 3_400_000,
+      expiresInSeconds: 600,
+    });
+    const url = new URL(upload.url);
+    expect(url.pathname).toBe("/bucket/documents/p/a/d.pdf");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("600");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe(
+      "content-length;content-type;host",
+    );
+    expect(upload.headers).toEqual({ "Content-Type": "application/pdf" });
+  });
+});
