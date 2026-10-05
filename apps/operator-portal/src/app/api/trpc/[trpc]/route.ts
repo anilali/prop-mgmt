@@ -7,8 +7,8 @@ import {
 } from "@moonship/api-operator/server";
 
 import { auth } from "~/auth/server";
-import { appRouter, createTRPCContext } from "~/trpc/init";
 import { operatorApi } from "~/server/operator-api";
+import { appRouter, createTRPCContext } from "~/trpc/init";
 
 const setCorsHeaders = (res: Response) => {
   res.headers.set("Access-Control-Allow-Origin", "*");

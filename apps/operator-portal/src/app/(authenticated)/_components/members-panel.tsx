@@ -6,13 +6,11 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
-
 import { Users } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
-import { EmptyState } from "@moonship/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -20,8 +18,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@moonship/ui/dialog";
+import { EmptyState } from "@moonship/ui/empty-state";
 import { Input } from "@moonship/ui/input";
 import { Label } from "@moonship/ui/label";
+import { PageHeader } from "@moonship/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -37,7 +37,6 @@ import {
   TableHeader,
   TableRow,
 } from "@moonship/ui/table";
-import { PageHeader } from "@moonship/ui/page-header";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -214,8 +213,7 @@ export function MembersPanel({ propertyId }: { propertyId: string }) {
                           changeRole.mutate({
                             propertyId,
                             membershipId: member.id,
-                            role:
-                              member.role === "admin" ? "staff" : "admin",
+                            role: member.role === "admin" ? "staff" : "admin",
                           })
                         }
                       >
