@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import type { StatementData, StatementSnapshot } from "@moonship/billing";
+import type {
+  ReconciliationYear,
+  RecordedPoolLine,
+  StatementData,
+  StatementSnapshot,
+} from "@moonship/billing";
 
 import { createDb } from "../../client";
 import { PGBillingStore } from "../../repositories/billing/billing-store";
@@ -250,5 +255,81 @@ describe.skipIf(!databaseUrl)("reconciliation years and bill amounts", () => {
       store.insertStatementSnapshot({ ...snapshot, id: randomUUID() }),
     ).rejects.toThrow();
     expect(await queries.listStatementSnapshots(propertyId)).toHaveLength(1);
+  });
+
+  it("stores a recorded year that is listed but does not lock dates", async () => {
+    const { propertyId, poolId } = await seedPool();
+    const record: ReconciliationYear = {
+      id: randomUUID(),
+      propertyId,
+      year: 2025,
+      status: "finalized",
+      source: "recorded",
+      letterDate: "2026-10-05",
+      finalizedAt: new Date("2026-10-05T15:00:00Z"),
+    };
+    const accountId = randomUUID();
+    const snapshot: StatementSnapshot = {
+      id: randomUUID(),
+      propertyId,
+      reconciliationYearId: record.id,
+      year: 2025,
+      accountId,
+      tenantId: randomUUID(),
+      data: statementData(),
+      trueUpCents: 22_352,
+      balanceOnAccountCents: 63_726,
+      pdfStorageKey: `reconciliations/${propertyId}/2025/${accountId}.pdf`,
+      createdAt: new Date("2026-10-05T15:00:00Z"),
+    };
+    const line = (
+      postedOn: string,
+      description: string,
+      source: "bank" | "cash",
+      costCents: number,
+    ): RecordedPoolLine => ({
+      id: randomUUID(),
+      propertyId,
+      reconciliationYearId: record.id,
+      year: 2025,
+      poolId,
+      postedOn,
+      description,
+      source,
+      costCents,
+    });
+    const lines = [
+      line("2025-12-31", "Management fee", "cash", 832_854),
+      line("2025-01-24", "Check #1012", "bank", 15_000),
+    ];
+
+    await unitOfWork.run((stores) =>
+      stores.billing.insertRecordedYear(record, [snapshot], lines),
+    );
+
+    expect(await queries.listReconciliationYears(propertyId)).toEqual([record]);
+    expect(await queries.listFinalizedYears(propertyId)).toEqual([]);
+    expect(await queries.listStatementSnapshots(propertyId)).toEqual([
+      snapshot,
+    ]);
+    expect(await queries.listRecordedPoolLines(propertyId)).toEqual([
+      lines[1],
+      lines[0],
+    ]);
+    expect(await queries.listRecordedPoolLines(randomUUID())).toEqual([]);
+
+    await expect(
+      unitOfWork.run((stores) =>
+        stores.billing.insertRecordedYear(
+          { ...record, id: randomUUID() },
+          [],
+          [],
+        ),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      store.saveYear({ ...record, status: "draft", finalizedAt: null }),
+    ).rejects.toThrow();
+    expect(await queries.listRecordedPoolLines(propertyId)).toHaveLength(2);
   });
 });

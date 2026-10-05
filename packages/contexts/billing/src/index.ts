@@ -182,10 +182,11 @@ export type {
 
 export type {
   PoolBillOverride,
+  ReconciliationSource,
   ReconciliationStatus,
   ReconciliationYear,
 } from "./types";
-export { RECONCILIATION_STATUSES } from "./types";
+export { RECONCILIATION_SOURCES, RECONCILIATION_STATUSES } from "./types";
 
 export type {
   AccountStatement,
@@ -216,7 +217,17 @@ export {
   yearEnd,
 } from "./reconciliation";
 
-export type { StatementSnapshot } from "./types";
+export type { RecordedPoolLine, StatementSnapshot } from "./types";
+export type {
+  RecordedLineInput,
+  RecordedStatementInput,
+  RecordedYearPlan,
+} from "./recorded-year";
+export {
+  recordedPoolActuals,
+  recordedYearPlan,
+  recordedYearWorkspace,
+} from "./recorded-year";
 export type {
   DifferenceUnit,
   FinalizedSnapshot,

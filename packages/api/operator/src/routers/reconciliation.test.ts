@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Txn } from "@moonship/billing";
 import type { Lease } from "@moonship/lease-mgmt";
+import { reconciliationWorkspace, recordedYearPlan } from "@moonship/billing";
 import {
   ACCOUNTS,
   CATEGORIES,
@@ -11,6 +12,7 @@ import {
   POOL_LIST,
   POOLS,
   RECONCILIATION_UNITS,
+  reconciliationInput,
   superLucky,
   tenantB,
   tenantD,
@@ -221,6 +223,7 @@ describe("reconciliation.listYears", () => {
       propertyId: PROPERTY_ID,
       year: 2025,
       status: "finalized",
+      source: "app",
       letterDate: "2026-01-02",
       finalizedAt: new Date("2026-01-05T00:00:00Z"),
     });
@@ -1079,7 +1082,7 @@ describe("finalized workspace", () => {
       through: "2025-01-08",
     });
     expect(
-      result.finalized?.january.rows.map((row) => [
+      result.finalized?.january?.rows.map((row) => [
         row.unitLabel,
         row.newMonthlyRentCents,
         row.paidCents,
@@ -1243,5 +1246,229 @@ describe("after finalize", () => {
     expect(await codeOf(caller.account.remove({ id: tenantDId }))).toBe(
       "CONFLICT",
     );
+  });
+});
+
+function seedRecorded2023(
+  app: App,
+  ids: Awaited<ReturnType<typeof setup>>["ids"],
+) {
+  const statements = reconciliationWorkspace(
+    reconciliationInput(),
+  ).statements.map((statement) => {
+    if (!statement.data) throw new Error("missing statement data");
+    const accountId = ids.accountId(statement.accountId);
+    const tenantId = app.accounts.accounts.get(accountId)?.tenantId;
+    if (!tenantId) throw new Error("missing account");
+    return {
+      accountId,
+      tenantId,
+      data: {
+        ...statement.data,
+        year: 2023,
+        letterDate: "2024-03-01",
+        rows: statement.data.rows.map((row) => ({
+          ...row,
+          poolId: ids.poolId(row.poolId),
+        })),
+      },
+    };
+  });
+  const actuals = new Map(
+    statements.flatMap((s) =>
+      s.data.rows.map((row) => [row.poolId, row.actualCents] as const),
+    ),
+  );
+  const plan = recordedYearPlan({
+    propertyId: PROPERTY_ID,
+    year: 2023,
+    trackingStart: "2024-01-01",
+    letterDate: "2024-03-01",
+    statements,
+    lines: [...actuals].flatMap(([poolId, actualCents]) => [
+      {
+        poolId,
+        postedOn: "2023-12-31",
+        description: "Management fee",
+        source: "cash" as const,
+        costCents: 1_000,
+      },
+      {
+        poolId,
+        postedOn: "2023-05-01",
+        description: "Bill",
+        source: "bank" as const,
+        costCents: actualCents - 1_000,
+      },
+    ]),
+    createdAt: new Date("2024-03-02T12:00:00Z"),
+    newId: randomUUID,
+  });
+  app.billing.reconciliationYears.set(plan.record.id, plan.record);
+  for (const snapshot of plan.snapshots) {
+    app.billing.statementSnapshots.set(snapshot.id, snapshot);
+  }
+  for (const line of plan.lines) {
+    app.billing.recordedPoolLines.set(line.id, line);
+  }
+  return { plan, actuals };
+}
+
+describe("recorded years", () => {
+  it("lists a recorded year before the first reconciliation year as finalized", async () => {
+    const { app, caller, ids } = await setup();
+    seedRecorded2023(app, ids);
+
+    const result = await caller.reconciliation.listYears();
+
+    expect(result.years.map((y) => [y.year, y.status, y.letterDate])).toEqual([
+      [2025, "draft", null],
+      [2024, "draft", null],
+      [2023, "finalized", "2024-03-01"],
+    ]);
+    expect(result.years[2]?.finalizedAt).toBeInstanceOf(Date);
+  });
+
+  it("lists a recorded year even before the first full year arrives", async () => {
+    const { app, caller, ids } = await setup();
+    seedRecorded2023(app, ids);
+    const property = app.properties.properties.get(PROPERTY_ID);
+    if (!property) throw new Error("missing property");
+    property.trackingStartDate = "2025-04-01";
+
+    const result = await caller.reconciliation.listYears();
+
+    expect(result.years.map((y) => y.year)).toEqual([2023]);
+  });
+
+  it("shows the saved statements and the pool lines read-only", async () => {
+    const { app, caller, ids } = await setup();
+    const { plan, actuals } = seedRecorded2023(app, ids);
+
+    const result = await caller.reconciliation.workspace({ year: 2023 });
+
+    expect(result).toMatchObject({
+      year: 2023,
+      status: "finalized",
+      source: "recorded",
+      letterDate: "2024-03-01",
+      isDryRun: false,
+      statements: [],
+      checklist: [],
+      canFinalize: false,
+    });
+    expect(result.finalized?.comparisons).toEqual([]);
+    expect(result.finalized?.mismatchCount).toBe(0);
+    expect(result.finalized?.january).toBeNull();
+    expect(
+      result.finalized?.snapshots.map((s) => [
+        s.accountId,
+        s.trueUpCents,
+        s.balanceOnAccountCents,
+      ]),
+    ).toEqual(
+      [...plan.snapshots]
+        .sort((a, b) => a.data.unit.label.localeCompare(b.data.unit.label))
+        .map((s) => [s.accountId, s.trueUpCents, s.balanceOnAccountCents]),
+    );
+    expect(result.pools.length).toBe(actuals.size);
+    for (const pool of result.pools) {
+      expect(pool.actualCents).toBe(actuals.get(pool.poolId));
+      expect(
+        pool.lines.map((line) => [
+          line.postedOn,
+          line.source,
+          line.description,
+        ]),
+      ).toEqual([
+        ["2023-05-01", "bank", "Bill"],
+        ["2023-12-31", "cash", "Management fee"],
+      ]);
+    }
+  });
+
+  it("downloads a recorded statement", async () => {
+    const { app, caller, ids } = await setup();
+    seedRecorded2023(app, ids);
+    const tenantBId = ids.accountId(tenantB.accountId);
+
+    const result = await caller.reconciliation.downloadUrl({
+      year: 2023,
+      accountId: tenantBId,
+    });
+
+    expect(result).toEqual({
+      url: `https://blob/reconciliations/${PROPERTY_ID}/2023/${tenantBId}.pdf`,
+      fileName: "2023 Reconciliation Tenant B Inc B.pdf",
+      expiresInSeconds: 3600,
+    });
+  });
+
+  it("rejects every change to a recorded year", async () => {
+    const { app, caller, ids } = await setup();
+    seedRecorded2023(app, ids);
+    const before = storeState(app);
+    const poolId = ids.poolId(POOLS.cam);
+    const accountId = ids.accountId(tenantB.accountId);
+
+    for (const call of [
+      caller.reconciliation.finalize({ year: 2023 }),
+      caller.reconciliation.setLetterDate({
+        year: 2023,
+        letterDate: "2024-04-01",
+      }),
+      caller.reconciliation.setBillOverride({
+        year: 2023,
+        poolId,
+        amountCents: 100,
+        note: "Bill",
+      }),
+      caller.reconciliation.clearBillOverride({ year: 2023, poolId }),
+      caller.reconciliation.previewPdf({ year: 2023, accountId }),
+    ]) {
+      expect(await codeOf(call)).toBe("BAD_REQUEST");
+    }
+    expect(storeState(app)).toEqual(before);
+  });
+
+  it("leaves the first reconciliation year's gates and dates unchanged", async () => {
+    const plain = await setupForFinalize();
+    const without = await plain.caller.reconciliation.workspace({ year: 2024 });
+
+    const { app, caller, ids } = await setupForFinalize();
+    seedRecorded2023(app, ids);
+    const withRecorded = await caller.reconciliation.workspace({ year: 2024 });
+
+    expect(withRecorded.gates).toEqual(without.gates);
+    expect(withRecorded.canFinalize).toBe(true);
+    expect(withRecorded.source).toBe("app");
+    expect(await app.billing.listFinalizedYears(PROPERTY_ID)).toEqual([]);
+
+    const adjustment = await caller.rent.addAdjustment({
+      accountId: ids.accountId(superLucky.accountId),
+      date: "2024-01-15",
+      amountCents: 5_000,
+      note: "January charge",
+    });
+    expect(adjustment.movedFrom).toBeNull();
+    expect(adjustment.entry.entryDate).toBe("2024-01-15");
+
+    await caller.reconciliation.finalize({ year: 2024 });
+    expect(await app.billing.listFinalizedYears(PROPERTY_ID)).toEqual([2024]);
+  });
+
+  it("blocks deleting a pool with recorded costs", async () => {
+    const { app, caller, ids } = await setup();
+    seedRecorded2023(app, ids);
+    for (const account of app.accounts.accounts.values()) {
+      for (const lease of account.leases) lease.estimateSteps = [];
+    }
+    for (const txn of app.billing.transactions.values()) {
+      txn.lines = txn.lines.filter((line) => line.categoryId === null);
+    }
+
+    await expect(
+      caller.pool.remove({ id: ids.poolId(POOLS.water) }),
+    ).rejects.toThrow("The 2023 reconciliation has Water costs");
   });
 });

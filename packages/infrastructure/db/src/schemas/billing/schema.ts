@@ -296,6 +296,7 @@ export const reconciliationYears = billingSchema.table(
     propertyId: uuid("property_id").notNull(),
     year: integer("year").notNull(),
     status: varchar("status", { length: 16 }).notNull().default("draft"),
+    source: varchar("source", { length: 16 }).notNull().default("app"),
     letterDate: date("letter_date", { mode: "string" }),
     finalizedAt: timestamp("finalized_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -316,6 +317,14 @@ export const reconciliationYears = billingSchema.table(
     check(
       "reconciliation_years_finalized_check",
       sql`${table.status} <> 'finalized' or (${table.finalizedAt} is not null and ${table.letterDate} is not null)`,
+    ),
+    check(
+      "reconciliation_years_source_check",
+      sql`${table.source} in ('app', 'recorded')`,
+    ),
+    check(
+      "reconciliation_years_recorded_check",
+      sql`${table.source} <> 'recorded' or ${table.status} = 'finalized'`,
     ),
   ],
 );
@@ -381,6 +390,46 @@ export const reconciliationStatements = billingSchema.table(
       name: "reconciliation_statements_reconciliation_year_fk",
       columns: [table.reconciliationYearId],
       foreignColumns: [reconciliationYears.id],
+    }),
+  ],
+);
+
+export const recordedPoolLines = billingSchema.table(
+  "recorded_pool_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    propertyId: uuid("property_id").notNull(),
+    reconciliationYearId: uuid("reconciliation_year_id").notNull(),
+    poolId: uuid("pool_id").notNull(),
+    postedOn: date("posted_on", { mode: "string" }).notNull(),
+    description: text("description").notNull(),
+    source: varchar("source", { length: 8 }).notNull(),
+    costCents: integer("cost_cents").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "recorded_pool_lines_source_check",
+      sql`${table.source} in ('bank', 'cash')`,
+    ),
+    check(
+      "recorded_pool_lines_description_check",
+      sql`btrim(${table.description}) <> ''`,
+    ),
+    check("recorded_pool_lines_cost_check", sql`${table.costCents} <> 0`),
+    index("recorded_pool_lines_property_id_idx").on(table.propertyId),
+    index("recorded_pool_lines_reconciliation_year_id_idx").on(
+      table.reconciliationYearId,
+    ),
+    foreignKey({
+      name: "recorded_pool_lines_reconciliation_year_fk",
+      columns: [table.reconciliationYearId],
+      foreignColumns: [reconciliationYears.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "recorded_pool_lines_pool_fk",
+      columns: [table.poolId],
+      foreignColumns: [costPools.id],
     }),
   ],
 );

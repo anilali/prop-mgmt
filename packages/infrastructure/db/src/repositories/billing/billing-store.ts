@@ -16,6 +16,7 @@ import type {
   Pool,
   PoolBillOverride,
   ReconciliationYear,
+  RecordedPoolLine,
   StatementSnapshot,
   Txn,
 } from "@moonship/billing";
@@ -39,6 +40,7 @@ import {
   poolBillOverrides,
   reconciliationStatements,
   reconciliationYears,
+  recordedPoolLines,
   transactionAllocations,
   transactions,
 } from "../../schemas/billing/schema";
@@ -568,6 +570,66 @@ export class PGBillingStore implements BillingStore {
       .returning();
     if (!row) throw new Error(`Statement ${snapshot.id} was not saved`);
     return toStatementSnapshot(row, snapshot.year);
+  }
+
+  async insertRecordedYear(
+    record: ReconciliationYear,
+    snapshots: readonly StatementSnapshot[],
+    lines: readonly RecordedPoolLine[],
+  ): Promise<void> {
+    if (record.source !== "recorded" || record.status !== "finalized") {
+      throw new Error(`${record.year} is not a recorded year`);
+    }
+    const belongs = (item: {
+      propertyId: string;
+      reconciliationYearId: string;
+    }) =>
+      item.propertyId === record.propertyId &&
+      item.reconciliationYearId === record.id;
+    if (!snapshots.every(belongs) || !lines.every(belongs)) {
+      throw new Error(`The ${record.year} statements and lines do not match`);
+    }
+    await this.db.transaction(async (tx) => {
+      await tx.insert(reconciliationYears).values({
+        id: record.id,
+        propertyId: record.propertyId,
+        year: record.year,
+        status: record.status,
+        source: record.source,
+        letterDate: record.letterDate,
+        finalizedAt: record.finalizedAt,
+      });
+      if (snapshots.length > 0) {
+        await tx.insert(reconciliationStatements).values(
+          snapshots.map((snapshot) => ({
+            id: snapshot.id,
+            propertyId: snapshot.propertyId,
+            reconciliationYearId: snapshot.reconciliationYearId,
+            accountId: snapshot.accountId,
+            tenantId: snapshot.tenantId,
+            data: snapshot.data,
+            trueUpCents: snapshot.trueUpCents,
+            balanceOnAccountCents: snapshot.balanceOnAccountCents,
+            pdfStorageKey: snapshot.pdfStorageKey,
+            createdAt: snapshot.createdAt,
+          })),
+        );
+      }
+      if (lines.length > 0) {
+        await tx.insert(recordedPoolLines).values(
+          lines.map((line) => ({
+            id: line.id,
+            propertyId: line.propertyId,
+            reconciliationYearId: line.reconciliationYearId,
+            poolId: line.poolId,
+            postedOn: line.postedOn,
+            description: line.description,
+            source: line.source,
+            costCents: line.costCents,
+          })),
+        );
+      }
+    });
   }
 }
 

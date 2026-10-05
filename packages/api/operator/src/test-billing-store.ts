@@ -17,6 +17,7 @@ import type {
   Pool,
   PoolBillOverride,
   ReconciliationYear,
+  RecordedPoolLine,
   StatementData,
   StatementRenderer,
   StatementSnapshot,
@@ -79,6 +80,7 @@ export class InMemoryBillingStore
   lockedYears: number[] = [];
   billOverrides = new Map<string, PoolBillOverride>();
   statementSnapshots = new Map<string, StatementSnapshot>();
+  recordedPoolLines = new Map<string, RecordedPoolLine>();
 
   listPools(propertyId: string): Promise<Pool[]> {
     return Promise.resolve(
@@ -429,7 +431,12 @@ export class InMemoryBillingStore
 
   listFinalizedYears(propertyId: string): Promise<number[]> {
     const stored = [...this.reconciliationYears.values()]
-      .filter((y) => y.propertyId === propertyId && y.status === "finalized")
+      .filter(
+        (y) =>
+          y.propertyId === propertyId &&
+          y.status === "finalized" &&
+          y.source === "app",
+      )
       .map((y) => y.year);
     return Promise.resolve([...new Set([...this.finalizedYears, ...stored])]);
   }
@@ -461,6 +468,7 @@ export class InMemoryBillingStore
       propertyId,
       year,
       status: "draft" as const,
+      source: "app" as const,
       letterDate: null,
       finalizedAt: null,
     };
@@ -540,6 +548,37 @@ export class InMemoryBillingStore
     );
   }
 
+  listRecordedPoolLines(propertyId: string): Promise<RecordedPoolLine[]> {
+    return Promise.resolve(
+      [...this.recordedPoolLines.values()]
+        .filter((l) => l.propertyId === propertyId)
+        .sort((a, b) => a.year - b.year)
+        .map((l) => structuredClone(l)),
+    );
+  }
+
+  insertRecordedYear(
+    record: ReconciliationYear,
+    snapshots: readonly StatementSnapshot[],
+    lines: readonly RecordedPoolLine[],
+  ): Promise<void> {
+    if (
+      [...this.reconciliationYears.values()].some(
+        (y) => y.propertyId === record.propertyId && y.year === record.year,
+      )
+    ) {
+      return Promise.reject(new Error(`${record.year} already exists`));
+    }
+    this.reconciliationYears.set(record.id, structuredClone(record));
+    for (const snapshot of snapshots) {
+      this.statementSnapshots.set(snapshot.id, structuredClone(snapshot));
+    }
+    for (const line of lines) {
+      this.recordedPoolLines.set(line.id, structuredClone(line));
+    }
+    return Promise.resolve();
+  }
+
   insertStatementSnapshot(
     snapshot: StatementSnapshot,
   ): Promise<StatementSnapshot> {
@@ -612,7 +651,9 @@ export class InMemoryBillingStore
     const reconciliationYears = structuredClone(this.reconciliationYears);
     const billOverrides = structuredClone(this.billOverrides);
     const statementSnapshots = structuredClone(this.statementSnapshots);
+    const recordedPoolLines = structuredClone(this.recordedPoolLines);
     return () => {
+      this.recordedPoolLines = recordedPoolLines;
       this.reconciliationYears = reconciliationYears;
       this.billOverrides = billOverrides;
       this.statementSnapshots = statementSnapshots;

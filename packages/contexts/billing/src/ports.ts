@@ -14,6 +14,7 @@ import type {
   Pool,
   PoolBillOverride,
   ReconciliationYear,
+  RecordedPoolLine,
   StatementSnapshot,
   Txn,
 } from "./types";
@@ -91,6 +92,11 @@ export interface BillingStore {
   insertStatementSnapshot(
     snapshot: StatementSnapshot,
   ): Promise<StatementSnapshot>;
+  insertRecordedYear(
+    record: ReconciliationYear,
+    snapshots: readonly StatementSnapshot[],
+    lines: readonly RecordedPoolLine[],
+  ): Promise<void>;
 }
 
 export interface BillingQueries {
@@ -118,6 +124,7 @@ export interface BillingQueries {
   listReconciliationYears(propertyId: string): Promise<ReconciliationYear[]>;
   listBillOverrides(propertyId: string): Promise<PoolBillOverride[]>;
   listStatementSnapshots(propertyId: string): Promise<StatementSnapshot[]>;
+  listRecordedPoolLines(propertyId: string): Promise<RecordedPoolLine[]>;
 }
 
 export interface StatementRenderer {

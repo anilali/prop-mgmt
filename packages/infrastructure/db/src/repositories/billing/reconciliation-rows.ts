@@ -2,9 +2,12 @@ import { and, asc, eq } from "drizzle-orm";
 
 import type {
   PoolBillOverride,
+  ReconciliationSource,
   ReconciliationStatus,
   ReconciliationYear,
+  RecordedPoolLine,
   StatementSnapshot,
+  TransactionSource,
 } from "@moonship/billing";
 
 import type { DbExecutor } from "../../client";
@@ -12,6 +15,7 @@ import {
   poolBillOverrides,
   reconciliationStatements,
   reconciliationYears,
+  recordedPoolLines,
 } from "../../schemas/billing/schema";
 
 export function toReconciliationYear(
@@ -22,6 +26,7 @@ export function toReconciliationYear(
     propertyId: row.propertyId,
     year: row.year,
     status: row.status as ReconciliationStatus,
+    source: row.source as ReconciliationSource,
     letterDate: row.letterDate,
     finalizedAt: row.finalizedAt,
   };
@@ -119,4 +124,46 @@ export async function loadStatementSnapshots(
       asc(reconciliationStatements.createdAt),
     );
   return rows.map((row) => toStatementSnapshot(row.snapshot, row.year));
+}
+
+export function toRecordedPoolLine(
+  row: typeof recordedPoolLines.$inferSelect,
+  year: number,
+): RecordedPoolLine {
+  return {
+    id: row.id,
+    propertyId: row.propertyId,
+    reconciliationYearId: row.reconciliationYearId,
+    year,
+    poolId: row.poolId,
+    postedOn: row.postedOn,
+    description: row.description,
+    source: row.source as TransactionSource,
+    costCents: row.costCents,
+  };
+}
+
+export async function loadRecordedPoolLines(
+  db: DbExecutor,
+  propertyId: string,
+): Promise<RecordedPoolLine[]> {
+  const rows = await db
+    .select({ line: recordedPoolLines, year: reconciliationYears.year })
+    .from(recordedPoolLines)
+    .innerJoin(
+      reconciliationYears,
+      eq(reconciliationYears.id, recordedPoolLines.reconciliationYearId),
+    )
+    .where(
+      and(
+        eq(recordedPoolLines.propertyId, propertyId),
+        eq(reconciliationYears.propertyId, propertyId),
+      ),
+    )
+    .orderBy(
+      asc(reconciliationYears.year),
+      asc(recordedPoolLines.postedOn),
+      asc(recordedPoolLines.description),
+    );
+  return rows.map((row) => toRecordedPoolLine(row.line, row.year));
 }

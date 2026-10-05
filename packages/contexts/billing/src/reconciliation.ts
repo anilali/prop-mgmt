@@ -11,6 +11,7 @@ import type {
   LedgerEntry,
   Pool,
   PoolBillOverride,
+  ReconciliationSource,
   ReconciliationStatus,
   ReconciliationYear,
   StatementSnapshot,
@@ -205,6 +206,7 @@ export interface FinalizeGates {
 export interface ReconciliationWorkspace {
   year: number;
   status: ReconciliationStatus;
+  source: ReconciliationSource;
   letterDate: IsoDate | null;
   previewLetterDate: IsoDate;
   finalizedAt: Date | null;
@@ -248,7 +250,7 @@ function sum(amounts: readonly number[]): number {
   return amounts.reduce((total, amount) => total + amount, 0);
 }
 
-function sortedPools(pools: readonly Pool[]): Pool[] {
+export function sortedPools(pools: readonly Pool[]): Pool[] {
   return [...pools].sort(
     (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
   );
@@ -905,6 +907,7 @@ export function reconciliationWorkspace(
   return {
     year,
     status,
+    source: input.record?.source ?? "app",
     letterDate,
     previewLetterDate,
     finalizedAt: input.record?.finalizedAt ?? null,
@@ -1440,7 +1443,36 @@ export interface FinalizedYearView {
   snapshots: FinalizedSnapshot[];
   comparisons: SnapshotComparison[];
   mismatchCount: number;
-  january: JanuaryTable;
+  january: JanuaryTable | null;
+}
+
+export function yearSnapshots(
+  snapshots: readonly StatementSnapshot[],
+  year: number,
+): StatementSnapshot[] {
+  return snapshots
+    .filter((snapshot) => snapshot.year === year)
+    .sort(
+      (a, b) =>
+        a.data.unit.label.localeCompare(b.data.unit.label, undefined, {
+          numeric: true,
+        }) ||
+        a.data.tenant.businessName.localeCompare(b.data.tenant.businessName),
+    );
+}
+
+export function finalizedSnapshot(
+  snapshot: StatementSnapshot,
+): FinalizedSnapshot {
+  return {
+    accountId: snapshot.accountId,
+    tenantId: snapshot.tenantId,
+    fileName: snapshotFileName(snapshot),
+    createdAt: snapshot.createdAt,
+    trueUpCents: snapshot.trueUpCents,
+    balanceOnAccountCents: snapshot.balanceOnAccountCents,
+    data: snapshot.data,
+  };
 }
 
 export function finalizedYearView(input: {
@@ -1449,26 +1481,10 @@ export function finalizedYearView(input: {
   transactions: readonly Txn[];
 }): FinalizedYearView {
   const { workspace } = input;
-  const snapshots = input.snapshots
-    .filter((snapshot) => snapshot.year === workspace.year)
-    .sort(
-      (a, b) =>
-        a.data.unit.label.localeCompare(b.data.unit.label, undefined, {
-          numeric: true,
-        }) ||
-        a.data.tenant.businessName.localeCompare(b.data.tenant.businessName),
-    );
+  const snapshots = yearSnapshots(input.snapshots, workspace.year);
   const comparisons = compareSnapshots(snapshots, workspace.statements);
   return {
-    snapshots: snapshots.map((snapshot) => ({
-      accountId: snapshot.accountId,
-      tenantId: snapshot.tenantId,
-      fileName: snapshotFileName(snapshot),
-      createdAt: snapshot.createdAt,
-      trueUpCents: snapshot.trueUpCents,
-      balanceOnAccountCents: snapshot.balanceOnAccountCents,
-      data: snapshot.data,
-    })),
+    snapshots: snapshots.map(finalizedSnapshot),
     comparisons,
     mismatchCount: comparisons.filter((c) => !c.matches).length,
     january: januaryTable({

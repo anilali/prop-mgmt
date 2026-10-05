@@ -11,6 +11,7 @@ import type {
   Pool,
   PoolBillOverride,
   ReconciliationYear,
+  RecordedPoolLine,
   StatementSnapshot,
   Txn,
 } from "@moonship/billing";
@@ -30,6 +31,7 @@ import { loadLedgerEntries } from "../../repositories/billing/ledger-rows";
 import {
   loadBillOverrides,
   loadReconciliationYears,
+  loadRecordedPoolLines,
   loadStatementSnapshots,
 } from "../../repositories/billing/reconciliation-rows";
 import {
@@ -178,6 +180,7 @@ export class PGBillingQueries implements BillingQueries {
         and(
           eq(reconciliationYears.propertyId, propertyId),
           eq(reconciliationYears.status, "finalized"),
+          eq(reconciliationYears.source, "app"),
         ),
       );
     return rows.map((row) => row.year);
@@ -193,5 +196,9 @@ export class PGBillingQueries implements BillingQueries {
 
   listStatementSnapshots(propertyId: string): Promise<StatementSnapshot[]> {
     return loadStatementSnapshots(this.db, propertyId);
+  }
+
+  listRecordedPoolLines(propertyId: string): Promise<RecordedPoolLine[]> {
+    return loadRecordedPoolLines(this.db, propertyId);
   }
 }

@@ -337,6 +337,7 @@ export function reconciliationInput(
       propertyId: PROPERTY_ID,
       year: 2024,
       status: "draft",
+      source: "app",
       letterDate: LETTER_DATE,
       finalizedAt: null,
     },

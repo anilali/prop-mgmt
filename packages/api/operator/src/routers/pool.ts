@@ -285,6 +285,15 @@ export function poolRouter(deps: PoolRouterDeps) {
             `A reconciliation year has a ${pool.name} bill amount`,
           );
         }
+        const recordedLines = await deps.billingQueries.listRecordedPoolLines(
+          ctx.propertyId,
+        );
+        const recorded = recordedLines.find((line) => line.poolId === pool.id);
+        if (recorded) {
+          throw conflict(
+            `The ${recorded.year} reconciliation has ${pool.name} costs`,
+          );
+        }
         await deps.billingStore.deletePool(ctx.propertyId, pool.id);
         return { ok: true as const };
       }),

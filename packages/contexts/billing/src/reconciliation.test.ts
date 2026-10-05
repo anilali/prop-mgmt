@@ -1802,7 +1802,7 @@ describe("finalized year: snapshots against current data (5.11)", () => {
       ["2024 Reconciliation Tenant D Co D.pdf", 21_853],
     ]);
     expect(view.mismatchCount).toBe(0);
-    expect(view.january.month).toBe("2025-01");
+    expect(view.january?.month).toBe("2025-01");
   });
 });
 

@@ -17,7 +17,9 @@ import {
   finalizedYearView,
   finalizePlan,
   firstReconciliationYear,
+  newestBankDate,
   reconciliationWorkspace,
+  recordedYearWorkspace,
   snapshotFileName,
   yearEnd,
 } from "@moonship/billing";
@@ -181,8 +183,59 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
         entries,
         overrides,
         finalizedYears: years
-          .filter((record) => record.status === "finalized")
+          .filter(
+            (record) =>
+              record.status === "finalized" && record.source === "app",
+          )
           .map((record) => record.year),
+      }),
+    };
+  }
+
+  async function loadAppYear(propertyId: string, year: number) {
+    const { trackingStart, workspace, transactions } = await loadWorkspace(
+      deps,
+      propertyId,
+      year,
+    );
+    const finalized =
+      workspace.status === "finalized"
+        ? finalizedYearView({
+            workspace,
+            snapshots:
+              await deps.billingQueries.listStatementSnapshots(propertyId),
+            transactions,
+          })
+        : null;
+    return { trackingStart, workspace, finalized };
+  }
+
+  async function loadRecordedYear(record: ReconciliationYear) {
+    const { property, today } = await loadProperty(
+      deps.propertyQueries,
+      record.propertyId,
+    );
+    const trackingStart = property.trackingStartDate;
+    if (trackingStart === null) {
+      throw badRequest(
+        "Set the tracking start date in Setup before opening a reconciliation",
+      );
+    }
+    const [snapshots, lines, pools, transactions] = await Promise.all([
+      deps.billingQueries.listStatementSnapshots(record.propertyId),
+      deps.billingQueries.listRecordedPoolLines(record.propertyId),
+      deps.billingQueries.listPools(record.propertyId),
+      deps.billingQueries.listTransactions(record.propertyId),
+    ]);
+    return {
+      trackingStart,
+      ...recordedYearWorkspace({
+        record,
+        today,
+        newestBankDate: newestBankDate(transactions),
+        snapshots,
+        lines,
+        pools,
       }),
     };
   }
@@ -266,13 +319,19 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
         deps.billingQueries.listReconciliationYears(ctx.propertyId),
       ]);
       const trackingStart = property.trackingStartDate;
-      const years: number[] = [];
+      const tracked: number[] = [];
       if (trackingStart !== null) {
         const firstYear = firstReconciliationYear(trackingStart);
         for (let year = yearOf(today); year >= firstYear; year--) {
-          years.push(year);
+          tracked.push(year);
         }
       }
+      const recorded = records
+        .filter((r) => r.source === "recorded")
+        .map((r) => r.year);
+      const years = [...new Set([...tracked, ...recorded])].sort(
+        (a, b) => b - a,
+      );
       return {
         today,
         trackingStart,
@@ -291,21 +350,15 @@ export function reconciliationRouter(deps: ReconciliationRouterDeps) {
     workspace: propertyProcedure
       .input(yearInput)
       .query(async ({ ctx, input }) => {
-        const { trackingStart, workspace, transactions } = await loadWorkspace(
-          deps,
+        const records = await deps.billingQueries.listReconciliationYears(
           ctx.propertyId,
-          input.year,
         );
-        const finalized =
-          workspace.status === "finalized"
-            ? finalizedYearView({
-                workspace,
-                snapshots: await deps.billingQueries.listStatementSnapshots(
-                  ctx.propertyId,
-                ),
-                transactions,
-              })
-            : null;
+        const recorded = records.find(
+          (r) => r.year === input.year && r.source === "recorded",
+        );
+        const { trackingStart, workspace, finalized } = recorded
+          ? await loadRecordedYear(recorded)
+          : await loadAppYear(ctx.propertyId, input.year);
         return {
           ...workspace,
           trackingStart,

@@ -177,11 +177,16 @@ export const RECONCILIATION_STATUSES = ["draft", "finalized"] as const;
 
 export type ReconciliationStatus = (typeof RECONCILIATION_STATUSES)[number];
 
+export const RECONCILIATION_SOURCES = ["app", "recorded"] as const;
+
+export type ReconciliationSource = (typeof RECONCILIATION_SOURCES)[number];
+
 export interface ReconciliationYear {
   id: string;
   propertyId: string;
   year: number;
   status: ReconciliationStatus;
+  source: ReconciliationSource;
   letterDate: IsoDate | null;
   finalizedAt: Date | null;
 }
@@ -208,4 +213,16 @@ export interface StatementSnapshot {
   balanceOnAccountCents: number;
   pdfStorageKey: string;
   createdAt: Date;
+}
+
+export interface RecordedPoolLine {
+  id: string;
+  propertyId: string;
+  reconciliationYearId: string;
+  year: number;
+  poolId: string;
+  postedOn: IsoDate;
+  description: string;
+  source: TransactionSource;
+  costCents: number;
 }
