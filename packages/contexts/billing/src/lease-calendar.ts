@@ -1,4 +1,5 @@
-import type { IsoDate } from "@moonship/shared";
+import type { IsoDate, YearMonth } from "@moonship/shared";
+import { firstDay, lastDay, maxDate, monthsFromTo } from "@moonship/shared";
 
 import type { AccountTerms, LeaseTerms } from "./types";
 
@@ -71,4 +72,127 @@ export function accountsOverlap(a: AccountTerms, b: AccountTerms): boolean {
 
 export function paysPool(lease: LeaseTerms, poolId: string): boolean {
   return lease.estimateSteps.some((step) => step.poolId === poolId);
+}
+
+export function isCounted(
+  account: AccountTerms,
+  month: YearMonth,
+  trackingStart: IsoDate,
+): boolean {
+  const end = accountEnd(account);
+  return (
+    firstDay(month) >= trackingStart &&
+    accountStart(account) <= lastDay(month) &&
+    (end === null || end >= firstDay(month))
+  );
+}
+
+export function countedMonths(
+  account: AccountTerms,
+  trackingStart: IsoDate,
+  from: YearMonth,
+  to: YearMonth,
+): YearMonth[] {
+  return monthsFromTo(from, to).filter((month) =>
+    isCounted(account, month, trackingStart),
+  );
+}
+
+export function dueDate(account: AccountTerms, month: YearMonth): IsoDate {
+  return maxDate(firstDay(month), accountStart(account));
+}
+
+export function leaseForMonth(
+  account: AccountTerms,
+  month: YearMonth,
+): LeaseTerms {
+  const lease = coveringLease(account, dueDate(account, month));
+  if (!lease) {
+    throw new Error(`Account ${account.accountId} has no lease for ${month}`);
+  }
+  return lease;
+}
+
+export function stepOn<T extends { startsOn: IsoDate }>(
+  steps: readonly T[],
+  date: IsoDate,
+): T | null {
+  let found: T | null = null;
+  for (const step of steps) {
+    if (
+      step.startsOn <= date &&
+      (found === null || step.startsOn > found.startsOn)
+    ) {
+      found = step;
+    }
+  }
+  return found;
+}
+
+export function rentOn(lease: LeaseTerms, date: IsoDate): number {
+  const step = stepOn(lease.rentSteps, date);
+  if (!step) {
+    throw new Error(`Lease ${lease.leaseId} has no rent on ${date}`);
+  }
+  return step.amountCents;
+}
+
+export function paysOn(
+  lease: LeaseTerms,
+  poolId: string,
+  date: IsoDate,
+): boolean {
+  return lease.estimateSteps.some(
+    (step) => step.poolId === poolId && step.startsOn <= date,
+  );
+}
+
+export function estimateOn(
+  lease: LeaseTerms,
+  poolId: string,
+  date: IsoDate,
+): number | null {
+  const step = stepOn(
+    lease.estimateSteps.filter((s) => s.poolId === poolId),
+    date,
+  );
+  return step ? step.amountCents : null;
+}
+
+export interface MonthCharges {
+  month: YearMonth;
+  dueDate: IsoDate;
+  leaseId: string;
+  rentCents: number;
+  estimates: { poolId: string; amountCents: number }[];
+  totalCents: number;
+}
+
+export function monthCharges(
+  account: AccountTerms,
+  month: YearMonth,
+): MonthCharges {
+  const due = dueDate(account, month);
+  const lease = leaseForMonth(account, month);
+  const rentCents = rentOn(lease, due);
+  const poolIds = [...new Set(lease.estimateSteps.map((s) => s.poolId))];
+  const estimates = poolIds.flatMap((poolId) => {
+    const amountCents = estimateOn(lease, poolId, due);
+    return amountCents === null ? [] : [{ poolId, amountCents }];
+  });
+  return {
+    month,
+    dueDate: due,
+    leaseId: lease.leaseId,
+    rentCents,
+    estimates,
+    totalCents: estimates.reduce((sum, e) => sum + e.amountCents, rentCents),
+  };
+}
+
+export function monthlyExpected(
+  account: AccountTerms,
+  month: YearMonth,
+): number {
+  return monthCharges(account, month).totalCents;
 }

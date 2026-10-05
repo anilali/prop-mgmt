@@ -1,6 +1,27 @@
 import type { IsoDate } from "@moonship/shared";
 
-import type { Category, Pool } from "./types";
+import type { DedupeState } from "./csv-import";
+import type {
+  AllocationLine,
+  BankAccount,
+  CashExpense,
+  Category,
+  CsvMapping,
+  ImportBatch,
+  NewBankTransaction,
+  Pool,
+  Txn,
+} from "./types";
+
+export interface DedupeRange {
+  from: IsoDate;
+  to: IsoDate;
+  externalIds: string[];
+}
+
+export interface ImportBatchSummary extends ImportBatch {
+  sortedCount: number;
+}
 
 export interface BillingStore {
   listPools(propertyId: string): Promise<Pool[]>;
@@ -13,6 +34,34 @@ export interface BillingStore {
     unitId: string,
     changedOn: IsoDate | null,
   ): Promise<void>;
+  lockBankAccount(propertyId: string): Promise<BankAccount>;
+  loadDedupeState(
+    propertyId: string,
+    bankAccountId: string,
+    range: DedupeRange,
+  ): Promise<DedupeState>;
+  saveCsvMapping(
+    propertyId: string,
+    bankAccountId: string,
+    mapping: CsvMapping,
+  ): Promise<void>;
+  insertImportBatch(
+    batch: ImportBatch,
+    transactions: NewBankTransaction[],
+  ): Promise<void>;
+  lockImportBatch(
+    propertyId: string,
+    batchId: string,
+  ): Promise<ImportBatchSummary | null>;
+  deleteImportBatch(propertyId: string, batchId: string): Promise<void>;
+  replaceAllocations(
+    propertyId: string,
+    transactionId: string,
+    lines: AllocationLine[],
+  ): Promise<Txn | null>;
+  insertCashExpense(expense: CashExpense): Promise<Txn>;
+  updateCashExpense(expense: CashExpense): Promise<Txn | null>;
+  deleteCashExpense(propertyId: string, id: string): Promise<boolean>;
 }
 
 export interface BillingQueries {
@@ -25,4 +74,13 @@ export interface BillingQueries {
     categoryId: string,
   ): Promise<boolean>;
   accountHasActivity(propertyId: string, accountId: string): Promise<boolean>;
+  getBankAccount(propertyId: string): Promise<BankAccount | null>;
+  loadDedupeState(
+    propertyId: string,
+    bankAccountId: string,
+    range: DedupeRange,
+  ): Promise<DedupeState>;
+  listImportBatches(propertyId: string): Promise<ImportBatchSummary[]>;
+  listTransactions(propertyId: string): Promise<Txn[]>;
+  getTransaction(propertyId: string, id: string): Promise<Txn | null>;
 }

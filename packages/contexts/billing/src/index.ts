@@ -1,23 +1,42 @@
 export type {
   AccountTerms,
+  AllocationLine,
+  BankAccount,
+  CashExpense,
   Category,
   CategoryKind,
+  CsvDateFormat,
+  CsvMapping,
+  ImportBatch,
   LeaseTerms,
+  NewBankTransaction,
   Pool,
+  TransactionSource,
+  Txn,
 } from "./types";
-export { CATEGORY_KINDS } from "./types";
+export { CATEGORY_KINDS, CSV_DATE_FORMATS } from "./types";
 
-export type { AccountState } from "./lease-calendar";
+export type { AccountState, MonthCharges } from "./lease-calendar";
 export {
   accountEnd,
   accountStart,
   accountState,
   accountsOverlap,
+  countedMonths,
   coveringLease,
+  dueDate,
+  estimateOn,
+  isCounted,
   isHoldover,
+  leaseForMonth,
+  monthCharges,
+  monthlyExpected,
   newestLease,
   openOn,
+  paysOn,
   paysPool,
+  rentOn,
+  stepOn,
 } from "./lease-calendar";
 
 export type { PoolShareRow, PoolShareTable } from "./pools";
@@ -31,4 +50,41 @@ export {
   sharedCostCategory,
 } from "./pools";
 
-export type { BillingQueries, BillingStore } from "./ports";
+export type { Suggestion } from "./suggestions";
+export {
+  accountSuggestion,
+  categorySuggestion,
+  descriptionKey,
+  suggestionFor,
+} from "./suggestions";
+
+export type {
+  CsvErrorRow,
+  CsvOtherRow,
+  CsvRowOutcome,
+  CsvTransactionRow,
+  DedupeState,
+  ImportPlan,
+} from "./csv-import";
+export {
+  dedupeKey,
+  dedupeRange,
+  findHeaderRow,
+  headersAt,
+  importCandidates,
+  mappedColumns,
+  missingColumns,
+  parseCsvDate,
+  parseRows,
+  planImport,
+  unskippedErrors,
+} from "./csv-import";
+
+export { checkAllocationLines } from "./allocations";
+
+export type {
+  BillingQueries,
+  BillingStore,
+  DedupeRange,
+  ImportBatchSummary,
+} from "./ports";
