@@ -18,6 +18,7 @@
     "@moonship/api-operator": "workspace:*",
     "@moonship/db": "workspace:*",
     "@moonship/ui": "workspace:*",
+    "@react-pdf/renderer": "catalog:",
     "@t3-oss/env-nextjs": "^0.13.8",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",

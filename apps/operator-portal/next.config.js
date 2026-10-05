@@ -18,7 +18,11 @@ const config = {
     "@moonship/tenant-mgmt",
     "@moonship/lease-mgmt",
     "@moonship/blob-storage",
+    "@moonship/billing",
+    "@moonship/statement-pdf",
   ],
+
+  serverExternalPackages: ["@react-pdf/renderer"],
 
   /** We already do linting and typechecking as separate tasks in CI */
   typescript: { ignoreBuildErrors: true },

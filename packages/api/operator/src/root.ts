@@ -16,6 +16,7 @@ import { accessRouter } from "./routers/access";
 import { accountRouter } from "./routers/account";
 import { categoryRouter } from "./routers/category";
 import { leaseRouter } from "./routers/lease";
+import { pdfSpikeRouter } from "./routers/pdf-spike";
 import { poolRouter } from "./routers/pool";
 import { propertyRouter } from "./routers/property";
 import { tenantRouter } from "./routers/tenant";
@@ -87,6 +88,7 @@ export function createTRPCRouter(deps: OperatorRouterDeps) {
     }),
     account: accountRouter(accountDeps),
     lease: leaseRouter(accountDeps),
+    pdfSpike: pdfSpikeRouter({ propertyQueries: deps.propertyQueries }),
   });
 
   const createTRPCContext = (opts: {
