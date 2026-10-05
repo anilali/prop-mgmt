@@ -17,6 +17,7 @@
     "@aws-sdk/s3-request-presigner": "^3.787.0",
     "@moonship/api-operator": "workspace:*",
     "@moonship/db": "workspace:*",
+    "@moonship/shared": "workspace:*",
     "@moonship/ui": "workspace:*",
     "@t3-oss/env-nextjs": "^0.13.8",
     "@tanstack/react-form": "catalog:",

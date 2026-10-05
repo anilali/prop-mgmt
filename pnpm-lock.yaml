@@ -118,6 +118,9 @@ importers:
       '@moonship/db':
         specifier: workspace:*
         version: link:../../packages/infrastructure/db
+      '@moonship/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@moonship/ui':
         specifier: workspace:*
         version: link:../../packages/ui
