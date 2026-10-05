@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { Account } from "@moonship/lease-mgmt";
+import { Account, StaleAccountError } from "@moonship/lease-mgmt";
 
 import { createDb } from "../../client";
 import { PGAccountQueries } from "../../queries/lease-mgmt/account-queries";
@@ -152,6 +152,42 @@ describe.skipIf(!databaseUrl)("PGAccountRepository", () => {
       secondLeaseId,
     ]);
     expect(await queries.getById(randomUUID(), accountId)).toBeNull();
+  });
+
+  it("bumps the version on each save and rejects a stale copy", async () => {
+    const { account, propertyId, accountId } = openAccount();
+    await repo.save(account);
+    expect(account.version).toBe(1);
+
+    const first = await repo.findById(propertyId, accountId);
+    const second = await repo.findById(propertyId, accountId);
+    if (!first || !second) throw new Error("missing account");
+    expect(first.version).toBe(1);
+
+    first.setOpeningBalance(100);
+    await repo.save(first);
+    expect((await queries.getById(propertyId, accountId))?.version).toBe(2);
+
+    second.setOpeningBalance(200);
+    await expect(repo.save(second)).rejects.toThrow(StaleAccountError);
+    expect(
+      (await queries.getById(propertyId, accountId))?.openingBalanceCents,
+    ).toBe(100);
+
+    const other = await repo.findById(propertyId, accountId);
+    if (!other) throw new Error("missing account");
+    const moved = Account.reconstitute({
+      id: accountId,
+      propertyId: randomUUID(),
+      tenantId: other.tenantId,
+      unitId: other.unitId,
+      openingBalanceCents: 0,
+      version: other.version,
+      leases: other.leases,
+    });
+    await expect(repo.save(moved)).rejects.toThrow(
+      "belongs to another property",
+    );
   });
 
   it("deletes a removed lease with its steps", async () => {

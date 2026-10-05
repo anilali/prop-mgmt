@@ -81,6 +81,7 @@ export function toAccountView(
     tenantId: row.tenantId,
     unitId: row.unitId,
     openingBalanceCents: row.openingBalanceCents,
+    version: row.version,
     leases: leasesByAccount.get(row.id) ?? [],
   };
 }

@@ -462,6 +462,23 @@ export class PGBillingStore implements BillingStore {
     });
   }
 
+  async lockExistingYear(
+    propertyId: string,
+    year: number,
+  ): Promise<ReconciliationYear | null> {
+    const [row] = await this.db
+      .update(reconciliationYears)
+      .set({ updatedAt: new Date() })
+      .where(
+        and(
+          eq(reconciliationYears.propertyId, propertyId),
+          eq(reconciliationYears.year, year),
+        ),
+      )
+      .returning();
+    return row ? toReconciliationYear(row) : null;
+  }
+
   async saveYear(year: ReconciliationYear): Promise<ReconciliationYear> {
     const [row] = await this.db
       .update(reconciliationYears)

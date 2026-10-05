@@ -21,6 +21,7 @@ export const accounts = leaseMgmtSchema.table(
     tenantId: uuid("tenant_id").notNull(),
     unitId: uuid("unit_id").notNull(),
     openingBalanceCents: integer("opening_balance_cents").notNull().default(0),
+    version: integer("version").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()

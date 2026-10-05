@@ -1,0 +1,1 @@
+ALTER TABLE "lease_mgmt"."accounts" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;

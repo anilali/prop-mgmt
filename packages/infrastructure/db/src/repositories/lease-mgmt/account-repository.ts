@@ -1,8 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { EventDispatcher } from "@moonship/events";
 import type { AccountRepository } from "@moonship/lease-mgmt";
-import { Account } from "@moonship/lease-mgmt";
+import { Account, StaleAccountError } from "@moonship/lease-mgmt";
 
 import type { DbExecutor } from "../../client";
 import {
@@ -43,14 +43,33 @@ export class PGAccountRepository implements AccountRepository {
       };
       const saved = await tx
         .insert(accounts)
-        .values({ id: account.id, propertyId: account.propertyId, ...values })
+        .values({
+          id: account.id,
+          propertyId: account.propertyId,
+          version: account.version + 1,
+          ...values,
+        })
         .onConflictDoUpdate({
           target: accounts.id,
-          set: { ...values, updatedAt: new Date() },
-          setWhere: eq(accounts.propertyId, account.propertyId),
+          set: {
+            ...values,
+            version: sql`${accounts.version} + 1`,
+            updatedAt: new Date(),
+          },
+          setWhere: and(
+            eq(accounts.propertyId, account.propertyId),
+            eq(accounts.version, account.version),
+          ),
         })
         .returning({ id: accounts.id });
       if (saved.length === 0) {
+        const [stored] = await tx
+          .select({ propertyId: accounts.propertyId })
+          .from(accounts)
+          .where(eq(accounts.id, account.id));
+        if (stored?.propertyId === account.propertyId) {
+          throw new StaleAccountError();
+        }
         throw new Error(`Account ${account.id} belongs to another property`);
       }
 
@@ -122,6 +141,7 @@ export class PGAccountRepository implements AccountRepository {
         await tx.insert(leaseEstimateSteps).values(estimateRows);
       }
     });
+    account.markSaved();
 
     if (this.eventDispatcher && events.length > 0) {
       await this.eventDispatcher.dispatch(events);

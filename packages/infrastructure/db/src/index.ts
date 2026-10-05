@@ -4,7 +4,11 @@ export type { DatabaseClient, DbExecutor, DbTransaction } from "./client";
 export { eq } from "drizzle-orm";
 
 export { createPGUnitOfWork } from "./unit-of-work";
-export type { PGTransactionalStores, PGUnitOfWork } from "./unit-of-work";
+export type {
+  PGTransactionalStores,
+  PGUnitOfWork,
+  PGUnitOfWorkOptions,
+} from "./unit-of-work";
 
 export { PGPropertyAccessRepository } from "./repositories/access/property-access-repository";
 export { PGPlatformAdminRepository } from "./repositories/access/platform-admin-repository";

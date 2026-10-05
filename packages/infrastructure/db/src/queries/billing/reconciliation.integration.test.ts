@@ -85,6 +85,22 @@ describe.skipIf(!databaseUrl)("reconciliation years and bill amounts", () => {
     expect(await queries.listFinalizedYears(propertyId)).toEqual([2026]);
   });
 
+  it("locks an existing year without creating a missing one", async () => {
+    const { propertyId } = await seedPool();
+    expect(
+      await unitOfWork.run((stores) =>
+        stores.billing.lockExistingYear(propertyId, 2026),
+      ),
+    ).toBeNull();
+    expect(await queries.listReconciliationYears(propertyId)).toEqual([]);
+
+    const created = await store.lockYear(propertyId, 2026);
+    const locked = await unitOfWork.run((stores) =>
+      stores.billing.lockExistingYear(propertyId, 2026),
+    );
+    expect(locked).toEqual(created);
+  });
+
   it("rejects a finalized year without a letter date", async () => {
     const { propertyId } = await seedPool();
     const year = await store.lockYear(propertyId, 2026);

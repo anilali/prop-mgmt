@@ -1,4 +1,7 @@
+import { ConcurrentUpdateError } from "@moonship/shared";
+
 import type { DatabaseClient, DbExecutor } from "./client";
+import { isConcurrentUpdate } from "./pg-errors";
 import { PGBillingQueries } from "./queries/billing/billing-queries";
 import { PGAccountQueries } from "./queries/lease-mgmt/account-queries";
 import { PGPropertyQueries } from "./queries/property/property-queries";
@@ -21,8 +24,15 @@ export interface PGTransactionalStores {
   propertyQueries: PGPropertyQueries;
 }
 
+export interface PGUnitOfWorkOptions {
+  isolationLevel?: "read committed" | "repeatable read";
+}
+
 export interface PGUnitOfWork {
-  run<T>(fn: (stores: PGTransactionalStores) => Promise<T>): Promise<T>;
+  run<T>(
+    fn: (stores: PGTransactionalStores) => Promise<T>,
+    options?: PGUnitOfWorkOptions,
+  ): Promise<T>;
 }
 
 function storesFor(db: DbExecutor): PGTransactionalStores {
@@ -41,8 +51,23 @@ function storesFor(db: DbExecutor): PGTransactionalStores {
 
 export function createPGUnitOfWork(db: DatabaseClient): PGUnitOfWork {
   return {
-    run<T>(fn: (stores: PGTransactionalStores) => Promise<T>): Promise<T> {
-      return db.transaction((tx) => fn(storesFor(tx)));
+    async run<T>(
+      fn: (stores: PGTransactionalStores) => Promise<T>,
+      options?: PGUnitOfWorkOptions,
+    ): Promise<T> {
+      try {
+        return await db.transaction(
+          (tx) => fn(storesFor(tx)),
+          options?.isolationLevel
+            ? { isolationLevel: options.isolationLevel }
+            : undefined,
+        );
+      } catch (error) {
+        if (isConcurrentUpdate(error)) {
+          throw new ConcurrentUpdateError();
+        }
+        throw error;
+      }
     },
   };
 }

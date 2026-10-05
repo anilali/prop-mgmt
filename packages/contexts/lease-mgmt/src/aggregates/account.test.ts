@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AccountOpened, LeaseAdded } from "../events/account-events";
 import type { LeaseTermsInput, NewLease } from "./account";
-import { Account } from "./account";
+import { Account, StaleAccountError } from "./account";
 
 const CAM = "pool-cam";
 const WATER = "pool-water";
@@ -539,11 +539,32 @@ describe("Account", () => {
         tenantId: "tenant-1",
         unitId: "unit-1",
         openingBalanceCents: 100,
+        version: 4,
         leases: [second, first],
       });
 
       expect(account.leases.map((l) => l.id)).toEqual(["lease-1", "lease-2"]);
+      expect(account.version).toBe(4);
       expect(account.pullEvents()).toHaveLength(0);
+    });
+  });
+
+  describe("version", () => {
+    it("starts at 0 and rejects a different expected version", () => {
+      const account = openAccount();
+      expect(account.version).toBe(0);
+      expect(() => account.assertVersion(0)).not.toThrow();
+      expect(() => account.assertVersion(1)).toThrow(StaleAccountError);
+      expect(() => account.assertVersion(1)).toThrow(
+        "This account changed since you opened it. Reload and try again.",
+      );
+    });
+
+    it("moves to the next version when saved", () => {
+      const account = openAccount();
+      account.markSaved();
+      expect(account.version).toBe(1);
+      expect(() => account.assertVersion(1)).not.toThrow();
     });
   });
 });

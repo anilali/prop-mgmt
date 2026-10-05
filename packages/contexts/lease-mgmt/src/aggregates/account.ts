@@ -61,7 +61,15 @@ export interface AccountProps {
   tenantId: string;
   unitId: string;
   openingBalanceCents: number;
+  version: number;
   leases: Lease[];
+}
+
+export class StaleAccountError extends Error {
+  constructor() {
+    super("This account changed since you opened it. Reload and try again.");
+    this.name = "StaleAccountError";
+  }
 }
 
 function copyLease(lease: Lease): Lease {
@@ -287,13 +295,13 @@ export class Account {
   }
 
   static open(
-    props: Omit<AccountProps, "leases">,
+    props: Omit<AccountProps, "leases" | "version">,
     firstLease: NewLease,
   ): Account {
     assertOpeningBalance(props.openingBalanceCents);
     const leases = [buildLease(firstLease.id, firstLease)];
     assertLeases(leases);
-    const account = new Account({ ...props, leases });
+    const account = new Account({ ...props, version: 0, leases });
     const event: AccountOpened = {
       eventType: "AccountOpened",
       occurredAt: new Date(),
@@ -336,8 +344,22 @@ export class Account {
     return this.props.openingBalanceCents;
   }
 
+  get version(): number {
+    return this.props.version;
+  }
+
   get leases(): Lease[] {
     return this.props.leases.map(copyLease);
+  }
+
+  assertVersion(expectedVersion: number): void {
+    if (this.props.version !== expectedVersion) {
+      throw new StaleAccountError();
+    }
+  }
+
+  markSaved(): void {
+    this.props.version += 1;
   }
 
   findLease(leaseId: string): Lease | null {

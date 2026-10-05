@@ -6,6 +6,7 @@ export interface AccountView {
   tenantId: string;
   unitId: string;
   openingBalanceCents: number;
+  version: number;
   leases: Lease[];
 }
 
