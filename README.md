@@ -26,8 +26,8 @@ cp .env.example .env
 
 Then fill in:
 
-- `POSTGRES_URL` and `POSTGRES_URL_NON_POOLING`: the dev branch's connection strings from the Neon console. Don't use `vercel env pull`; it writes the main branch's values.
-- The Neon object storage keys (`AWS_*`). Run `neon env pull --branch development -s object-storage --file .env`. It updates only the Neon lines and leaves the rest of the file alone. Use the same branch as the database. Statement PDFs are saved in the `S3_BUCKET` bucket (`leases`, defined in `neon.ts`) when a year is finalized.
+- `POSTGRES_URL` and `POSTGRES_URL_NON_POOLING`: the pooled and direct connection strings for the `development` branch of the `prop-mgmt` Neon project. Run `neon connection-string development --project-id polished-violet-47795007 --pooled` for the first, and the same without `--pooled` for the second. `development` is a child of `main`, so resetting it from its parent copies production data.
+- The Neon object storage keys (`AWS_*`) for the `development` branch of the `prop-mgmt-storage` project. Run `neon env pull --project-id jolly-fog-99364648 --branch development -s object-storage --file .env`. It updates only the Neon lines and leaves the rest of the file alone. Statement PDFs are saved in the `S3_BUCKET` bucket (`leases`, defined in `neon.ts`) when a year is finalized.
 - Google OAuth client IDs and secrets, and an auth secret, for each portal.
 
 ## Quick start
