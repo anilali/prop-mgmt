@@ -253,10 +253,6 @@ export function TenantsPageContent() {
                   </ListRow>
                 ))}
               </List>
-              <p className="text-fg-3 mt-3 text-[12px]">
-                A tenant with two units has two accounts, each with its own
-                statement and letter.
-              </p>
             </>
           )}
 
