@@ -15,6 +15,7 @@ export default async function TenantsPage() {
   }
   prefetch(trpc.tenant.list.queryOptions());
   prefetch(trpc.pool.list.queryOptions());
+  prefetch(trpc.reconciliation.listYears.queryOptions());
 
   return (
     <HydrateClient>

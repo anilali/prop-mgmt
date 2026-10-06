@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useMutation,
   useQueryClient,
@@ -21,6 +21,7 @@ import { EmptyState } from "@moonship/ui/empty-state";
 import { List, ListHeader, ListRow } from "@moonship/ui/list";
 import { Money } from "@moonship/ui/money";
 import { MonthStrip } from "@moonship/ui/month-strip";
+import { Segmented } from "@moonship/ui/segmented";
 import { StatusPill } from "@moonship/ui/status-pill";
 
 import type { TenantRow } from "../_lib/tenant-rows";
@@ -98,6 +99,12 @@ export function TenantsPageContent() {
     trpc.account.list.queryOptions(),
   );
   const { data: tenants } = useSuspenseQuery(trpc.tenant.list.queryOptions());
+  const { data: years } = useSuspenseQuery(
+    trpc.reconciliation.listYears.queryOptions(),
+  );
+  const router = useRouter();
+  const pathname = usePathname();
+  const view = searchParams.get("view") === "past" ? "past" : "current";
   const histories = useSuspenseQueries({
     queries: accountsNeedingHistory(status, accountList).map((accountId) =>
       trpc.rent.history.queryOptions({ accountId }),
@@ -108,11 +115,23 @@ export function TenantsPageContent() {
   const [newTenantId, setNewTenantId] = useState<string | null>(null);
   const [editing, setEditing] = useState<TenantView | null>(null);
 
-  const rows = tenantRows(
+  const allRows = tenantRows(
     status,
     accountList,
     histories.map((history) => history.data),
+    years,
   );
+  const pastCount = allRows.filter((row) => row.past).length;
+  const rows = allRows.filter((row) => row.past === (view === "past"));
+  const setView = (next: "current" | "past") => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "past") params.set("view", "past");
+    else params.delete("view");
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
   const today = status.today;
   const year = today.slice(0, 4);
   const withAccounts = new Set(accountList.accounts.map((a) => a.tenant.id));
@@ -148,24 +167,38 @@ export function TenantsPageContent() {
               to start counting rent.
             </p>
           ) : null}
-          {rows.length === 0 ? (
+          {allRows.length === 0 ? (
             <EmptyState headline="No tenants yet" className="animate-rise" />
           ) : (
             <>
-              <div className="text-fg-2 animate-rise mb-2.5 flex flex-wrap justify-end gap-3.5 text-[11.5px]">
-                {KEY.map((item) => (
-                  <span
-                    key={item.state}
-                    className="inline-flex items-center gap-1.5"
-                  >
-                    <MonthStrip
-                      aria-hidden
-                      cells={[{ state: item.state, title: item.label }]}
-                      className="[&>span]:h-2.5"
-                    />
-                    {item.label}
-                  </span>
-                ))}
+              <div className="animate-rise mb-2.5 flex flex-wrap items-center justify-between gap-3">
+                <Segmented
+                  aria-label="Which tenants"
+                  value={view}
+                  onValueChange={setView}
+                  options={[
+                    {
+                      value: "current",
+                      label: `Current ${allRows.length - pastCount}`,
+                    },
+                    { value: "past", label: `Past ${pastCount}` },
+                  ]}
+                />
+                <div className="text-fg-2 flex flex-wrap justify-end gap-3.5 text-[11.5px]">
+                  {KEY.map((item) => (
+                    <span
+                      key={item.state}
+                      className="inline-flex items-center gap-1.5"
+                    >
+                      <MonthStrip
+                        aria-hidden
+                        cells={[{ state: item.state, title: item.label }]}
+                        className="[&>span]:h-2.5"
+                      />
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
               </div>
               <List>
                 <ListHeader className={COLUMNS}>
@@ -175,6 +208,13 @@ export function TenantsPageContent() {
                   <span>Balance</span>
                   <span className="max-[560px]:hidden">Lease</span>
                 </ListHeader>
+                {rows.length === 0 ? (
+                  <p className="text-fg-3 px-3.5 py-6 text-center text-[12.5px]">
+                    {view === "past"
+                      ? "No past tenants yet. A tenant moves here after their last reconciliation is finalized and their balance is $0."
+                      : "No current tenants."}
+                  </p>
+                ) : null}
                 {rows.map((row, index) => (
                   <ListRow
                     key={row.accountId}

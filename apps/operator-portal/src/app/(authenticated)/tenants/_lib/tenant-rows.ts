@@ -6,6 +6,7 @@ import type { AccountSummary, Lease } from "./lease-form";
 import { newestLease } from "./lease-form";
 
 type AccountList = RouterOutputs["account"]["list"];
+type YearList = RouterOutputs["reconciliation"]["listYears"];
 type MonthRow = RentStatusData["rows"][number]["months"][number];
 
 export interface TenantRow {
@@ -18,6 +19,7 @@ export interface TenantRow {
   monthlyCents: number;
   pastDueCents: number;
   balanceCents: number;
+  past: boolean;
   newest: Lease | undefined;
   endDate: IsoDate | null;
   startDate: IsoDate;
@@ -78,16 +80,30 @@ function monthlyFrom(months: MonthRow[], today: IsoDate): number {
   );
 }
 
+function closedYears(years: YearList): (year: number) => boolean {
+  const listed = years.years.map((row) => row.year);
+  const first = listed.length > 0 ? Math.min(...listed) : Infinity;
+  const finalized = new Set(
+    years.years
+      .filter((row) => row.status === "finalized")
+      .map((row) => row.year),
+  );
+  return (year) => year < first || finalized.has(year);
+}
+
 export function tenantRows(
   status: RentStatusData,
   list: AccountList,
   histories: readonly RentHistory[],
+  years: YearList,
 ): TenantRow[] {
+  const isClosedYear = closedYears(years);
   const rows = list.accounts.map((account): TenantRow => {
     const summary =
       status.rows.find((row) => row.accountId === account.id) ??
       histories.find((history) => history.account.id === account.id);
     const months = summary?.months ?? offMonths();
+    const balanceCents = summary?.balanceCents ?? 0;
     return {
       accountId: account.id,
       tenantName: account.tenant.businessName,
@@ -97,7 +113,12 @@ export function tenantRows(
       months,
       monthlyCents: monthlyFrom(months, status.today),
       pastDueCents: summary?.pastDueCents ?? 0,
-      balanceCents: summary?.balanceCents ?? 0,
+      balanceCents,
+      past:
+        account.state === "closed" &&
+        balanceCents === 0 &&
+        account.endDate !== null &&
+        isClosedYear(Number(account.endDate.slice(0, 4))),
       newest: newestLease(account.leases),
       endDate: account.endDate,
       startDate: account.startDate,
