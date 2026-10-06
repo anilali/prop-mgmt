@@ -14,17 +14,11 @@ import {
   DialogTitle,
 } from "@moonship/ui/dialog";
 import { Input } from "@moonship/ui/input";
-import { Label } from "@moonship/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@moonship/ui/select";
+import { NativeSelect } from "@moonship/ui/select";
 
 import { useTRPC } from "~/trpc/react";
 import { CATEGORY_KIND_LABELS } from "./category-kinds";
+import { FormField } from "./form-field";
 
 export type CategoryView = RouterOutputs["category"]["list"][number];
 type OwnKind = RouterInputs["category"]["create"]["kind"];
@@ -49,7 +43,7 @@ export function CategoryDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {category ? "Rename category" : "Add category"}
+            {category ? "Rename category" : "New category"}
           </DialogTitle>
         </DialogHeader>
         {open ? (
@@ -97,7 +91,7 @@ function CategoryForm({
 
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         if (name.trim() === "") {
@@ -111,8 +105,7 @@ function CategoryForm({
         }
       }}
     >
-      <div className="space-y-1">
-        <Label htmlFor="category-name">Name</Label>
+      <FormField label="Name" htmlFor="category-name">
         <Input
           id="category-name"
           value={name}
@@ -120,39 +113,38 @@ function CategoryForm({
           maxLength={64}
           required
         />
-      </div>
+      </FormField>
       {category ? null : (
-        <div className="space-y-1">
-          <Label htmlFor="category-kind">Kind</Label>
-          <Select
+        <FormField
+          label="Kind"
+          htmlFor="category-kind"
+          hint={`${CATEGORY_KIND_LABELS[kind].description} The kind can't change later.`}
+        >
+          <NativeSelect
+            id="category-kind"
             value={kind}
-            onValueChange={(value) => {
-              if (isOwnKind(value)) setKind(value);
+            onChange={(e) => {
+              if (isOwnKind(e.target.value)) setKind(e.target.value);
             }}
           >
-            <SelectTrigger id="category-kind" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {OWN_KINDS.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {CATEGORY_KIND_LABELS[option].title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            The kind can&apos;t change later. Shared-cost categories come from
-            pools.
-          </p>
-        </div>
+            {OWN_KINDS.map((option) => (
+              <option key={option} value={option}>
+                {CATEGORY_KIND_LABELS[option].title}
+              </option>
+            ))}
+          </NativeSelect>
+        </FormField>
       )}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" disabled={create.isPending || rename.isPending}>
-          Save
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={create.isPending || rename.isPending}
+        >
+          {category ? "Rename" : "Add category"}
         </Button>
       </DialogFooter>
     </form>

@@ -3,42 +3,38 @@
 import Link from "next/link";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
-import { Button } from "@moonship/ui/button";
-import { PageHeader } from "@moonship/ui/page-header";
-import { Separator } from "@moonship/ui/separator";
-
 import { useTRPC } from "~/trpc/react";
+import { PageTopBar } from "../../../_components/page-top-bar";
 import { ImportFlow } from "./import-flow";
-import { PastBatches } from "./past-batches";
 
 export function ImportPageContent() {
   const trpc = useTRPC();
   const { data: property } = useSuspenseQuery(trpc.property.get.queryOptions());
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Import bank file"
-        description="Upload the bank's CSV or QuickBooks (QBO) download. Rows already imported are left out."
-        action={
-          <Button type="button" variant="outline" asChild>
-            <Link href="/transactions">Back to transactions</Link>
-          </Button>
-        }
+    <>
+      <PageTopBar
+        crumbs={[
+          { label: "Transactions", href: "/transactions" },
+          { label: "Import bank file" },
+        ]}
       />
-      {property.trackingStartDate === null ? (
-        <p className="rounded-lg border border-dashed p-6 text-sm">
-          Set the tracking start date in{" "}
-          <Link className="underline underline-offset-4" href="/setup">
-            Setup
-          </Link>{" "}
-          before importing.
-        </p>
-      ) : (
-        <ImportFlow />
-      )}
-      <Separator />
-      <PastBatches />
-    </div>
+      <div className="nav:px-6 nav:pt-[22px] nav:pb-12 max-w-[1180px] px-4 pt-[18px] pb-10">
+        {property.trackingStartDate === null ? (
+          <p className="border-line-2 text-fg-2 rounded-[10px] border border-dashed p-6 text-[12.5px]">
+            Set the tracking start date in{" "}
+            <Link
+              className="text-primary font-medium hover:underline"
+              href="/setup"
+            >
+              Setup
+            </Link>{" "}
+            before importing.
+          </p>
+        ) : (
+          <ImportFlow />
+        )}
+      </div>
+    </>
   );
 }

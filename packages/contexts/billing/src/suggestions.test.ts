@@ -11,6 +11,7 @@ import {
   accountSuggestion,
   categorySuggestion,
   descriptionKey,
+  suggestedPaymentMonths,
   suggestionFor,
 } from "./suggestions";
 
@@ -365,5 +366,34 @@ describe("suggestionFor", () => {
     expect(suggestionFor(txn("UNKNOWN", 2000, "2026-02-02"), context)).toEqual({
       kind: "none",
     });
+  });
+});
+
+describe("suggestedPaymentMonths", () => {
+  it("lists the months of unsorted deposits suggested for one account", () => {
+    const accounts = [account("a", 300_000), account("b", 250_000)];
+    const transactions = [
+      txn("ACH CONCORD", 300_000, "2026-08-01", [toAccount("a", 300_000)]),
+      txn("ACH CONCORD", 300_000, "2026-09-02"),
+      txn("MOBILE DEPOSIT", 250_000, "2026-10-03"),
+      txn("MOBILE DEPOSIT", 99_999, "2026-10-04"),
+      txn("HOME DEPOT", -4_312, "2026-10-04"),
+    ];
+
+    const months = suggestedPaymentMonths(transactions, accounts, "2026-01-01");
+
+    expect([...months.entries()]).toEqual([
+      ["a", new Set(["2026-09"])],
+      ["b", new Set(["2026-10"])],
+    ]);
+  });
+
+  it("leaves out a deposit that matches more than one account", () => {
+    const accounts = [account("a", 300_000), account("b", 300_000)];
+    const transactions = [txn("DEPOSIT", 300_000, "2026-10-02")];
+
+    expect(
+      suggestedPaymentMonths(transactions, accounts, "2026-01-01").size,
+    ).toBe(0);
   });
 });

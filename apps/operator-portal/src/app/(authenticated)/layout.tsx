@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { MobileSidebar, Sidebar } from "~/app/_components/sidebar";
+import { AppShell } from "~/app/_components/app-shell";
 import { getRequestAccess } from "~/request-access";
+import { HydrateClient, prefetch, trpc } from "~/trpc/server";
 
 export default async function AuthenticatedLayout({
   children,
@@ -16,22 +17,23 @@ export default async function AuthenticatedLayout({
     redirect("/no-access");
   }
 
-  const sidebarProps = {
-    context: access.context,
-    operableProperties: access.operableProperties,
-    isPlatformAdmin: access.isPlatformAdmin,
-    userName: access.operator.name,
-  };
+  if (access.context.mode === "property") {
+    prefetch(trpc.rent.bankStatus.queryOptions());
+    prefetch(trpc.rent.status.queryOptions());
+    prefetch(trpc.transaction.listToSort.queryOptions());
+    prefetch(trpc.unit.list.queryOptions());
+  }
 
   return (
-    <div className="bg-muted flex h-screen overflow-hidden">
-      <Sidebar {...sidebarProps} />
-      <div className="flex min-w-0 flex-1 flex-col p-2 md:p-4">
-        <MobileSidebar {...sidebarProps} />
-        <div className="bg-background flex min-h-0 flex-1 flex-col overflow-auto rounded-2xl border shadow-sm">
-          {children}
-        </div>
-      </div>
-    </div>
+    <HydrateClient>
+      <AppShell
+        context={access.context}
+        operableProperties={access.operableProperties}
+        isPlatformAdmin={access.isPlatformAdmin}
+        userName={access.operator.name}
+      >
+        {children}
+      </AppShell>
+    </HydrateClient>
   );
 }

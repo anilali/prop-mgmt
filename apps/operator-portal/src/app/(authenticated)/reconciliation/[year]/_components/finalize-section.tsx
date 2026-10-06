@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, CircleX } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@moonship/ui/button";
@@ -17,37 +16,34 @@ import {
 
 import type { Workspace } from "../../_lib/reconciliation";
 import { useTRPC } from "~/trpc/react";
-import { formatDate } from "../../../leases/_lib/format";
+import { blockerCount, plural, riseStyle } from "../../_lib/reconciliation";
+import { formatDate } from "../../../_lib/format";
 
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
-
-function Gate({ passed, label }: { passed: boolean; label: string }) {
-  return (
-    <li className="flex items-center gap-2">
-      {passed ? (
-        <CircleCheck className="size-4 shrink-0 text-emerald-600" />
-      ) : (
-        <CircleX className="text-destructive size-4 shrink-0" />
-      )}
-      <span className={passed ? "text-muted-foreground" : undefined}>
-        {label}
-      </span>
-    </li>
-  );
+function missingForFinalize(workspace: Workspace): string[] {
+  const { year, gates, letterDate } = workspace;
+  const blockers = blockerCount(workspace);
+  return [
+    gates.draft ? null : `${year} is already finalized`,
+    blockers > 0
+      ? `${plural(blockers, "checklist item", "checklist items")} to fix`
+      : null,
+    letterDate === null
+      ? "Set a letter date"
+      : gates.letterDateAfterYearEnd
+        ? null
+        : `Set a letter date after ${formatDate(`${year}-12-31`)}`,
+    gates.todayAfterYearEnd ? null : `Opens ${formatDate(`${year + 1}-01-01`)}`,
+    gates.previousYearFinalized ? null : `Finalize ${year - 1} first`,
+  ].filter((reason) => reason !== null);
 }
 
 export function FinalizeSection({ workspace }: { workspace: Workspace }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-  const { year, gates, letterDate, statements } = workspace;
-  const yearEnd = formatDate(`${year}-12-31`);
+  const { year, letterDate, statements } = workspace;
   const january1 = formatDate(`${year + 1}-01-01`);
-  const blockerCount = workspace.checklist.filter(
-    (item) => item.severity === "blocker",
-  ).length;
+  const missing = missingForFinalize(workspace);
   const trueUpCount = statements.filter(
     (s) => s.trueUpCents !== null && s.trueUpCents !== 0,
   ).length;
@@ -72,54 +68,19 @@ export function FinalizeSection({ workspace }: { workspace: Workspace }) {
   );
 
   return (
-    <section className="space-y-3 rounded-lg border p-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h2 className="text-lg font-medium">Finalize {year}</h2>
-          <p className="text-muted-foreground text-sm">
-            Finalize runs once. It saves the PDFs, posts the true-ups, and sets
-            the new estimates.
-          </p>
-        </div>
-        <Button
-          type="button"
-          disabled={!workspace.canFinalize || finalize.isPending}
-          onClick={() => {
-            finalize.reset();
-            setConfirming(true);
-          }}
-        >
-          Finalize {year}
-        </Button>
-      </div>
-      <ul className="space-y-1.5 text-sm">
-        <Gate passed={gates.draft} label={`${year} is still a draft`} />
-        <Gate
-          passed={gates.letterDateAfterYearEnd}
-          label={
-            letterDate === null
-              ? `Save a letter date after ${yearEnd}`
-              : `The letter date (${formatDate(letterDate)}) is after ${yearEnd}`
-          }
-        />
-        <Gate
-          passed={gates.todayAfterYearEnd}
-          label={
-            gates.todayAfterYearEnd
-              ? `${year} is over`
-              : `Finalize opens on ${january1}`
-          }
-        />
-        <Gate
-          passed={blockerCount === 0}
-          label={
-            blockerCount === 0
-              ? "Nothing in the checklist blocks finalize"
-              : `${plural(blockerCount, "checklist item blocks", "checklist items block")} finalize`
-          }
-        />
-      </ul>
-
+    <div className="animate-rise flex justify-end" style={riseStyle(2)}>
+      <Button
+        type="button"
+        variant="primary"
+        disabled={!workspace.canFinalize || finalize.isPending}
+        title={missing.length > 0 ? missing.join(" · ") : undefined}
+        onClick={() => {
+          finalize.reset();
+          setConfirming(true);
+        }}
+      >
+        Finalize {year}
+      </Button>
       <Dialog
         open={confirming}
         onOpenChange={(open) => {
@@ -134,7 +95,7 @@ export function FinalizeSection({ workspace }: { workspace: Workspace }) {
               an adjustment on the account.
             </DialogDescription>
           </DialogHeader>
-          <ul className="list-disc space-y-1.5 pl-5 text-sm">
+          <ul className="text-fg-2 list-disc space-y-1.5 pl-5 text-[12.5px]">
             <li>
               {plural(statements.length, "PDF", "PDFs")} saved for download,
               with a copy of each statement&apos;s numbers.
@@ -151,7 +112,7 @@ export function FinalizeSection({ workspace }: { workspace: Workspace }) {
             </li>
           </ul>
           {finalize.error ? (
-            <p className="text-destructive text-sm">{finalize.error.message}</p>
+            <p className="text-red text-[12.5px]">{finalize.error.message}</p>
           ) : null}
           <DialogFooter>
             <Button
@@ -164,6 +125,7 @@ export function FinalizeSection({ workspace }: { workspace: Workspace }) {
             </Button>
             <Button
               type="button"
+              variant="primary"
               disabled={finalize.isPending}
               onClick={() => finalize.mutate({ year })}
             >
@@ -172,6 +134,6 @@ export function FinalizeSection({ workspace }: { workspace: Workspace }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </div>
   );
 }

@@ -2,7 +2,6 @@ import type {
   AccountLedger,
   AccountState,
   BillingQueries,
-  Txn,
 } from "@moonship/billing";
 import type { AccountQueries, AccountView } from "@moonship/lease-mgmt";
 import type { PropertyQueries, UnitQueries } from "@moonship/property";
@@ -17,7 +16,11 @@ import {
   accountState,
   compareRentStatus,
   lateFeeSuggestions,
+  monthCells,
+  newestBankDate,
+  pastDueCents,
   rentStatus,
+  suggestedPaymentMonths,
 } from "@moonship/billing";
 
 import { toAccountTerms } from "./accounts";
@@ -42,16 +45,6 @@ export interface RentAccount {
 }
 
 export type RentData = Awaited<ReturnType<typeof loadRentData>>;
-
-export function newestBankDate(transactions: readonly Txn[]): IsoDate | null {
-  let newest: IsoDate | null = null;
-  for (const txn of transactions) {
-    if (txn.source === "bank" && (newest === null || txn.postedOn > newest)) {
-      newest = txn.postedOn;
-    }
-  }
-  return newest;
-}
 
 export async function loadRentData(deps: RentDataDeps, propertyId: string) {
   const [{ property, today }, views, tenants, units, transactions, entries] =
@@ -88,21 +81,37 @@ export async function loadRentData(deps: RentDataDeps, propertyId: string) {
     };
   }
 
+  const pendingMonths = suggestedPaymentMonths(
+    transactions,
+    views.map(toAccountTerms),
+    property.trackingStartDate,
+  );
+
   return {
     property,
     today,
     views,
     transactions,
+    newestBankDate: newestBankDate(transactions),
+    pendingMonths,
     accountOf,
     ledgerOf,
   };
 }
 
-export function rentSummary(ledger: AccountLedger, today: IsoDate) {
+export function rentSummary(data: RentData, view: AccountView) {
+  const ledger = data.ledgerOf(view);
   return {
-    ...accountBalance(ledger, today),
-    status: rentStatus(ledger, today),
-    suggestions: lateFeeSuggestions(ledger, today),
+    ...accountBalance(ledger, data.today),
+    pastDueCents: pastDueCents(ledger, data.today),
+    status: rentStatus(ledger, data.today, data.newestBankDate),
+    suggestions: lateFeeSuggestions(ledger, data.today, data.newestBankDate),
+    months: monthCells(
+      ledger,
+      data.today,
+      data.newestBankDate,
+      data.pendingMonths.get(view.id) ?? new Set(),
+    ),
   };
 }
 
@@ -115,7 +124,7 @@ export function rentStatusRows(data: RentData) {
         tenant: account.tenant,
         unit: account.unit,
         state: account.state,
-        ...rentSummary(data.ledgerOf(view), data.today),
+        ...rentSummary(data, view),
       };
     })
     .filter(

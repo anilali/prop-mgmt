@@ -1,4 +1,4 @@
-import type { IsoDate } from "@moonship/shared";
+import type { IsoDate, YearMonth } from "@moonship/shared";
 import { monthOf } from "@moonship/shared";
 
 import type { AccountTerms, Category, Txn } from "./types";
@@ -119,4 +119,26 @@ export function suggestionFor(
     context.categories,
   );
   return categoryId ? { kind: "category", categoryId } : { kind: "none" };
+}
+
+export function suggestedPaymentMonths(
+  transactions: readonly Txn[],
+  accounts: readonly AccountTerms[],
+  trackingStart: IsoDate | null,
+): Map<string, Set<YearMonth>> {
+  const months = new Map<string, Set<YearMonth>>();
+  for (const txn of transactions) {
+    if (txn.lines.length > 0 || txn.amountCents <= 0) continue;
+    const suggestion = accountSuggestion(
+      txn,
+      transactions,
+      accounts,
+      trackingStart,
+    );
+    if (suggestion.kind !== "account") continue;
+    const accountMonths = months.get(suggestion.accountId) ?? new Set();
+    accountMonths.add(monthOf(txn.postedOn));
+    months.set(suggestion.accountId, accountMonths);
+  }
+  return months;
 }

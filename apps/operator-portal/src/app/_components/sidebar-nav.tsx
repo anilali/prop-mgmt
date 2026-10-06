@@ -1,22 +1,22 @@
 "use client";
 
-import { Fragment } from "react";
+import type { ReactNode } from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import {
   ArrowLeftRight,
   Building2,
   Calculator,
-  FileText,
   House,
-  KeyRound,
-  Settings,
+  SlidersHorizontal,
   Users,
-  Wallet,
 } from "lucide-react";
 
 import { cn } from "@moonship/ui";
-import { Separator } from "@moonship/ui/separator";
+
+import { useTRPC } from "~/trpc/react";
 
 interface NavItem {
   label: string;
@@ -24,42 +24,48 @@ interface NavItem {
   icon: typeof Users;
 }
 
-const propertyMainItems: NavItem[] = [
-  { label: "Home", href: "/home", icon: House },
-  { label: "Rent", href: "/rent", icon: Wallet },
-  { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
-  { label: "Reconciliation", href: "/reconciliation", icon: Calculator },
-];
-
-const propertyItems: NavItem[] = [
-  { label: "Tenants", href: "/tenants", icon: Users },
-  { label: "Leases", href: "/leases", icon: FileText },
-  { label: "Setup", href: "/setup", icon: Settings },
-];
-
-const accessItem: NavItem = {
-  label: "Access",
-  href: "/access",
-  icon: KeyRound,
+const homeItem: NavItem = { label: "Home", href: "/home", icon: House };
+const transactionsItem: NavItem = {
+  label: "Transactions",
+  href: "/transactions",
+  icon: ArrowLeftRight,
+};
+const tenantsItem: NavItem = {
+  label: "Tenants",
+  href: "/tenants",
+  icon: Users,
+};
+const reconciliationItem: NavItem = {
+  label: "Reconciliation",
+  href: "/reconciliation",
+  icon: Calculator,
+};
+const setupItem: NavItem = {
+  label: "Setup",
+  href: "/setup",
+  icon: SlidersHorizontal,
+};
+const propertiesItem: NavItem = {
+  label: "Properties",
+  href: "/platform/properties",
+  icon: Building2,
 };
 
-const platformItems: NavItem[] = [
-  {
-    label: "Properties",
-    href: "/platform/properties",
-    icon: Building2,
-  },
-];
+function isUnder(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 function SidebarNavItem({
   item,
-  selected,
+  count,
   onNavigate,
 }: {
   item: NavItem;
-  selected: boolean;
+  count?: ReactNode;
   onNavigate?: () => void;
 }) {
+  const pathname = usePathname();
+  const selected = isUnder(pathname, item.href);
   const Icon = item.icon;
   return (
     <Link
@@ -67,53 +73,81 @@ function SidebarNavItem({
       aria-current={selected ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+        "flex h-[29px] items-center gap-[9px] rounded-md px-2 font-medium transition-colors duration-100",
         selected
-          ? "bg-background text-foreground font-medium shadow-sm"
-          : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+          ? "bg-press text-foreground"
+          : "text-fg-2 hover:bg-hover hover:text-foreground",
       )}
     >
-      <Icon className="size-4 shrink-0" />
+      <Icon className="size-[15px] shrink-0" strokeWidth={1.7} />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {count}
     </Link>
+  );
+}
+
+function ToSortCount() {
+  const trpc = useTRPC();
+  const { data } = useSuspenseQuery(trpc.transaction.listToSort.queryOptions());
+  if (data.length === 0) return null;
+  return (
+    <span className="bg-accent-soft text-primary h-[18px] rounded-[9px] px-1.5 font-mono text-[11px] leading-[18px] font-medium">
+      {data.length}
+    </span>
+  );
+}
+
+function BehindCount() {
+  const trpc = useTRPC();
+  const { data } = useSuspenseQuery(trpc.rent.status.queryOptions());
+  const behind = data.rows.filter((row) => row.status === "behind").length;
+  if (!behind) return null;
+  return (
+    <span className="text-fg-3 font-mono text-[11px] font-medium">
+      {behind} behind
+    </span>
   );
 }
 
 export function SidebarNav({
   mode,
-  role,
   onNavigate,
 }: {
   mode: "property" | "platform";
-  role?: "admin" | "staff";
   onNavigate?: () => void;
 }) {
-  const pathname = usePathname();
-  const groups =
-    mode === "platform"
-      ? [platformItems]
-      : [
-          propertyMainItems,
-          [...propertyItems, ...(role === "admin" ? [accessItem] : [])],
-        ];
-  const isSelected = (item: NavItem) =>
-    pathname === item.href || pathname.startsWith(`${item.href}/`);
+  if (mode === "platform") {
+    return (
+      <nav aria-label="Main" className="flex flex-col gap-px">
+        <SidebarNavItem item={propertiesItem} onNavigate={onNavigate} />
+      </nav>
+    );
+  }
 
   return (
-    <nav className="flex flex-col gap-0.5">
-      {groups.map((items, index) => (
-        <Fragment key={items[0]?.href ?? index}>
-          {index > 0 ? <Separator className="my-2" /> : null}
-          {items.map((item) => (
-            <SidebarNavItem
-              key={item.href}
-              item={item}
-              selected={isSelected(item)}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </Fragment>
-      ))}
+    <nav aria-label="Main" className="flex flex-col gap-px">
+      <SidebarNavItem item={homeItem} onNavigate={onNavigate} />
+      <SidebarNavItem
+        item={transactionsItem}
+        count={
+          <Suspense fallback={null}>
+            <ToSortCount />
+          </Suspense>
+        }
+        onNavigate={onNavigate}
+      />
+      <SidebarNavItem
+        item={tenantsItem}
+        count={
+          <Suspense fallback={null}>
+            <BehindCount />
+          </Suspense>
+        }
+        onNavigate={onNavigate}
+      />
+      <SidebarNavItem item={reconciliationItem} onNavigate={onNavigate} />
+      <div className="label-caps px-2 pt-2.5 pb-1">Property</div>
+      <SidebarNavItem item={setupItem} onNavigate={onNavigate} />
     </nav>
   );
 }

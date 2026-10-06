@@ -1,8 +1,13 @@
-import { comingUp, lateFeeSuggestions, toSortCount } from "@moonship/billing";
+import {
+  comingUp,
+  lateFeeSuggestions,
+  monthCells,
+  toSortCount,
+} from "@moonship/billing";
 
 import type { RentDataDeps } from "../rent-data";
 import { toAccountTerms } from "../accounts";
-import { loadRentData, rentStatusRows } from "../rent-data";
+import { loadRentData } from "../rent-data";
 import { propertyProcedure, router } from "../trpc";
 
 export type HomeRouterDeps = RentDataDeps;
@@ -36,7 +41,11 @@ export function homeRouter(deps: HomeRouterDeps) {
             accountId: id,
             tenant,
             unit,
-            suggestions: lateFeeSuggestions(data.ledgerOf(view), data.today),
+            suggestions: lateFeeSuggestions(
+              data.ledgerOf(view),
+              data.today,
+              data.newestBankDate,
+            ),
           };
         })
         .filter((item) => item.suggestions.length > 0)
@@ -45,12 +54,35 @@ export function homeRouter(deps: HomeRouterDeps) {
             numeric: true,
           }),
         );
+      const cells = data.views.map((view) =>
+        monthCells(
+          data.ledgerOf(view),
+          data.today,
+          data.newestBankDate,
+          data.pendingMonths.get(view.id) ?? new Set(),
+        ),
+      );
+      const rentMonths = Array.from({ length: 12 }, (_, index) => {
+        const month = cells
+          .map((row) => row[index])
+          .filter((cell) => cell !== undefined);
+        return {
+          month: index + 1,
+          expectedCents: month.reduce(
+            (sum, cell) => sum + cell.expectedCents,
+            0,
+          ),
+          paidCents: month.reduce((sum, cell) => sum + cell.paidCents, 0),
+          nodata: month.some((cell) => cell.state === "nodata"),
+        };
+      });
       return {
         today: data.today,
         timeZone: data.property.timeZone,
         trackingStart: data.property.trackingStartDate,
-        behind: rentStatusRows(data).filter((row) => row.status === "behind"),
         lateFees,
+        accountCount: data.views.length,
+        rentMonths,
         toSortCount: toSortCount(data.transactions),
         rentChanges: named(lists.rentChanges),
         insurance: named(lists.insurance),

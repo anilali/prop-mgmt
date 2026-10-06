@@ -7,13 +7,16 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
+import { Check, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import type { CsvMapping } from "@moonship/billing";
 import { fileCharset } from "@moonship/billing";
+import { cn } from "@moonship/ui";
 import { Button } from "@moonship/ui/button";
 import { Input } from "@moonship/ui/input";
 import { Label } from "@moonship/ui/label";
+import { formatMoney } from "@moonship/ui/money";
 import {
   Table,
   TableBody,
@@ -26,8 +29,7 @@ import {
 import type { PreviewResult } from "./import-preview";
 import { useTRPC } from "~/trpc/react";
 import { useTransactionsChanged } from "../../_components/use-transactions-changed";
-import { formatAmount } from "../../_lib/transactions";
-import { formatDate } from "../../../leases/_lib/format";
+import { formatDate } from "../../../_lib/format";
 import { ImportPreview } from "./import-preview";
 import { MappingForm } from "./mapping-form";
 
@@ -50,7 +52,7 @@ async function readBankFile(file: File): Promise<string> {
 function OfxAccount({ result }: { result: OfxPreview }) {
   const { last4, startOn, endOn, ledgerBalance, warning } = result.account;
   return (
-    <div className="space-y-2 rounded-lg border p-4 text-sm">
+    <div className="border-line space-y-1.5 rounded-lg border px-3.5 py-3 text-[12.5px]">
       <p>
         QuickBooks file
         {last4 ? ` for the account ending ${last4}` : ""}
@@ -59,14 +61,14 @@ function OfxAccount({ result }: { result: OfxPreview }) {
           : ""}
         .
         {ledgerBalance
-          ? ` Bank balance ${formatAmount(ledgerBalance.amountCents)}${ledgerBalance.asOf ? ` on ${formatDate(ledgerBalance.asOf)}` : ""}.`
+          ? ` Bank balance ${formatMoney(ledgerBalance.amountCents)}${ledgerBalance.asOf ? ` on ${formatDate(ledgerBalance.asOf)}` : ""}.`
           : null}
       </p>
-      <p className="text-muted-foreground">
+      <p className="text-fg-2">
         No column matching is needed. The bank&apos;s transaction id is used to
         leave out rows already imported.
       </p>
-      {warning ? <p className="text-destructive">{warning}</p> : null}
+      {warning ? <p className="text-red">{warning}</p> : null}
     </div>
   );
 }
@@ -79,34 +81,32 @@ function RawRows({ result }: { result: CsvPreview }) {
   const columns = Array.from({ length: width }, (_, index) => index);
   if (width === 0) return null;
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <Table>
-        {result.headerRow === null ? null : (
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-16">{result.headerRow}</TableHead>
-              {columns.map((index) => (
-                <TableHead key={index}>{result.headers[index] ?? ""}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-        )}
-        <TableBody>
-          {result.rawRows.map((row) => (
-            <TableRow key={row.rowNumber}>
-              <TableCell className="text-muted-foreground">
-                {row.rowNumber}
+    <Table>
+      {result.headerRow === null ? null : (
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-16">{result.headerRow}</TableHead>
+            {columns.map((index) => (
+              <TableHead key={index}>{result.headers[index] ?? ""}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+      )}
+      <TableBody>
+        {result.rawRows.map((row) => (
+          <TableRow key={row.rowNumber}>
+            <TableCell className="text-fg-3 font-mono">
+              {row.rowNumber}
+            </TableCell>
+            {columns.map((index) => (
+              <TableCell key={index} className="whitespace-nowrap">
+                {row.cells[index] ?? ""}
               </TableCell>
-              {columns.map((index) => (
-                <TableCell key={index} className="whitespace-nowrap">
-                  {row.cells[index] ?? ""}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -124,6 +124,7 @@ export function ImportFlow() {
   const [editingMapping, setEditingMapping] = useState(false);
   const [skipRows, setSkipRows] = useState<number[]>([]);
   const [imported, setImported] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const preview = useMutation(
     trpc.bankImport.preview.mutationOptions({
@@ -230,31 +231,58 @@ export function ImportFlow() {
   return (
     <section className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="bank-file">Bank file</Label>
-        <Input
-          key={inputKey}
-          id="bank-file"
-          type="file"
-          accept=".csv,.qbo,.ofx,.qfx,text/csv"
-          className="max-w-md"
-          onChange={(e) => void onFile(e.target.files?.[0])}
-        />
-        <p className="text-muted-foreground text-xs">
-          CSV or QuickBooks (.qbo, .ofx, .qfx), up to 2 MB.
-        </p>
+        <label
+          htmlFor="bank-file"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            void onFile(e.dataTransfer.files[0]);
+          }}
+          className={cn(
+            "border-line-2 text-fg-2 hover:border-accent-line hover:bg-accent-soft flex cursor-pointer flex-col items-center justify-center gap-1 rounded-[9px] border border-dashed px-4 py-6 text-center transition-colors",
+            dragging && "border-accent-line bg-accent-soft",
+          )}
+        >
+          <span className="text-foreground flex items-center gap-2 font-medium">
+            <Upload className="size-3.5" />
+            {file ? file.name : "Choose or drop a bank file"}
+          </span>
+          <span className="text-fg-3 text-xs">
+            CSV or QuickBooks (.qbo, .ofx, .qfx), up to 2 MB
+          </span>
+          <Input
+            key={inputKey}
+            id="bank-file"
+            type="file"
+            accept=".csv,.qbo,.ofx,.qfx,text/csv"
+            className="sr-only"
+            onChange={(e) => void onFile(e.target.files?.[0])}
+          />
+        </label>
         {imported !== null ? (
-          <p className="text-sm">
-            Imported {imported}{" "}
-            {imported === 1 ? "transaction" : "transactions"}.{" "}
-            <Link className="underline underline-offset-4" href="/transactions">
-              Sort them
-            </Link>
+          <p className="bg-green-soft flex items-center gap-2 rounded-lg px-3 py-2.5 text-[12.5px]">
+            <Check className="text-green size-3.5 shrink-0" />
+            <span>
+              Imported {imported}{" "}
+              {imported === 1 ? "transaction" : "transactions"}.{" "}
+              <Link
+                className="text-primary font-medium hover:underline"
+                href="/transactions"
+              >
+                Sort them
+              </Link>
+            </span>
           </p>
         ) : null}
       </div>
 
       {file && preview.isPending && !result ? (
-        <p className="text-muted-foreground text-sm">Reading {file.name}...</p>
+        <p className="text-fg-2 text-[12.5px]">Reading {file.name}...</p>
       ) : null}
 
       {file && ofxResult ? (
@@ -282,8 +310,8 @@ export function ImportFlow() {
         <>
           <div className="space-y-3">
             <div className="space-y-1">
-              <h2 className="text-lg font-medium">Header row</h2>
-              <p className="text-muted-foreground text-sm">
+              <h2 className="text-[13px] font-semibold">Header row</h2>
+              <p className="text-fg-2 text-[12.5px]">
                 {csvResult.headerRow === null
                   ? "No row with column names was found. Enter the row number that has them."
                   : `Row ${csvResult.headerRow} has the column names. Rows above it are ignored.`}
@@ -327,7 +355,7 @@ export function ImportFlow() {
           </div>
 
           {csvResult.mappingError ? (
-            <p className="text-destructive text-sm">
+            <p className="text-red text-[12.5px]">
               The saved column matching doesn&apos;t fit this file:{" "}
               {csvResult.mappingError}. Match the columns again.
             </p>
@@ -351,8 +379,8 @@ export function ImportFlow() {
               onCancel={activeMapping ? () => setEditingMapping(false) : null}
             />
           ) : activeMapping ? (
-            <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-              <p className="text-sm">
+            <div className="border-line flex items-center justify-between gap-4 rounded-lg border px-3.5 py-3">
+              <p className="text-[12.5px]">
                 Date: {activeMapping.dateColumn} ({activeMapping.dateFormat}).
                 Description: {activeMapping.descriptionColumn}. Amount:{" "}
                 {activeMapping.amount.mode === "signed"

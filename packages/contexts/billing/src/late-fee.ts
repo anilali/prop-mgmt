@@ -10,6 +10,7 @@ import {
   monthlyExpected,
 } from "./lease-calendar";
 import { entryDateFor } from "./ledger";
+import { bankReaches } from "./rent-status";
 
 export interface LateFeeSuggestion {
   accountId: string;
@@ -85,6 +86,7 @@ export function lateFeeSuggestion(
   ledger: AccountLedger,
   month: YearMonth,
   today: IsoDate,
+  newestBankDate: IsoDate | null,
 ): LateFeeSuggestion | null {
   const { account, trackingStart } = ledger;
   if (trackingStart === null || !isCounted(account, month, trackingStart)) {
@@ -95,6 +97,7 @@ export function lateFeeSuggestion(
   const due = dueDate(account, month);
   const feeDate = maxDate(dateInMonth(month, lateFee.day), due);
   if (monthOf(today) !== month || today <= feeDate) return null;
+  if (!bankReaches(newestBankDate, feeDate)) return null;
   if (isLateFeeDecided(ledger, month)) return null;
   const carried = Math.max(
     0,
@@ -114,9 +117,10 @@ export function lateFeeSuggestion(
 export function lateFeeSuggestions(
   ledger: AccountLedger,
   today: IsoDate,
+  newestBankDate: IsoDate | null,
 ): LateFeeSuggestion[] {
   return lateFeeMonths(today).flatMap((month) => {
-    const suggestion = lateFeeSuggestion(ledger, month, today);
+    const suggestion = lateFeeSuggestion(ledger, month, today, newestBankDate);
     return suggestion ? [suggestion] : [];
   });
 }

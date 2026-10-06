@@ -52,6 +52,22 @@ function pay(
   });
 }
 
+function bankThrough(app: App, postedOn: string) {
+  const id = randomUUID();
+  app.billing.transactions.set(id, {
+    id,
+    propertyId: PROPERTY_ID,
+    source: "bank",
+    importBatchId: "batch",
+    postedOn,
+    description: "SERVICE FEE",
+    descriptionKey: "service fee",
+    amountCents: -1_000,
+    externalId: null,
+    lines: [],
+  });
+}
+
 function addEntry(
   app: App,
   accountId: string,
@@ -146,6 +162,7 @@ async function setup() {
 describe("rent procedures need property mode and membership", () => {
   const calls: [string, (caller: TestCaller) => Promise<unknown>][] = [
     ["rent.status", (c) => c.rent.status()],
+    ["rent.bankStatus", (c) => c.rent.bankStatus()],
     ["rent.history", (c) => c.rent.history({ accountId: ID })],
     [
       "rent.addAdjustment",
@@ -258,6 +275,144 @@ describe("rent.status", () => {
   });
 });
 
+describe("rent.status past due and months", () => {
+  beforeEach(() => useToday("2026-03-05"));
+
+  it("shows past due as the balance from before this month", async () => {
+    const { caller } = await setup();
+
+    const result = await caller.rent.status();
+
+    expect(
+      result.rows.map((row) => [
+        row.unit.label,
+        row.balanceCents,
+        row.pastDueCents,
+      ]),
+    ).toEqual([
+      ["D", 432_000, 216_000],
+      ["B", 100_000, 100_000],
+      ["E", 150_000, 0],
+      ["A", 0, 0],
+      ["G", -40_000, 0],
+      ["F", -50_000, 0],
+    ]);
+  });
+
+  it("shows a month strip for the current year", async () => {
+    const { caller, ids } = await setup();
+
+    const result = await caller.rent.status();
+    const months = (accountId: string) =>
+      result.rows
+        .find((row) => row.accountId === accountId)
+        ?.months.map((cell) => cell.state);
+
+    expect(months(ids.behind)).toEqual([
+      "paid",
+      "unpaid",
+      "open",
+      ...Array<string>(9).fill("future"),
+    ]);
+    expect(months(ids.closedOwing)).toEqual([
+      "unpaid",
+      ...Array<string>(11).fill("off"),
+    ]);
+    expect(months(ids.upcoming)).toEqual([
+      "off",
+      "off",
+      "off",
+      ...Array<string>(9).fill("future"),
+    ]);
+    expect(
+      result.rows.find((row) => row.accountId === ids.credit)?.months[2],
+    ).toEqual({
+      month: 3,
+      state: "paid",
+      expectedCents: 100_000,
+      paidCents: 140_000,
+    });
+  });
+
+  it("marks a month pending when a deposit to sort is suggested for the account", async () => {
+    const { app, caller, ids } = await setup();
+    const id = randomUUID();
+    app.billing.transactions.set(id, {
+      id,
+      propertyId: PROPERTY_ID,
+      source: "bank",
+      importBatchId: "batch",
+      postedOn: "2026-03-04",
+      description: "MOBILE DEPOSIT",
+      descriptionKey: "mobile deposit",
+      amountCents: 150_000,
+      externalId: null,
+      lines: [],
+    });
+
+    const result = await caller.rent.status();
+
+    expect(
+      result.rows.find((row) => row.accountId === ids.due)?.months[2]?.state,
+    ).toBe("pending");
+    expect(
+      result.rows.find((row) => row.accountId === ids.behind)?.months[2]?.state,
+    ).toBe("open");
+  });
+
+  it("is Waiting when only this month is owed and bank data ends before the 1st", async () => {
+    const { app, caller, ids } = await setup();
+    useToday("2026-04-03");
+
+    const waiting = await caller.rent.status();
+    const statusOf = (rows: typeof waiting.rows, accountId: string) =>
+      rows.find((row) => row.accountId === accountId)?.status;
+    expect(statusOf(waiting.rows, ids.paid)).toBe("waiting");
+    expect(statusOf(waiting.rows, ids.credit)).toBe("waiting");
+    expect(statusOf(waiting.rows, ids.due)).toBe("behind");
+    expect(
+      waiting.rows.find((row) => row.accountId === ids.paid)?.months[3]?.state,
+    ).toBe("nodata");
+
+    bankThrough(app, "2026-04-01");
+    const imported = await caller.rent.status();
+    expect(statusOf(imported.rows, ids.paid)).toBe("due");
+    expect(statusOf(imported.rows, ids.credit)).toBe("due");
+  });
+});
+
+describe("rent.bankStatus", () => {
+  beforeEach(() => useToday("2026-03-05"));
+
+  it("returns today and the newest bank date, leaving out cash", async () => {
+    const { caller } = await setup();
+    expect(await caller.rent.bankStatus()).toEqual({
+      today: "2026-03-05",
+      newestBankDate: "2026-03-01",
+    });
+  });
+
+  it("returns null with no bank data", async () => {
+    const caller = await createTestApp().callerFor();
+    expect(await caller.rent.bankStatus()).toEqual({
+      today: "2026-03-05",
+      newestBankDate: null,
+    });
+  });
+
+  it("uses the property's date, not the UTC date", async () => {
+    const caller = await createTestApp().callerFor();
+    vi.stubEnv("TODAY_OVERRIDE", "");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-03-11T04:00:00Z"));
+      expect((await caller.rent.bankStatus()).today).toBe("2026-03-10");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("rent.history", () => {
   beforeEach(() => useToday("2026-03-05"));
 
@@ -276,6 +431,13 @@ describe("rent.history", () => {
     });
     expect(history.status).toBe("behind");
     expect(history.balanceCents).toBe(437_000);
+    expect(history.pastDueCents).toBe(221_000);
+    expect(history.months.slice(0, 4)).toEqual([
+      { month: 1, state: "paid", expectedCents: 216_000, paidCents: 216_000 },
+      { month: 2, state: "unpaid", expectedCents: 216_000, paidCents: 0 },
+      { month: 3, state: "open", expectedCents: 216_000, paidCents: 0 },
+      { month: 4, state: "future", expectedCents: 216_000, paidCents: 0 },
+    ]);
     expect(
       history.rows.map((row) => [
         row.kind,
@@ -682,6 +844,7 @@ describe("ledger writes lock the reconciliation year", () => {
 
   it("locks the entry's year in a unit of work for each write", async () => {
     const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
     const runs = app.unitOfWork.runs.length;
 
     const added = await caller.rent.addAdjustment({
@@ -703,6 +866,7 @@ describe("ledger writes lock the reconciliation year", () => {
     expect(app.billing.lockedYears).toEqual([2026, 2026, 2026, 2026]);
 
     const other = await setup();
+    bankThrough(other.app, "2026-03-14");
     await other.caller.rent.dismissLateFee({
       accountId: other.ids.due,
       month: "2026-03",
@@ -761,7 +925,8 @@ describe("late fees", () => {
   };
 
   it("adds suggestions to rent.status rows and rent.history", async () => {
-    const { caller, ids } = await setup();
+    const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
 
     const status = await caller.rent.status();
     const suggestions = Object.fromEntries(
@@ -786,6 +951,7 @@ describe("late fees", () => {
 
   it("approves a fee dated the day after the fee date", async () => {
     const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
 
     const result = await caller.rent.approveLateFee({
       accountId: ids.due,
@@ -828,6 +994,7 @@ describe("late fees", () => {
 
   it("rejects approval with no current suggestion", async () => {
     const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
     const approve = (accountId: string, month: string) =>
       codeOf(caller.rent.approveLateFee({ accountId, month }));
 
@@ -844,7 +1011,8 @@ describe("late fees", () => {
   });
 
   it("posts the covering lease's fee amount and day", async () => {
-    const { caller, ids } = await setup();
+    const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
     const account = await caller.account.get({ id: ids.paid });
     const first = account.account.leases[0];
     if (!first) throw new Error("missing lease");
@@ -880,6 +1048,7 @@ describe("late fees", () => {
 
   it("dismisses a fee with no amount, and removing the dismissal brings the suggestion back", async () => {
     const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
 
     const { entry } = await caller.rent.dismissLateFee({
       accountId: ids.due,
@@ -909,6 +1078,7 @@ describe("late fees", () => {
 
   it("returns CONFLICT when the store finds the month already decided", async () => {
     const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-14");
     vi.spyOn(app.billing, "insertLedgerEntry").mockRejectedValueOnce(
       new DuplicateLedgerEntryError(),
     );
@@ -919,9 +1089,35 @@ describe("late fees", () => {
     ).toBe("CONFLICT");
   });
 
+  it("waits for bank data to reach the fee day", async () => {
+    const { app, caller, ids } = await setup();
+    bankThrough(app, "2026-03-09");
+
+    const status = await caller.rent.status();
+    expect(status.rows.flatMap((row) => row.suggestions)).toEqual([]);
+    expect(
+      await codeOf(
+        caller.rent.approveLateFee({ accountId: ids.due, month: "2026-03" }),
+      ),
+    ).toBe("CONFLICT");
+    expect(
+      await codeOf(
+        caller.rent.dismissLateFee({ accountId: ids.due, month: "2026-03" }),
+      ),
+    ).toBe("CONFLICT");
+
+    bankThrough(app, "2026-03-10");
+    const caughtUp = await caller.rent.status();
+    expect(
+      caughtUp.rows.find((row) => row.accountId === ids.due)?.suggestions,
+    ).toEqual([{ accountId: ids.due, ...march }]);
+    expect(app.billing.ledgerEntries.size).toBe(0);
+  });
+
   it("dates the fee on the approval day when the fee date is in a finalized year", async () => {
     const { app, caller, ids } = await setup();
     useToday("2026-12-20");
+    bankThrough(app, "2026-12-19");
     app.billing.finalizedYears = [2026];
 
     const result = await caller.rent.approveLateFee({

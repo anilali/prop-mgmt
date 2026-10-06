@@ -1,29 +1,38 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { ArrowLeft, Calculator } from "lucide-react";
+import { Calculator, Check } from "lucide-react";
 
-import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
 import { EmptyState } from "@moonship/ui/empty-state";
-import { PageHeader } from "@moonship/ui/page-header";
+import {
+  Tabs,
+  TabsContent,
+  TabsCount,
+  TabsList,
+  TabsTrigger,
+} from "@moonship/ui/tabs";
 
-import type { Workspace } from "../../_lib/reconciliation";
+import type { Workspace, YearRow } from "../../_lib/reconciliation";
 import { useTRPC } from "~/trpc/react";
 import {
-  timestampFormat,
-  YEAR_STATUS_LABELS,
-  YEAR_STATUS_VARIANTS,
+  blockerCount,
+  parseYearTab,
   yearsUnavailableMessage,
 } from "../../_lib/reconciliation";
-import { formatDate } from "../../../leases/_lib/format";
+import { BillAmountDialog } from "./bill-amount-dialog";
 import { Checklist } from "./checklist";
 import { FinalizeSection } from "./finalize-section";
 import { FinalizedView } from "./finalized-view";
 import { LetterDateField } from "./letter-date-field";
 import { PoolCards } from "./pool-cards";
 import { Statements } from "./statements";
+import { YearHeading } from "./year-heading";
+
+const PAGE = "nav:px-6 nav:pt-[22px] nav:pb-12 px-4 pt-[18px] pb-10";
 
 export function YearPageContent({ year }: { year: number }) {
   const trpc = useTRPC();
@@ -32,18 +41,9 @@ export function YearPageContent({ year }: { year: number }) {
   );
   const available = data.years.some((row) => row.year === year);
 
-  return (
-    <div className="space-y-6">
-      <Link
-        href="/reconciliation"
-        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
-      >
-        <ArrowLeft className="size-4" />
-        Reconciliation
-      </Link>
-      {available ? (
-        <YearWorkspace year={year} />
-      ) : (
+  if (!available) {
+    return (
+      <div className={PAGE}>
         <EmptyState
           icon={<Calculator className="size-5" />}
           headline={`${year} cannot be reconciled`}
@@ -52,107 +52,110 @@ export function YearPageContent({ year }: { year: number }) {
             `Choose a year from ${data.years.at(-1)?.year} to ${data.years[0]?.year}.`
           }
           action={
-            <Button type="button" asChild>
+            <Button type="button" variant="outline" asChild>
               <Link href="/reconciliation">See the years</Link>
             </Button>
           }
-          className="rounded-lg border border-dashed py-16"
         />
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  return <YearWorkspace year={year} years={data.years} />;
 }
 
-function YearWorkspace({ year }: { year: number }) {
+function YearWorkspace({ year, years }: { year: number; years: YearRow[] }) {
   const trpc = useTRPC();
   const { data } = useSuspenseQuery(
     trpc.reconciliation.workspace.queryOptions({ year }),
   );
 
-  return (
-    <div className="space-y-8">
-      <YearHeader workspace={data} />
-      {data.finalized ? (
+  if (data.finalized) {
+    return (
+      <div className={`${PAGE} max-w-[880px]`}>
         <FinalizedView workspace={data} finalized={data.finalized} />
-      ) : (
-        <>
-          <Checklist year={year} items={data.checklist} />
-          <PoolCards year={year} pools={data.pools} />
-          <Statements workspace={data} />
-          <FinalizeSection workspace={data} />
-        </>
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
+  return <OpenYear workspace={data} years={years} />;
 }
 
-function YearHeader({ workspace }: { workspace: Workspace }) {
-  const trpc = useTRPC();
-  const { data: property } = useSuspenseQuery(trpc.property.get.queryOptions());
-  const finalizedFormat = timestampFormat(property.timeZone);
+function OpenYear({
+  workspace,
+  years,
+}: {
+  workspace: Workspace;
+  years: YearRow[];
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = parseYearTab(searchParams.get("tab"));
+  const [billPoolId, setBillPoolId] = useState<string | null>(null);
+  const billPool =
+    workspace.pools.find((pool) => pool.poolId === billPoolId) ?? null;
+  const blockers = blockerCount(workspace);
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title={
-          <span className="flex items-center gap-2">
-            {workspace.year} reconciliation
-            <Badge variant={YEAR_STATUS_VARIANTS[workspace.status]}>
-              {YEAR_STATUS_LABELS[workspace.status]}
-            </Badge>
-            {workspace.isDryRun ? (
-              <Badge variant="outline">Dry run</Badge>
-            ) : null}
-          </span>
+    <>
+      <div className="nav:px-6 nav:pt-[22px] px-4 pt-[18px] pb-2.5">
+        <YearHeading workspace={workspace} />
+      </div>
+      <Tabs
+        value={tab}
+        onValueChange={(value) =>
+          router.replace(`${pathname}?tab=${parseYearTab(value)}`, {
+            scroll: false,
+          })
         }
-        description={
-          <>
-            As of {formatDate(workspace.today)}.{" "}
-            {workspace.newestBankDate ? (
-              <>
-                Bank activity imported through{" "}
-                {formatDate(workspace.newestBankDate)}.
-              </>
+        className="gap-0"
+      >
+        <TabsList className="nav:px-[18px] px-2.5">
+          <TabsTrigger value="checklist">
+            Checklist
+            {blockers > 0 ? (
+              <TabsCount hot>{blockers}</TabsCount>
             ) : (
-              <>No bank activity imported yet.</>
-            )}{" "}
-            {workspace.isDryRun ? (
-              <>
-                {workspace.year} is not over yet, so rent balances are as of
-                today.
-              </>
-            ) : null}
-          </>
-        }
+              <TabsCount>
+                <Check className="size-3" aria-label="Nothing blocks" />
+              </TabsCount>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="pools">
+            Pool costs
+            <TabsCount>{workspace.pools.length}</TabsCount>
+          </TabsTrigger>
+          <TabsTrigger value="letters">
+            Letters
+            <TabsCount>{workspace.statements.length}</TabsCount>
+          </TabsTrigger>
+        </TabsList>
+        <div className={`${PAGE} max-w-[1180px]`}>
+          <TabsContent value="checklist">
+            <Checklist
+              workspace={workspace}
+              years={years}
+              onEnterBill={setBillPoolId}
+            />
+          </TabsContent>
+          <TabsContent value="pools">
+            <PoolCards workspace={workspace} onEditBill={setBillPoolId} />
+          </TabsContent>
+          <TabsContent value="letters" className="grid gap-[22px]">
+            <LetterDateField
+              year={workspace.year}
+              letterDate={workspace.letterDate}
+            />
+            <Statements workspace={workspace} />
+            <FinalizeSection workspace={workspace} />
+          </TabsContent>
+        </div>
+      </Tabs>
+      <BillAmountDialog
+        year={workspace.year}
+        pool={billPool}
+        onClose={() => setBillPoolId(null)}
       />
-      {workspace.finalized ? (
-        <dl className="grid gap-4 rounded-lg border p-4 text-sm sm:grid-cols-3">
-          <div className="space-y-1">
-            <dt className="text-muted-foreground">Letter date</dt>
-            <dd className="font-medium">{formatDate(workspace.letterDate)}</dd>
-          </div>
-          <div className="space-y-1">
-            <dt className="text-muted-foreground">Finalized</dt>
-            <dd className="font-medium">
-              {workspace.finalizedAt
-                ? finalizedFormat.format(workspace.finalizedAt)
-                : "-"}
-            </dd>
-          </div>
-          <div className="space-y-1">
-            <dt className="text-muted-foreground">Statements saved</dt>
-            <dd className="font-medium">
-              {workspace.finalized.snapshots.length}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <LetterDateField
-          year={workspace.year}
-          letterDate={workspace.letterDate}
-          previewLetterDate={workspace.previewLetterDate}
-        />
-      )}
-    </div>
+    </>
   );
 }

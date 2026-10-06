@@ -8,6 +8,8 @@ import { TriangleAlert } from "lucide-react";
 import { Button } from "@moonship/ui/button";
 import { EmptyState } from "@moonship/ui/empty-state";
 
+import { PageTopBar } from "./_components/page-top-bar";
+
 export default function AuthenticatedError({
   error,
   reset,
@@ -19,31 +21,33 @@ export default function AuthenticatedError({
   const queryErrors = useQueryErrorResetBoundary();
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <EmptyState
-        icon={<TriangleAlert className="size-5" />}
-        headline="This page could not load"
-        description={
-          error.digest
-            ? "Something went wrong on the server. Try again."
-            : error.message
-        }
-        action={
-          <Button
-            type="button"
-            onClick={() => {
-              queryErrors.reset();
-              startTransition(() => {
-                router.refresh();
-                reset();
-              });
-            }}
-          >
-            Try again
-          </Button>
-        }
-        className="rounded-lg border border-dashed py-16"
-      />
-    </div>
+    <>
+      <PageTopBar crumbs={[{ label: "Something went wrong" }]} />
+      <div className="nav:px-6 nav:py-[22px] px-4 py-[18px]">
+        <EmptyState
+          icon={<TriangleAlert className="size-5" />}
+          headline="This page could not load"
+          description={
+            error.digest
+              ? "Something went wrong on the server. Try again."
+              : error.message
+          }
+          action={
+            <Button
+              type="button"
+              onClick={() => {
+                queryErrors.reset();
+                startTransition(() => {
+                  router.refresh();
+                  reset();
+                });
+              }}
+            >
+              Try again
+            </Button>
+          }
+        />
+      </div>
+    </>
   );
 }

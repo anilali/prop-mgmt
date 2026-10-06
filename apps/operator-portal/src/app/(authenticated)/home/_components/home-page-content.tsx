@@ -1,419 +1,501 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import {
-  useIsMutating,
-  useMutation,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+  ArrowLeftRight,
+  Banknote,
+  CalendarClock,
+  Check,
+  CircleAlert,
+  ShieldAlert,
+  SlidersHorizontal,
+  TrendingUp,
+  Upload,
+  UserPlus,
+} from "lucide-react";
 
-import type { RouterOutputs } from "@moonship/api-operator";
-import { formatCents } from "@moonship/shared";
-import { Badge } from "@moonship/ui/badge";
+import type { IsoDate, YearMonth } from "@moonship/shared";
 import { Button } from "@moonship/ui/button";
-import { PageHeader } from "@moonship/ui/page-header";
-import { Switch } from "@moonship/ui/switch";
+import { formatMoney } from "@moonship/ui/money";
 
+import type { RentStatusRow } from "../../_lib/rent";
+import type { LateFeeOutcome } from "./todo-actions";
+import type { TodoItem } from "./todo-list";
 import { useTRPC } from "~/trpc/react";
-import {
-  ACCOUNT_STATE_LABELS,
-  formatDate,
-  notifiedDateFormat,
-} from "../../leases/_lib/format";
-import {
-  useAccountUpdated,
-  useAccountUpdateFailed,
-} from "../../leases/[accountId]/_components/use-account-updated";
-import { LateFeeSuggestionList } from "../../rent/_components/late-fee-suggestion";
-import { RENT_STATUS_LABELS, RENT_STATUS_VARIANTS } from "../../rent/_lib/rent";
+import { dayHeading, daysAway, monthName, shortDate } from "../_lib/dates";
+import { PageTopBar } from "../../_components/page-top-bar";
+import { notifiedDateFormat } from "../../_lib/format";
+import { BalancesCard } from "./balances-card";
+import { RentChartCard } from "./rent-chart-card";
+import { LateFeeActions, NotifyAction } from "./todo-actions";
+import { AccountLink, AlsoChecked, rise, TodoGroup } from "./todo-list";
 
-type ComingUp = RouterOutputs["home"]["comingUp"];
-type BehindRow = ComingUp["behind"][number];
-type RentChange = ComingUp["rentChanges"][number];
-type InsuranceItem = ComingUp["insurance"][number];
-type LeaseEndItem = ComingUp["leasesEnding"][number];
-
-export function HomePageContent() {
-  const trpc = useTRPC();
-  const { data } = useSuspenseQuery(trpc.home.comingUp.queryOptions());
-
-  return (
-    <div className="max-w-4xl space-y-4">
-      <PageHeader
-        title="Home"
-        description={`What needs attention, as of ${formatDate(data.today)}.`}
-      />
-      <BehindCard data={data} />
-      <LateFeesCard items={data.lateFees} />
-      <ToSortCard count={data.toSortCount} />
-      <RentChangesCard items={data.rentChanges} timeZone={data.timeZone} />
-      <InsuranceCard items={data.insurance} />
-      <LeasesEndingCard
-        ending={data.leasesEnding}
-        pastEndDate={data.pastEndDate}
-      />
-    </div>
-  );
-}
-
-function HomeCard({
-  title,
-  description,
-  action,
-  children,
-}: {
-  title: string;
-  description?: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3 rounded-lg border p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="space-y-0.5">
-          <h2 className="font-semibold">{title}</h2>
-          {description ? (
-            <p className="text-muted-foreground text-sm">{description}</p>
-          ) : null}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="text-muted-foreground text-sm">{children}</p>;
-}
-
-function AccountName({
-  href,
-  tenant,
-  unit,
-  badge,
-}: {
-  href: string;
+interface DecidedFee {
+  key: string;
+  accountId: string;
   tenant: { businessName: string };
   unit: { label: string };
-  badge?: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <Link
-        className="font-medium underline-offset-4 hover:underline"
-        href={href}
-      >
-        {tenant.businessName}
-      </Link>
-      {badge}
-      <p className="text-muted-foreground text-xs">Unit {unit.label}</p>
-    </div>
-  );
+  month: YearMonth;
+  amountCents: number;
+  outcome: LateFeeOutcome;
 }
 
-function BehindCard({ data }: { data: ComingUp }) {
-  return (
-    <HomeCard
-      title="Behind"
-      action={
-        <Button type="button" variant="outline" size="sm" asChild>
-          <Link href="/rent">Rent</Link>
-        </Button>
-      }
-    >
-      {data.trackingStart === null ? (
-        <Empty>
-          Set the tracking start date in{" "}
-          <Link className="underline underline-offset-4" href="/setup">
-            Setup
-          </Link>{" "}
-          to see balances.
-        </Empty>
-      ) : data.behind.length === 0 ? (
-        <Empty>No one is behind.</Empty>
-      ) : (
-        <ul className="divide-y">
-          {data.behind.map((row) => (
-            <BehindItem key={row.accountId} row={row} />
-          ))}
-        </ul>
-      )}
-    </HomeCard>
-  );
+function feeKey(accountId: string, month: YearMonth): string {
+  return `${accountId}-${month}`;
 }
 
-function BehindItem({ row }: { row: BehindRow }) {
-  return (
-    <li className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-      <AccountName
-        href={`/rent/${row.accountId}`}
-        tenant={row.tenant}
-        unit={row.unit}
-        badge={
-          <>
-            <Badge variant={RENT_STATUS_VARIANTS[row.status]} className="ml-2">
-              {RENT_STATUS_LABELS[row.status]}
-            </Badge>
-            {row.state === "open" ? null : (
-              <Badge variant="outline" className="ml-2">
-                {ACCOUNT_STATE_LABELS[row.state]}
-              </Badge>
-            )}
-          </>
-        }
-      />
-      <div className="text-right">
-        <p className="font-medium tabular-nums">
-          {formatCents(row.balanceCents)}
-        </p>
-        <p className="text-muted-foreground text-xs">
-          Last payment {formatDate(row.lastPaymentOn)}
-        </p>
-      </div>
-    </li>
-  );
+function plural(count: number, word: string): string {
+  return `${count} ${count === 1 ? word : `${word}s`}`;
 }
 
-function LateFeesCard({ items }: { items: ComingUp["lateFees"] }) {
-  return (
-    <HomeCard
-      title="Late fees to decide"
-      description="This month's rent was not paid in full by the late fee date. Tenants who have caught up since are listed too."
-    >
-      {items.length === 0 ? (
-        <Empty>No late fees to decide.</Empty>
-      ) : (
-        <LateFeeSuggestionList items={items} />
-      )}
-    </HomeCard>
-  );
-}
-
-function ToSortCard({ count }: { count: number }) {
-  return (
-    <HomeCard title="To sort">
-      {count === 0 ? (
-        <Empty>No transactions to sort.</Empty>
-      ) : (
-        <p className="text-sm">
-          <Link
-            className="font-medium underline underline-offset-4"
-            href="/transactions"
-          >
-            {count} {count === 1 ? "transaction" : "transactions"} to sort
-          </Link>
-        </p>
-      )}
-    </HomeCard>
-  );
-}
-
-function RentChangesCard({
-  items,
-  timeZone,
+function LinkButton({
+  href,
+  primary = false,
+  children,
 }: {
-  items: RentChange[];
-  timeZone: string;
+  href: string;
+  primary?: boolean;
+  children: string;
 }) {
-  const notifiedFormat = notifiedDateFormat(timeZone);
   return (
-    <HomeCard
-      title="Rent changes"
-      description="Base rent changes in the next 90 days."
-    >
-      {items.length === 0 ? (
-        <Empty>No rent changes coming up.</Empty>
-      ) : (
-        <ul className="divide-y">
-          {items.map((item) => (
-            <RentChangeItem
-              key={item.stepId}
-              item={item}
-              notifiedFormat={notifiedFormat}
-            />
-          ))}
-        </ul>
-      )}
-    </HomeCard>
+    <Button size="sm" variant={primary ? "primary" : "outline"} asChild>
+      <Link href={href}>{children}</Link>
+    </Button>
   );
 }
 
-function RentChangeItem({
-  item,
-  notifiedFormat,
-}: {
-  item: RentChange;
-  notifiedFormat: Intl.DateTimeFormat;
-}) {
+function leaseHref(accountId: string): string {
+  return `/tenants/${accountId}?tab=lease`;
+}
+
+function paidSoFar(
+  rows: RentStatusRow[],
+  accountId: string,
+  month: YearMonth,
+  today: IsoDate,
+): string {
+  if (month.slice(0, 4) !== today.slice(0, 4)) return "";
+  const cell = rows
+    .find((row) => row.accountId === accountId)
+    ?.months.find((m) => m.month === Number(month.slice(5, 7)));
+  if (!cell || cell.expectedCents === 0) return "";
+  return ` Paid so far: ${formatMoney(cell.paidCents)} of ${formatMoney(cell.expectedCents)}.`;
+}
+
+export function HomePageContent({ propertyName }: { propertyName: string }) {
   const trpc = useTRPC();
-  const accountUpdated = useAccountUpdated(item.accountId);
-  const accountUpdateFailed = useAccountUpdateFailed(item.accountId);
-  const setNotified = useMutation(
-    trpc.lease.setRentStepNotified.mutationOptions({
-      onSuccess: async (detail) => {
-        await accountUpdated(detail);
-      },
-      onError: accountUpdateFailed,
-    }),
+  const { data } = useSuspenseQuery(trpc.home.comingUp.queryOptions());
+  const { data: status } = useSuspenseQuery(trpc.rent.status.queryOptions());
+  const { data: bank } = useSuspenseQuery(trpc.rent.bankStatus.queryOptions());
+  const { data: toSort } = useSuspenseQuery(
+    trpc.transaction.listToSort.queryOptions(),
   );
-  const accountPending =
-    useIsMutating({
-      mutationKey: trpc.lease.setRentStepNotified.mutationKey(),
-      predicate: (mutation) =>
-        (mutation.state.variables as { accountId?: string } | undefined)
-          ?.accountId === item.accountId,
-    }) > 0;
-  const switchId = `notified-${item.stepId}`;
+  const [decidedFees, setDecidedFees] = useState<DecidedFee[]>([]);
+  const [notifiedSteps, setNotifiedSteps] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
 
-  return (
-    <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-      <AccountName
-        href={`/leases/${item.accountId}`}
+  const today = data.today;
+  const notifiedFormat = notifiedDateFormat(data.timeZone);
+  const hasAccounts = data.accountCount > 0;
+  const tracking = data.trackingStart !== null;
+  const now: TodoItem[] = [];
+  const soon: TodoItem[] = [];
+  const done: TodoItem[] = [];
+
+  if (!tracking) {
+    now.push({
+      key: "tracking",
+      tone: "amber",
+      icon: SlidersHorizontal,
+      title: "Set the tracking start date",
+      meta: "Rent and balances are counted from this date.",
+      actions: (
+        <LinkButton href="/setup?tab=property" primary>
+          Open setup
+        </LinkButton>
+      ),
+    });
+  }
+
+  if (!hasAccounts) {
+    now.push({
+      key: "first-tenant",
+      tone: "accent",
+      icon: UserPlus,
+      title: "Add your first tenant",
+      meta: "Rent, balances, and lease reminders show here once a tenant has a lease.",
+      actions: (
+        <LinkButton href="/tenants?new=1" primary={tracking}>
+          New tenant
+        </LinkButton>
+      ),
+    });
+  }
+
+  const currentMonth = today.slice(0, 7);
+  const needsImport =
+    bank.newestBankDate === null || bank.newestBankDate < `${currentMonth}-01`;
+  if (needsImport) {
+    const name = monthName(currentMonth);
+    now.push({
+      key: "import",
+      tone: "amber",
+      icon: Upload,
+      title: `Import ${name} bank activity`,
+      meta: bank.newestBankDate
+        ? `Bank data ends ${shortDate(bank.newestBankDate, today)}. Until you import, ${name} rent shows as not known yet.`
+        : `No bank data yet. Until you import, rent shows as not known.`,
+      actions: (
+        <LinkButton href="/transactions/import" primary>
+          Import bank file
+        </LinkButton>
+      ),
+    });
+  }
+
+  if (toSort.length > 0) {
+    const deposits = toSort.filter((txn) => txn.amountCents > 0).length;
+    const expenses = toSort.length - deposits;
+    const parts = [
+      deposits > 0 ? plural(deposits, "deposit") : null,
+      expenses > 0 ? plural(expenses, "expense") : null,
+    ].filter((part) => part !== null);
+    now.push({
+      key: "sort",
+      tone: "accent",
+      icon: ArrowLeftRight,
+      title: `Sort ${plural(toSort.length, "transaction")}`,
+      meta: `${parts.join(" and ")}.${deposits > 0 ? " Deposits count toward balances once sorted." : ""}`,
+      actions: (
+        <LinkButton href="/transactions" primary={!needsImport}>
+          Start sorting
+        </LinkButton>
+      ),
+    });
+  }
+
+  const decidedKeys = new Set(decidedFees.map((fee) => fee.key));
+  const pendingFees = data.lateFees.flatMap((account) =>
+    account.suggestions
+      .filter((s) => !decidedKeys.has(feeKey(account.accountId, s.month)))
+      .map((s) => ({ ...s, tenant: account.tenant, unit: account.unit })),
+  );
+  for (const fee of pendingFees) {
+    const key = feeKey(fee.accountId, fee.month);
+    now.push({
+      key: `fee-${key}`,
+      tone: "red",
+      icon: CircleAlert,
+      title: (
+        <>
+          Approve a {formatMoney(fee.amountCents)} late fee for{" "}
+          <AccountLink
+            accountId={fee.accountId}
+            tenant={fee.tenant}
+            unit={fee.unit}
+          />
+        </>
+      ),
+      meta: `${monthName(fee.month)} rent was not paid in full by ${shortDate(fee.feeDate, today)}.${paidSoFar(status.rows, fee.accountId, fee.month, today)}`,
+      actions: (
+        <LateFeeActions
+          accountId={fee.accountId}
+          month={fee.month}
+          onDecided={(outcome) =>
+            setDecidedFees((list) => [
+              ...list,
+              {
+                key,
+                accountId: fee.accountId,
+                tenant: fee.tenant,
+                unit: fee.unit,
+                month: fee.month,
+                amountCents: fee.amountCents,
+                outcome,
+              },
+            ])
+          }
+        />
+      ),
+    });
+  }
+
+  for (const item of data.insurance) {
+    const name = (
+      <AccountLink
+        accountId={item.accountId}
         tenant={item.tenant}
         unit={item.unit}
       />
-      <div className="text-sm sm:text-right">
-        <p className="tabular-nums">
-          {item.previousAmountCents === null
-            ? formatCents(item.amountCents)
-            : `${formatCents(item.previousAmountCents)} → ${formatCents(item.amountCents)}`}
-        </p>
-        <p className="text-muted-foreground text-xs">
-          Starts {formatDate(item.startsOn)}
-        </p>
-      </div>
-      <label
-        htmlFor={switchId}
-        className="flex items-center gap-2 text-sm sm:w-48 sm:justify-end"
-      >
-        <Switch
-          id={switchId}
-          checked={item.tenantNotifiedAt !== null}
-          disabled={accountPending}
-          onCheckedChange={(checked) =>
-            setNotified.mutate({
-              accountId: item.accountId,
-              expectedVersion: item.accountVersion,
-              leaseId: item.leaseId,
-              stepId: item.stepId,
-              notified: checked,
-            })
-          }
-        />
-        {item.tenantNotifiedAt
-          ? `Notified ${notifiedFormat.format(item.tenantNotifiedAt)}`
-          : "Tenant notified"}
-      </label>
-    </li>
-  );
-}
+    );
+    if (item.problem === "missing" || item.insuranceExpiresOn === null) {
+      now.push({
+        key: `insurance-${item.leaseId}`,
+        tone: "red",
+        icon: ShieldAlert,
+        title: <>No insurance certificate for {name}</>,
+        meta: "Nothing on file.",
+        actions: (
+          <LinkButton href={leaseHref(item.accountId)}>
+            Add expiry date
+          </LinkButton>
+        ),
+      });
+    } else if (item.problem === "expired") {
+      now.push({
+        key: `insurance-${item.leaseId}`,
+        tone: "red",
+        icon: ShieldAlert,
+        title: (
+          <>
+            {name} insurance expired {shortDate(item.insuranceExpiresOn, today)}
+          </>
+        ),
+        meta: "Ask the tenant for a current certificate.",
+        actions: (
+          <LinkButton href={leaseHref(item.accountId)}>
+            Update expiry
+          </LinkButton>
+        ),
+      });
+    } else {
+      soon.push({
+        key: `insurance-${item.leaseId}`,
+        tone: "amber",
+        icon: ShieldAlert,
+        title: (
+          <>
+            {name} insurance expires {shortDate(item.insuranceExpiresOn, today)}
+          </>
+        ),
+        meta: daysAway(today, item.insuranceExpiresOn),
+        actions: (
+          <LinkButton href={leaseHref(item.accountId)}>
+            Update expiry
+          </LinkButton>
+        ),
+      });
+    }
+  }
 
-const INSURANCE_TEXT: Record<
-  InsuranceItem["problem"],
-  (date: string) => string
-> = {
-  missing: () => "No certificate on file",
-  expired: (date) => `Expired ${date}`,
-  expiring: (date) => `Expires ${date}`,
-};
-
-function InsuranceCard({ items }: { items: InsuranceItem[] }) {
-  return (
-    <HomeCard
-      title="Insurance"
-      description="Certificates that are missing, expired, or expire in the next 60 days."
-    >
-      {items.length === 0 ? (
-        <Empty>All certificates are on file and current.</Empty>
-      ) : (
-        <ul className="divide-y">
-          {items.map((item) => (
-            <li
-              key={item.leaseId}
-              className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
-            >
-              <AccountName
-                href={`/leases/${item.accountId}`}
-                tenant={item.tenant}
-                unit={item.unit}
-              />
-              <p
-                className={
-                  item.problem === "expiring"
-                    ? "text-sm"
-                    : "text-destructive text-sm"
-                }
-              >
-                {INSURANCE_TEXT[item.problem](
-                  formatDate(item.insuranceExpiresOn),
-                )}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </HomeCard>
-  );
-}
-
-function LeaseEndList({
-  items,
-  verb,
-}: {
-  items: LeaseEndItem[];
-  verb: string;
-}) {
-  return (
-    <ul className="divide-y">
-      {items.map((item) => (
-        <li
-          key={item.accountId}
-          className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
-        >
-          <AccountName
-            href={`/leases/${item.accountId}`}
+  for (const item of data.pastEndDate) {
+    now.push({
+      key: `ended-${item.accountId}`,
+      tone: "red",
+      icon: CalendarClock,
+      title: (
+        <>
+          <AccountLink
+            accountId={item.accountId}
             tenant={item.tenant}
             unit={item.unit}
-          />
-          <p className="text-sm">
-            {verb} {formatDate(item.endDate)}
-          </p>
-        </li>
-      ))}
-    </ul>
-  );
-}
+          />{" "}
+          lease ended {shortDate(item.endDate, today)}
+        </>
+      ),
+      meta: "No renewal or move-out date. Rent is still expected on the old terms.",
+      actions: (
+        <>
+          <LinkButton href={leaseHref(item.accountId)}>Set move-out</LinkButton>
+          <LinkButton href={leaseHref(item.accountId)}>Add renewal</LinkButton>
+        </>
+      ),
+    });
+  }
 
-function LeasesEndingCard({
-  ending,
-  pastEndDate,
-}: {
-  ending: LeaseEndItem[];
-  pastEndDate: LeaseEndItem[];
-}) {
+  const pendingRentChanges = data.rentChanges.filter(
+    (change) => change.tenantNotifiedAt === null,
+  );
+  for (const change of data.rentChanges) {
+    const sessionDone =
+      change.tenantNotifiedAt !== null && notifiedSteps.has(change.stepId);
+    if (change.tenantNotifiedAt !== null && !sessionDone) continue;
+    const kind =
+      change.previousAmountCents === null
+        ? "change"
+        : change.amountCents > change.previousAmountCents
+          ? "increase"
+          : "decrease";
+    const title = (
+      <>
+        Tell <AccountLink accountId={change.accountId} tenant={change.tenant} />{" "}
+        about the {shortDate(change.startsOn, today)} rent {kind}
+      </>
+    );
+    const action = (
+      <NotifyAction
+        accountId={change.accountId}
+        accountVersion={change.accountVersion}
+        leaseId={change.leaseId}
+        stepId={change.stepId}
+        notified={change.tenantNotifiedAt !== null}
+        onChanged={(notified) =>
+          setNotifiedSteps((steps) => {
+            const next = new Set(steps);
+            if (notified) next.add(change.stepId);
+            else next.delete(change.stepId);
+            return next;
+          })
+        }
+      />
+    );
+    if (sessionDone && change.tenantNotifiedAt) {
+      done.push({
+        key: `rent-${change.stepId}`,
+        tone: "done",
+        icon: Check,
+        title,
+        meta: `Marked notified ${notifiedFormat.format(change.tenantNotifiedAt)}.`,
+        actions: action,
+      });
+    } else {
+      const from =
+        change.previousAmountCents === null
+          ? `Base rent becomes ${formatMoney(change.amountCents)}`
+          : `Base rent ${formatMoney(change.previousAmountCents)} → ${formatMoney(change.amountCents)}`;
+      soon.push({
+        key: `rent-${change.stepId}`,
+        tone: "amber",
+        icon: TrendingUp,
+        title,
+        meta: `${from} for unit ${change.unit.label}. ${daysAway(today, change.startsOn)}`,
+        actions: action,
+      });
+    }
+  }
+
+  for (const item of data.leasesEnding) {
+    soon.push({
+      key: `ending-${item.accountId}`,
+      tone: "plain",
+      icon: CalendarClock,
+      title: (
+        <>
+          <AccountLink
+            accountId={item.accountId}
+            tenant={item.tenant}
+            unit={item.unit}
+          />{" "}
+          lease ends {shortDate(item.endDate, today)}
+        </>
+      ),
+      meta: daysAway(today, item.endDate),
+      actions: (
+        <LinkButton href={leaseHref(item.accountId)}>Add renewal</LinkButton>
+      ),
+    });
+  }
+
+  for (const fee of decidedFees) {
+    const name = (
+      <AccountLink
+        accountId={fee.accountId}
+        tenant={fee.tenant}
+        unit={fee.unit}
+      />
+    );
+    done.push(
+      fee.outcome.kind === "approved"
+        ? {
+            key: `fee-${fee.key}`,
+            tone: "done",
+            icon: Check,
+            title: <>Late fee approved for {name}</>,
+            meta: `${formatMoney(fee.amountCents)} added, dated ${shortDate(fee.outcome.entryDate, today)}.`,
+          }
+        : {
+            key: `fee-${fee.key}`,
+            tone: "done",
+            icon: Check,
+            title: <>Late fee dismissed for {name}</>,
+            meta: `No fee added for ${monthName(fee.month)}.`,
+          },
+    );
+  }
+
+  const checked: string[] = [];
+  if (hasAccounts) {
+    if (tracking && pendingFees.length === 0) {
+      checked.push("no late fees to decide");
+    }
+    if (!data.insurance.some((item) => item.problem === "expiring")) {
+      checked.push("no certificates expire in the next 60 days");
+    }
+    if (pendingRentChanges.length === 0) {
+      checked.push("no rent changes to announce");
+    }
+    if (data.leasesEnding.length === 0 && data.pastEndDate.length === 0) {
+      checked.push("no leases end in the next 90 days");
+    }
+  }
+  if (toSort.length === 0) checked.push("every transaction is sorted");
+
+  const showSide = tracking && hasAccounts;
+
   return (
-    <HomeCard title="Leases ending">
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold">In the next 90 days</h3>
-        {ending.length === 0 ? (
-          <Empty>No leases are ending.</Empty>
-        ) : (
-          <LeaseEndList items={ending} verb="Ends" />
-        )}
+    <>
+      <PageTopBar
+        crumbs={[{ label: "Home" }]}
+        actions={
+          <>
+            <Button variant="outline" className="max-nav:hidden" asChild>
+              <Link href="/transactions?add=cash">
+                <Banknote />
+                Add cash expense
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/transactions/import">
+                <Upload />
+                Import bank file
+              </Link>
+            </Button>
+          </>
+        }
+      />
+      <div className="nav:px-6 nav:pt-[22px] nav:pb-12 max-w-[1180px] px-4 pt-[18px] pb-10">
+        <div className="animate-rise mb-[22px]" style={rise(0)}>
+          <div className="label-caps mb-1">{propertyName}</div>
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">
+            {dayHeading(today)}
+          </h1>
+        </div>
+        <div
+          className={
+            showSide
+              ? "grid grid-cols-[minmax(0,1fr)] items-start gap-[22px] min-[980px]:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]"
+              : "max-w-[760px]"
+          }
+        >
+          <div>
+            <TodoGroup title="Needs action" items={now} startIndex={1} />
+            <TodoGroup
+              title="Coming up"
+              items={soon}
+              startIndex={1 + now.length}
+            />
+            <TodoGroup
+              title="Done"
+              items={done}
+              startIndex={1 + now.length + soon.length}
+            />
+            <AlsoChecked
+              parts={checked}
+              allClear={now.length + soon.length === 0}
+              index={1 + now.length + soon.length + done.length}
+            />
+          </div>
+          {showSide ? (
+            <div className="flex flex-col gap-4">
+              <RentChartCard months={data.rentMonths} today={today} index={2} />
+              <BalancesCard rows={status.rows} index={3} />
+            </div>
+          ) : null}
+        </div>
       </div>
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Past end date</h3>
-        <p className="text-muted-foreground text-xs">
-          The lease has ended with no renewal or move-out date.
-        </p>
-        {pastEndDate.length === 0 ? (
-          <Empty>No accounts are past their lease end date.</Empty>
-        ) : (
-          <LeaseEndList items={pastEndDate} verb="Ended" />
-        )}
-      </div>
-    </HomeCard>
+    </>
   );
 }

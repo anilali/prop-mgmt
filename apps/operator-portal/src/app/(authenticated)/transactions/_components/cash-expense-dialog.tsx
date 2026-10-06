@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -19,14 +20,14 @@ import { Label } from "@moonship/ui/label";
 import type { ListRow } from "../_lib/transactions";
 import { useTRPC } from "~/trpc/react";
 import {
-  categoryOptions,
+  categoryGroups,
   categoryTarget,
   parseDollars,
   targetIds,
 } from "../_lib/transactions";
-import { centsToInput } from "../../leases/_lib/format";
+import { centsToInput } from "../../_lib/format";
 import { ConfirmDialog } from "../../setup/_components/confirm-dialog";
-import { TargetPicker } from "./target-picker";
+import { TargetSelect } from "./split-editor";
 import { useTransactionsChanged } from "./use-transactions-changed";
 
 export function CashExpenseDialog({
@@ -46,7 +47,7 @@ export function CashExpenseDialog({
             {expense ? "Edit cash expense" : "Add cash expense"}
           </DialogTitle>
           <DialogDescription>
-            Money paid outside the bank account, such as a repair paid in cash.
+            For an expense paid outside the bank account.
           </DialogDescription>
         </DialogHeader>
         {open ? (
@@ -57,6 +58,23 @@ export function CashExpenseDialog({
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Field({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-[5px]">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+    </div>
   );
 }
 
@@ -84,13 +102,12 @@ function CashExpenseForm({
   );
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const options = categoryOptions(
-    categories.filter(
-      (category) =>
-        category.kind === "owner_expense" || category.kind === "shared_cost",
-    ),
-    currentCategoryId ? [currentCategoryId] : [],
-  );
+  const groups = categoryGroups({
+    categories,
+    amountCents: -1,
+    kinds: ["owner_expense", "shared_cost"],
+    keepIds: currentCategoryId ? [currentCategoryId] : [],
+  });
 
   const onSuccess = async (message: string) => {
     await changed();
@@ -120,7 +137,7 @@ function CashExpenseForm({
 
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         const amountCents = parseDollars(amount);
@@ -150,9 +167,8 @@ function CashExpenseForm({
         }
       }}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="cash-date">Date</Label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field id="cash-date" label="Date">
           <Input
             id="cash-date"
             type="date"
@@ -161,39 +177,37 @@ function CashExpenseForm({
             onChange={(e) => setDate(e.target.value)}
             required
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="cash-amount">Amount paid</Label>
+        </Field>
+        <Field id="cash-amount" label="Amount paid">
           <Input
             id="cash-amount"
+            className="font-mono"
             inputMode="decimal"
             placeholder="0.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
           />
-        </div>
+        </Field>
       </div>
-      <div className="space-y-1">
-        <Label htmlFor="cash-description">Description</Label>
+      <Field id="cash-description" label="Description">
         <Input
           id="cash-description"
+          placeholder="Management fee"
           value={description}
           maxLength={500}
           onChange={(e) => setDescription(e.target.value)}
           required
         />
-      </div>
-      <div className="space-y-1">
-        <Label>Category</Label>
-        <TargetPicker
-          className="w-full"
-          ariaLabel="Category"
+      </Field>
+      <Field id="cash-category" label="Category">
+        <TargetSelect
+          id="cash-category"
           value={target}
-          options={options}
+          groups={groups}
           onChange={setTarget}
         />
-      </div>
+      </Field>
       <DialogFooter className="sm:justify-between">
         {expense ? (
           <Button
@@ -207,12 +221,16 @@ function CashExpenseForm({
         ) : (
           <span />
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
           <Button type="button" variant="outline" onClick={onDone}>
             Cancel
           </Button>
-          <Button type="submit" disabled={create.isPending || update.isPending}>
-            Save
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={create.isPending || update.isPending}
+          >
+            {expense ? "Save" : "Add expense"}
           </Button>
         </div>
       </DialogFooter>

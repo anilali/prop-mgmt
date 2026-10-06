@@ -1,97 +1,60 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-import { Building2, Menu } from "lucide-react";
+import { Search } from "lucide-react";
 
 import type {
   OperableProperty,
   OperatorContext,
 } from "@moonship/api-operator/server";
-import { Button } from "@moonship/ui/button";
-import { Sheet, SheetContent, SheetTitle } from "@moonship/ui/sheet";
+import { Kbd } from "@moonship/ui/kbd";
 
-import { OperatorContextSwitcher } from "./operator-context-switcher";
-import { SidebarBrand } from "./sidebar-brand";
+import { PropertySwitcher } from "./property-switcher";
+import { useShell } from "./shell-context";
 import { SidebarFooter } from "./sidebar-footer";
 import { SidebarNav } from "./sidebar-nav";
 
-interface SidebarProps {
+export interface SidebarProps {
   context: OperatorContext;
   operableProperties: OperableProperty[];
   isPlatformAdmin: boolean;
   userName: string;
 }
 
-function SidebarContent({
+export function Sidebar({
   context,
   operableProperties,
   isPlatformAdmin,
   userName,
-  onClose,
-}: SidebarProps & { onClose?: () => void }) {
+  onNavigate,
+}: SidebarProps & { onNavigate?: () => void }) {
+  const { openCommandMenu } = useShell();
+
   return (
     <>
-      <SidebarBrand onCollapse={onClose} />
-      <OperatorContextSwitcher
+      <PropertySwitcher
         context={context}
         operableProperties={operableProperties}
         isPlatformAdmin={isPlatformAdmin}
       />
+      <button
+        type="button"
+        onClick={openCommandMenu}
+        className="border-line bg-sunk text-fg-3 hover:border-line-3 flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-[7px] border px-[9px] text-left transition-colors"
+      >
+        <Search className="size-[15px] shrink-0" strokeWidth={1.7} />
+        <span className="min-w-0 flex-1 truncate">Search or jump to</span>
+        <Kbd>⌘K</Kbd>
+      </button>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <SidebarNav
           mode={context.mode === "platform" ? "platform" : "property"}
-          role={context.mode === "property" ? context.role : undefined}
-          onNavigate={onClose}
+          onNavigate={onNavigate}
         />
       </div>
-      <div className="mt-auto">
-        <SidebarFooter userName={userName} />
-      </div>
+      <SidebarFooter
+        userName={userName}
+        role={context.mode === "property" ? context.role : undefined}
+      />
     </>
-  );
-}
-
-export function Sidebar(props: SidebarProps) {
-  return (
-    <aside className="bg-muted text-foreground hidden h-full w-60 shrink-0 flex-col gap-4 p-4 md:flex">
-      <SidebarContent {...props} />
-    </aside>
-  );
-}
-
-export function MobileSidebar(props: SidebarProps) {
-  const pathname = usePathname();
-  const [openOn, setOpenOn] = useState<string | null>(null);
-  const open = openOn === pathname;
-  const setOpen = (value: boolean) => setOpenOn(value ? pathname : null);
-
-  return (
-    <div className="flex items-center gap-2 pb-2 md:hidden">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label="Open menu"
-        className="size-8"
-        onClick={() => setOpen(true)}
-      >
-        <Menu className="size-4" />
-      </Button>
-      <span className="bg-foreground text-background flex size-7 shrink-0 items-center justify-center rounded-lg">
-        <Building2 className="size-4" />
-      </span>
-      <span className="truncate text-sm font-semibold">Operator</span>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="left"
-          aria-describedby={undefined}
-          className="bg-muted text-foreground w-72 gap-4 p-4"
-        >
-          <SheetTitle className="sr-only">Menu</SheetTitle>
-          <SidebarContent {...props} onClose={() => setOpen(false)} />
-        </SheetContent>
-      </Sheet>
-    </div>
   );
 }

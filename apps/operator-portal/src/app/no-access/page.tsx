@@ -10,14 +10,21 @@ export default async function NoAccessPage() {
   }
 
   return (
-    <main className="container flex h-screen flex-col items-center justify-center gap-6">
-      <h1 className="text-4xl font-extrabold tracking-tight">No access</h1>
-      <p className="text-lg">Signed in as {access.operator.name}</p>
-      <p className="text-muted-foreground text-center text-sm">
-        This Google account does not have access to any property. Ask a property
-        admin to grant access, then sign out and sign in again.
-      </p>
-      <SignOutButton />
+    <main className="bg-ground bg-dot-grid grid min-h-dvh place-items-center px-4 py-10">
+      <div className="bg-panel border-line animate-rise w-full max-w-[360px] rounded-[10px] border p-6">
+        <h1 className="text-[15px] font-semibold">No access</h1>
+        <p className="text-fg-2 mt-1 text-[12.5px]">
+          Signed in as{" "}
+          <span className="text-foreground font-medium">
+            {access.operator.name}
+          </span>
+          . This Google account isn&apos;t on any property. Ask a property admin
+          to add it, then sign in again.
+        </p>
+        <div className="mt-5 [&>button]:w-full">
+          <SignOutButton />
+        </div>
+      </div>
     </main>
   );
 }

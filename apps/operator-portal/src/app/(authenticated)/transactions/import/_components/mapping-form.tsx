@@ -118,7 +118,7 @@ export function MappingForm({
 
   return (
     <form
-      className="space-y-4 rounded-lg border p-4"
+      className="border-line space-y-4 rounded-lg border px-3.5 py-3.5"
       onSubmit={(e) => {
         e.preventDefault();
         if (!ready) return;
@@ -135,8 +135,8 @@ export function MappingForm({
       }}
     >
       <div className="space-y-1">
-        <h3 className="font-medium">Match the columns</h3>
-        <p className="text-muted-foreground text-sm">
+        <h3 className="text-[13px] font-semibold">Match the columns</h3>
+        <p className="text-fg-2 text-[12.5px]">
           Pick which column holds each value. The app remembers this for the
           next import.
         </p>
@@ -255,14 +255,14 @@ export function MappingForm({
         </div>
       </div>
       {idChanged ? (
-        <p className="text-destructive text-sm">
+        <p className="text-red text-[12.5px]">
           The transaction id column is different from the one used before.
           Changing it can let duplicates in when this file overlaps earlier
           imports.
         </p>
       ) : null}
       <div className="flex gap-2">
-        <Button type="submit" disabled={!ready || pending}>
+        <Button type="submit" variant="primary" disabled={!ready || pending}>
           Preview
         </Button>
         {onCancel ? (

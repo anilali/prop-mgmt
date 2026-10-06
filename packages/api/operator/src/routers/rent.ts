@@ -19,18 +19,14 @@ import {
   isLateFeeDecided,
   lateFeeEntryDate,
   lateFeeSuggestions,
+  newestBankDate,
 } from "@moonship/billing";
 import { addDays } from "@moonship/shared";
 
 import type { TransactionalStores, UnitOfWork } from "../unit-of-work";
 import { badRequest, conflict, notFound, toBadRequest } from "../errors";
 import { loadProperty } from "../property-context";
-import {
-  loadRentData,
-  newestBankDate,
-  rentStatusRows,
-  rentSummary,
-} from "../rent-data";
+import { loadRentData, rentStatusRows, rentSummary } from "../rent-data";
 import { centsSchema, isoDate, yearMonth } from "../schemas";
 import { propertyProcedure, router } from "../trpc";
 
@@ -78,13 +74,14 @@ function currentSuggestion(
   ledger: AccountLedger,
   month: YearMonth,
   today: IsoDate,
+  newestBankDate: IsoDate | null,
 ): LateFeeSuggestion {
   if (isLateFeeDecided(ledger, month)) {
     throw conflict(
       "The late fee for this month was already approved or dismissed",
     );
   }
-  const suggestion = lateFeeSuggestions(ledger, today).find(
+  const suggestion = lateFeeSuggestions(ledger, today, newestBankDate).find(
     (s) => s.month === month,
   );
   if (!suggestion) {
@@ -94,14 +91,23 @@ function currentSuggestion(
 }
 
 export function rentRouter(deps: RentRouterDeps) {
-  async function loadLedger(propertyId: string, accountId: string) {
+  async function loadSuggestion(
+    propertyId: string,
+    accountId: string,
+    month: YearMonth,
+  ) {
     const data = await loadRentData(deps, propertyId);
     const view = data.views.find((v) => v.id === accountId);
     if (!view) throw notFound("Account not found");
     return {
       today: data.today,
       trackingStart: data.property.trackingStartDate,
-      ledger: data.ledgerOf(view),
+      suggestion: currentSuggestion(
+        data.ledgerOf(view),
+        month,
+        data.today,
+        data.newestBankDate,
+      ),
     };
   }
 
@@ -148,9 +154,17 @@ export function rentRouter(deps: RentRouterDeps) {
       return {
         today: data.today,
         trackingStart: data.property.trackingStartDate,
-        newestBankDate: newestBankDate(data.transactions),
+        newestBankDate: data.newestBankDate,
         rows: rentStatusRows(data),
       };
+    }),
+
+    bankStatus: propertyProcedure.query(async ({ ctx }) => {
+      const [{ today }, transactions] = await Promise.all([
+        loadProperty(deps.propertyQueries, ctx.propertyId),
+        deps.billingQueries.listTransactions(ctx.propertyId),
+      ]);
+      return { today, newestBankDate: newestBankDate(transactions) };
     }),
 
     history: propertyProcedure
@@ -169,9 +183,9 @@ export function rentRouter(deps: RentRouterDeps) {
         return {
           today: data.today,
           trackingStart: data.property.trackingStartDate,
-          newestBankDate: newestBankDate(data.transactions),
+          newestBankDate: data.newestBankDate,
           account: data.accountOf(view),
-          ...rentSummary(ledger, data.today),
+          ...rentSummary(data, view),
           rows: historyRows(ledger, data.today).map((row) => {
             switch (row.kind) {
               case "opening":
@@ -320,11 +334,11 @@ export function rentRouter(deps: RentRouterDeps) {
     approveLateFee: propertyProcedure
       .input(lateFeeInput)
       .mutation(async ({ ctx, input }) => {
-        const { today, trackingStart, ledger } = await loadLedger(
+        const { today, trackingStart, suggestion } = await loadSuggestion(
           ctx.propertyId,
           input.accountId,
+          input.month,
         );
-        const suggestion = currentSuggestion(ledger, input.month, today);
         return deps.unitOfWork.run(async (stores) => {
           await lockYearsOf(stores, ctx.propertyId, trackingStart, [
             addDays(suggestion.feeDate, 1),
@@ -357,11 +371,11 @@ export function rentRouter(deps: RentRouterDeps) {
     dismissLateFee: propertyProcedure
       .input(lateFeeInput)
       .mutation(async ({ ctx, input }) => {
-        const { today, trackingStart, ledger } = await loadLedger(
+        const { today, trackingStart, suggestion } = await loadSuggestion(
           ctx.propertyId,
           input.accountId,
+          input.month,
         );
-        const suggestion = currentSuggestion(ledger, input.month, today);
         return deps.unitOfWork.run(async (stores) => {
           await lockYearsOf(stores, ctx.propertyId, trackingStart, [today]);
           const entry = await save(() =>

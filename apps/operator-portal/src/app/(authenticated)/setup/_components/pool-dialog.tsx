@@ -20,6 +20,7 @@ import { Switch } from "@moonship/ui/switch";
 
 import { useTRPC } from "~/trpc/react";
 import { useLedgerChanged } from "../../_lib/use-ledger-changed";
+import { FormField } from "./form-field";
 
 export type PoolView = RouterOutputs["pool"]["list"][number];
 
@@ -39,8 +40,8 @@ export function PoolDialog({
           <DialogTitle>{pool ? "Rename pool" : "Add pool"}</DialogTitle>
           <DialogDescription>
             {pool
-              ? "The pool's shared-cost category takes the new name too."
-              : "A shared-cost category with the same name is created with the pool. Check its units in the share table after adding it."}
+              ? "Its shared-cost category takes the new name too."
+              : "Adds a shared-cost category with the same name. Check its units in the table after."}
           </DialogDescription>
         </DialogHeader>
         {open ? (
@@ -91,7 +92,7 @@ function PoolForm({
 
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         if (name.trim() === "") {
@@ -118,8 +119,7 @@ function PoolForm({
         }
       }}
     >
-      <div className="space-y-1">
-        <Label htmlFor="pool-name">Name</Label>
+      <FormField label="Name" htmlFor="pool-name">
         <Input
           id="pool-name"
           value={name}
@@ -127,9 +127,12 @@ function PoolForm({
           maxLength={64}
           required
         />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="pool-letter-name">Letter name</Label>
+      </FormField>
+      <FormField
+        label="Letter name"
+        htmlFor="pool-letter-name"
+        hint={'The word letters use for this cost, as in "your tax share".'}
+      >
         <Input
           id="pool-letter-name"
           value={letterName}
@@ -138,11 +141,7 @@ function PoolForm({
           placeholder="tax"
           required
         />
-        <p className="text-muted-foreground text-xs">
-          The word the letter uses for this cost, as in &quot;your tax
-          share&quot;.
-        </p>
-      </div>
+      </FormField>
       {pool ? null : (
         <div className="flex items-center gap-2">
           <Switch
@@ -150,15 +149,21 @@ function PoolForm({
             checked={addsNewUnits}
             onCheckedChange={setAddsNewUnits}
           />
-          <Label htmlFor="pool-adds-new-units">Takes new units</Label>
+          <Label htmlFor="pool-adds-new-units">
+            Add new units automatically
+          </Label>
         </div>
       )}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" disabled={create.isPending || update.isPending}>
-          Save
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={create.isPending || update.isPending}
+        >
+          {pool ? "Save pool" : "Add pool"}
         </Button>
       </DialogFooter>
     </form>

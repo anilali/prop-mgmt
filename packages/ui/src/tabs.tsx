@@ -12,7 +12,7 @@ export function Tabs({
   return (
     <TabsPrimitive.Root
       data-slot="tabs"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex flex-col gap-4", className)}
       {...props}
     />
   );
@@ -26,7 +26,7 @@ export function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]",
+        "border-line flex items-center gap-0.5 overflow-x-auto border-b",
         className,
       )}
       {...props}
@@ -42,7 +42,27 @@ export function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "text-fg-2 hover:text-foreground data-[state=active]:text-foreground focus-visible:ring-accent-soft relative inline-flex h-[38px] shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50",
+        "after:bg-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-[1.5px] after:rounded-[1px] after:opacity-0 data-[state=active]:after:opacity-100",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function TabsCount({
+  className,
+  hot = false,
+  ...props
+}: React.ComponentProps<"span"> & { hot?: boolean }) {
+  return (
+    <span
+      data-slot="tabs-count"
+      className={cn(
+        "font-mono text-[11px] font-medium",
+        hot ? "text-red" : "text-fg-3",
         className,
       )}
       {...props}

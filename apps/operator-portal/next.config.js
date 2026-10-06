@@ -26,6 +26,20 @@ const config = {
 
   /** We already do linting and typechecking as separate tasks in CI */
   typescript: { ignoreBuildErrors: true },
+
+  async redirects() {
+    return [
+      { source: "/rent", destination: "/tenants", permanent: true },
+      { source: "/rent/:id", destination: "/tenants/:id", permanent: true },
+      { source: "/leases", destination: "/tenants", permanent: true },
+      { source: "/leases/:id", destination: "/tenants/:id", permanent: true },
+      {
+        source: "/access",
+        destination: "/setup?tab=people",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default config;

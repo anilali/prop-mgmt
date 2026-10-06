@@ -4,6 +4,8 @@ import * as React from "react";
 import { DesktopIcon, MoonIcon, SunIcon } from "@radix-ui/react-icons";
 import * as z from "zod/v4";
 
+import { cn } from "@moonship/ui";
+
 import { Button } from "./button";
 import {
   DropdownMenu,
@@ -151,24 +153,38 @@ export function useTheme() {
   return context;
 }
 
-export function ThemeToggle() {
+export function ThemeToggle({
+  variant = "outline",
+  className,
+  align = "end",
+  side,
+}: {
+  variant?: "outline" | "ghost";
+  className?: string;
+  align?: "start" | "center" | "end";
+  side?: "top" | "right" | "bottom" | "left";
+}) {
   const { setTheme } = useTheme();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant={variant}
           size="icon"
-          className="[&>svg]:absolute [&>svg]:size-5 [&>svg]:scale-0"
+          title="Switch theme"
+          className={cn(
+            "relative [&>svg]:absolute [&>svg]:size-[15px] [&>svg]:scale-0",
+            className,
+          )}
         >
           <SunIcon className="light:scale-100! auto:scale-0!" />
           <MoonIcon className="auto:scale-0! dark:scale-100!" />
           <DesktopIcon className="auto:scale-100!" />
-          <span className="sr-only">Toggle theme</span>
+          <span className="sr-only">Switch theme</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align={align} side={side}>
         <DropdownMenuItem onClick={() => setTheme("light")}>
           Light
         </DropdownMenuItem>

@@ -134,9 +134,13 @@ describe("lateFeeMonths", () => {
       pay("2026-03-04", 300_000),
       pay("2026-04-01"),
     ]);
-    expect(lateFeeSuggestions(short, "2026-03-31")).toHaveLength(1);
-    expect(lateFeeSuggestions(short, "2026-04-01")).toEqual([]);
-    expect(lateFeeSuggestion(short, "2026-03", "2026-04-01")).toBeNull();
+    expect(lateFeeSuggestions(short, "2026-03-31", "2026-03-31")).toHaveLength(
+      1,
+    );
+    expect(lateFeeSuggestions(short, "2026-04-01", "2026-04-01")).toEqual([]);
+    expect(
+      lateFeeSuggestion(short, "2026-03", "2026-04-01", "2026-04-01"),
+    ).toBeNull();
   });
 });
 
@@ -149,14 +153,21 @@ describe("lateFeeSuggestion", () => {
     ]);
 
     expect(balanceOn(short, "2026-03-15")).toBe(65_482);
-    const suggestion = lateFeeSuggestion(short, "2026-03", "2026-03-15");
+    const suggestion = lateFeeSuggestion(
+      short,
+      "2026-03",
+      "2026-03-15",
+      "2026-03-15",
+    );
     expect(suggestion).toEqual({
       accountId: "a",
       month: "2026-03",
       amountCents: FEE,
       feeDate: "2026-03-10",
     });
-    expect(lateFeeSuggestions(short, "2026-03-31")).toEqual([suggestion]);
+    expect(lateFeeSuggestions(short, "2026-03-31", "2026-03-31")).toEqual([
+      suggestion,
+    ]);
     if (!suggestion) throw new Error("expected a suggestion");
 
     const date = lateFeeEntryDate(suggestion, "2026-03-15", []);
@@ -171,7 +182,9 @@ describe("lateFeeSuggestion", () => {
       }),
     ]);
     expect(balanceOn(approved, "2026-03-15")).toBe(70_482);
-    expect(lateFeeSuggestion(approved, "2026-03", "2026-03-15")).toBeNull();
+    expect(
+      lateFeeSuggestion(approved, "2026-03", "2026-03-15", "2026-03-15"),
+    ).toBeNull();
   });
 
   it("expects fixed charges as part of the month", () => {
@@ -180,7 +193,9 @@ describe("lateFeeSuggestion", () => {
       pay(`2026-${m}-01`, MONTHLY + 3_500),
     );
     const rentOnly = ledger([...months, pay("2026-03-05")], [], terms);
-    expect(lateFeeSuggestion(rentOnly, "2026-03", "2026-03-11")).toMatchObject({
+    expect(
+      lateFeeSuggestion(rentOnly, "2026-03", "2026-03-11", "2026-03-11"),
+    ).toMatchObject({
       amountCents: FEE,
     });
     const withSign = ledger(
@@ -188,19 +203,29 @@ describe("lateFeeSuggestion", () => {
       [],
       terms,
     );
-    expect(lateFeeSuggestion(withSign, "2026-03", "2026-03-11")).toBeNull();
+    expect(
+      lateFeeSuggestion(withSign, "2026-03", "2026-03-11", "2026-03-11"),
+    ).toBeNull();
   });
 
   it("suggests nothing for an autopay on the 5th with fee day 10", () => {
     const autopay = ledger([...paidThroughFebruary, pay("2026-03-05")]);
-    expect(lateFeeSuggestion(autopay, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(autopay, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
   });
 
   it("waits until the day after the fee day", () => {
     const unpaid = ledger(paidThroughFebruary);
-    expect(lateFeeSuggestion(unpaid, "2026-03", "2026-03-09")).toBeNull();
-    expect(lateFeeSuggestion(unpaid, "2026-03", "2026-03-10")).toBeNull();
-    expect(lateFeeSuggestion(unpaid, "2026-03", "2026-03-11")).toMatchObject({
+    expect(
+      lateFeeSuggestion(unpaid, "2026-03", "2026-03-09", "2026-03-09"),
+    ).toBeNull();
+    expect(
+      lateFeeSuggestion(unpaid, "2026-03", "2026-03-10", "2026-03-10"),
+    ).toBeNull();
+    expect(
+      lateFeeSuggestion(unpaid, "2026-03", "2026-03-11", "2026-03-11"),
+    ).toMatchObject({
       amountCents: FEE,
       feeDate: "2026-03-10",
     });
@@ -208,7 +233,9 @@ describe("lateFeeSuggestion", () => {
 
   it("counts a payment made on the fee day", () => {
     const onFeeDay = ledger([...paidThroughFebruary, pay("2026-03-10")]);
-    expect(lateFeeSuggestion(onFeeDay, "2026-03", "2026-03-11")).toBeNull();
+    expect(
+      lateFeeSuggestion(onFeeDay, "2026-03", "2026-03-11", "2026-03-11"),
+    ).toBeNull();
   });
 
   it("counts an early payment on the last day of the previous month as carried credit", () => {
@@ -224,7 +251,9 @@ describe("lateFeeSuggestion", () => {
 
     expect(balanceOn(early, "2026-07-31")).toBe(-MONTHLY);
     expect(balanceOn(early, "2026-08-15")).toBe(12_500);
-    expect(lateFeeSuggestion(early, "2026-08", "2026-08-15")).toBeNull();
+    expect(
+      lateFeeSuggestion(early, "2026-08", "2026-08-15", "2026-08-15"),
+    ).toBeNull();
   });
 
   it("counts a prepaid opening balance as carried credit in the first month", () => {
@@ -234,7 +263,9 @@ describe("lateFeeSuggestion", () => {
       account({ openingBalanceCents: -MONTHLY }),
     );
     expect(balanceOn(prepaid, "2026-01-15")).toBe(9_900);
-    expect(lateFeeSuggestion(prepaid, "2026-01", "2026-01-15")).toBeNull();
+    expect(
+      lateFeeSuggestion(prepaid, "2026-01", "2026-01-15", "2026-01-15"),
+    ).toBeNull();
   });
 
   it("ignores an owed opening balance", () => {
@@ -244,7 +275,9 @@ describe("lateFeeSuggestion", () => {
       account({ openingBalanceCents: 80_000 }),
     );
     expect(balanceOn(owed, "2026-01-15")).toBe(80_000);
-    expect(lateFeeSuggestion(owed, "2026-01", "2026-01-15")).toBeNull();
+    expect(
+      lateFeeSuggestion(owed, "2026-01", "2026-01-15", "2026-01-15"),
+    ).toBeNull();
   });
 
   it("carries only the amount paid beyond earlier monthly charges", () => {
@@ -252,7 +285,9 @@ describe("lateFeeSuggestion", () => {
       ...paidThroughFebruary,
       pay("2026-02-27", 300_000),
     ]);
-    expect(lateFeeSuggestion(partial, "2026-03", "2026-03-15")).toMatchObject({
+    expect(
+      lateFeeSuggestion(partial, "2026-03", "2026-03-15", "2026-03-15"),
+    ).toMatchObject({
       month: "2026-03",
     });
   });
@@ -263,7 +298,9 @@ describe("lateFeeSuggestion", () => {
       [entry({ entryDate: "2026-02-10", amountCents: 20_000 })],
     );
     expect(balanceOn(early, "2026-02-28")).toBe(-MONTHLY + 20_000);
-    expect(lateFeeSuggestion(early, "2026-03", "2026-03-15")).toBeNull();
+    expect(
+      lateFeeSuggestion(early, "2026-03", "2026-03-15", "2026-03-15"),
+    ).toBeNull();
   });
 
   it("counts a credit adjustment as received", () => {
@@ -271,7 +308,9 @@ describe("lateFeeSuggestion", () => {
       [...paidThroughFebruary, pay("2026-03-05", MONTHLY - 15_000)],
       [entry({ entryDate: "2026-03-03", amountCents: -15_000 })],
     );
-    expect(lateFeeSuggestion(credited, "2026-03", "2026-03-15")).toBeNull();
+    expect(
+      lateFeeSuggestion(credited, "2026-03", "2026-03-15", "2026-03-15"),
+    ).toBeNull();
   });
 
   it("suggests nothing for an old unpaid adjustment when this month is paid", () => {
@@ -280,7 +319,9 @@ describe("lateFeeSuggestion", () => {
       [entry({ entryDate: "2026-02-10", amountCents: 20_000 })],
     );
     expect(balanceOn(oldCharge, "2026-03-20")).toBe(20_000);
-    expect(lateFeeSuggestion(oldCharge, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(oldCharge, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
   });
 
   it("suggests nothing for a true-up balance alone", () => {
@@ -297,7 +338,9 @@ describe("lateFeeSuggestion", () => {
       ],
     );
     expect(balanceOn(trueUp, "2026-03-20")).toBe(81_240);
-    expect(lateFeeSuggestion(trueUp, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(trueUp, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
   });
 
   it("ignores an earlier month's late fee", () => {
@@ -314,7 +357,7 @@ describe("lateFeeSuggestion", () => {
       ],
     );
     expect(
-      lateFeeSuggestion(withFebruaryFee, "2026-03", "2026-03-20"),
+      lateFeeSuggestion(withFebruaryFee, "2026-03", "2026-03-20", "2026-03-20"),
     ).toBeNull();
   });
 
@@ -325,7 +368,9 @@ describe("lateFeeSuggestion", () => {
       pay("2026-03-12", 65_482),
     ]);
     expect(balanceOn(caughtUp, "2026-03-15")).toBe(0);
-    expect(lateFeeSuggestion(caughtUp, "2026-03", "2026-03-15")).toMatchObject({
+    expect(
+      lateFeeSuggestion(caughtUp, "2026-03", "2026-03-15", "2026-03-15"),
+    ).toMatchObject({
       month: "2026-03",
     });
   });
@@ -356,19 +401,36 @@ describe("lateFeeSuggestion", () => {
 
     expect(isLateFeeDecided(ledger(short, [fee]), "2026-03")).toBe(true);
     expect(
-      lateFeeSuggestion(ledger(short, [fee]), "2026-03", "2026-03-15"),
+      lateFeeSuggestion(
+        ledger(short, [fee]),
+        "2026-03",
+        "2026-03-15",
+        "2026-03-15",
+      ),
     ).toBeNull();
     expect(
-      lateFeeSuggestion(ledger(short, [dismissed]), "2026-03", "2026-03-15"),
+      lateFeeSuggestion(
+        ledger(short, [dismissed]),
+        "2026-03",
+        "2026-03-15",
+        "2026-03-15",
+      ),
     ).toBeNull();
     expect(
-      lateFeeSuggestion(ledger(short, [february]), "2026-03", "2026-03-15"),
+      lateFeeSuggestion(
+        ledger(short, [february]),
+        "2026-03",
+        "2026-03-15",
+        "2026-03-15",
+      ),
     ).toMatchObject({ month: "2026-03" });
   });
 
   it("suggests nothing when the covering lease has no late fee", () => {
     const noFee = ledger(paidThroughFebruary, [], account({ lateFee: null }));
-    expect(lateFeeSuggestion(noFee, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(noFee, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
   });
 
   it("uses the covering lease's fee amount and day", () => {
@@ -377,6 +439,7 @@ describe("lateFeeSuggestion", () => {
       lateFeeSuggestion(
         ledger(paidThroughFebruary, [], terms),
         "2026-03",
+        "2026-03-04",
         "2026-03-04",
       ),
     ).toEqual({
@@ -394,7 +457,9 @@ describe("lateFeeSuggestion", () => {
       pay("2026-03-15", -MONTHLY),
     ]);
     expect(balanceOn(bounced, "2026-03-20")).toBe(MONTHLY);
-    expect(lateFeeSuggestion(bounced, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(bounced, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
   });
 
   it("suggests the fee when the check bounces by the fee date", () => {
@@ -403,7 +468,9 @@ describe("lateFeeSuggestion", () => {
       pay("2026-03-03"),
       pay("2026-03-08", -MONTHLY),
     ]);
-    expect(lateFeeSuggestion(bounced, "2026-03", "2026-03-20")).toMatchObject({
+    expect(
+      lateFeeSuggestion(bounced, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toMatchObject({
       month: "2026-03",
     });
   });
@@ -411,8 +478,12 @@ describe("lateFeeSuggestion", () => {
   it("allows a fee on February 28 when the fee day is 27", () => {
     const terms = account({ lateFee: { amountCents: FEE, day: 27 } });
     const unpaid = ledger([pay("2026-01-01")], [], terms);
-    expect(lateFeeSuggestion(unpaid, "2026-02", "2026-02-27")).toBeNull();
-    expect(lateFeeSuggestion(unpaid, "2026-02", "2026-02-28")).toMatchObject({
+    expect(
+      lateFeeSuggestion(unpaid, "2026-02", "2026-02-27", "2026-02-27"),
+    ).toBeNull();
+    expect(
+      lateFeeSuggestion(unpaid, "2026-02", "2026-02-28", "2026-02-28"),
+    ).toMatchObject({
       feeDate: "2026-02-27",
     });
   });
@@ -422,9 +493,18 @@ describe("lateFeeSuggestion", () => {
 
     it("uses the move-in day as the fee date, never the 10th", () => {
       const unpaid = ledger([], [], terms);
-      expect(lateFeeSuggestion(unpaid, "2026-03", "2026-03-11")).toBeNull();
-      expect(lateFeeSuggestion(unpaid, "2026-03", "2026-03-15")).toBeNull();
-      const suggestion = lateFeeSuggestion(unpaid, "2026-03", "2026-03-16");
+      expect(
+        lateFeeSuggestion(unpaid, "2026-03", "2026-03-11", "2026-03-11"),
+      ).toBeNull();
+      expect(
+        lateFeeSuggestion(unpaid, "2026-03", "2026-03-15", "2026-03-15"),
+      ).toBeNull();
+      const suggestion = lateFeeSuggestion(
+        unpaid,
+        "2026-03",
+        "2026-03-16",
+        "2026-03-16",
+      );
       expect(suggestion).toEqual({
         accountId: "a",
         month: "2026-03",
@@ -440,20 +520,28 @@ describe("lateFeeSuggestion", () => {
 
     it("counts a payment on move-in day", () => {
       const paid = ledger([pay("2026-03-15")], [], terms);
-      expect(lateFeeSuggestion(paid, "2026-03", "2026-03-20")).toBeNull();
+      expect(
+        lateFeeSuggestion(paid, "2026-03", "2026-03-20", "2026-03-20"),
+      ).toBeNull();
     });
 
     it("counts a payment made before move-in as carried credit", () => {
       const paidAhead = ledger([pay("2026-03-09")], [], terms);
-      expect(lateFeeSuggestion(paidAhead, "2026-03", "2026-03-20")).toBeNull();
+      expect(
+        lateFeeSuggestion(paidAhead, "2026-03", "2026-03-20", "2026-03-20"),
+      ).toBeNull();
     });
   });
 
   it("never suggests a fee for the month of a move-in on its last day", () => {
     const unpaid = ledger([], [], account({ startDate: "2026-10-31" }));
-    expect(lateFeeSuggestion(unpaid, "2026-10", "2026-10-31")).toBeNull();
-    expect(lateFeeSuggestion(unpaid, "2026-10", "2026-11-01")).toBeNull();
-    expect(lateFeeSuggestions(unpaid, "2026-11-01")).toEqual([]);
+    expect(
+      lateFeeSuggestion(unpaid, "2026-10", "2026-10-31", "2026-10-31"),
+    ).toBeNull();
+    expect(
+      lateFeeSuggestion(unpaid, "2026-10", "2026-11-01", "2026-11-01"),
+    ).toBeNull();
+    expect(lateFeeSuggestions(unpaid, "2026-11-01", "2026-11-01")).toEqual([]);
   });
 
   it("suggests nothing for a month that is not counted", () => {
@@ -461,9 +549,42 @@ describe("lateFeeSuggestion", () => {
       ...ledger(paidThroughFebruary),
       trackingStart: null,
     };
-    expect(lateFeeSuggestion(noTracking, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(noTracking, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
     const upcoming = ledger([], [], account({ startDate: "2026-04-01" }));
-    expect(lateFeeSuggestion(upcoming, "2026-03", "2026-03-20")).toBeNull();
+    expect(
+      lateFeeSuggestion(upcoming, "2026-03", "2026-03-20", "2026-03-20"),
+    ).toBeNull();
+  });
+});
+
+describe("late fees wait for bank data", () => {
+  const unpaid = ledger(paidThroughFebruary);
+
+  it("suggests nothing while bank data ends before the fee day", () => {
+    expect(
+      lateFeeSuggestion(unpaid, "2026-03", "2026-03-15", "2026-03-09"),
+    ).toBeNull();
+    expect(lateFeeSuggestions(unpaid, "2026-03-15", "2026-02-28")).toEqual([]);
+    expect(lateFeeSuggestions(unpaid, "2026-03-15", null)).toEqual([]);
+  });
+
+  it("suggests the fee once bank data reaches the fee day", () => {
+    expect(
+      lateFeeSuggestion(unpaid, "2026-03", "2026-03-15", "2026-03-10"),
+    ).toMatchObject({ month: "2026-03", feeDate: "2026-03-10" });
+  });
+
+  it("waits for the move-in day when it is the fee date", () => {
+    const terms = account({ startDate: "2026-03-15" });
+    const movedIn = ledger([], [], terms);
+    expect(
+      lateFeeSuggestion(movedIn, "2026-03", "2026-03-20", "2026-03-14"),
+    ).toBeNull();
+    expect(
+      lateFeeSuggestion(movedIn, "2026-03", "2026-03-20", "2026-03-15"),
+    ).toMatchObject({ feeDate: "2026-03-15" });
   });
 });
 
@@ -485,6 +606,7 @@ describe("owner scenarios for October 2026", () => {
     lateFeeSuggestion(
       ledger(payments, entries, accountTerms),
       "2026-10",
+      today,
       today,
     );
 
@@ -569,10 +691,20 @@ describe("owner scenarios for October 2026", () => {
     });
     expect(october(paidThrough(9), [], "2026-10-11", prepaid)).toBeNull();
     expect(
-      lateFeeSuggestion(ledger([], [], prepaid), "2026-01", "2026-01-11"),
+      lateFeeSuggestion(
+        ledger([], [], prepaid),
+        "2026-01",
+        "2026-01-11",
+        "2026-01-11",
+      ),
     ).toBeNull();
     expect(
-      lateFeeSuggestion(ledger([], [], prepaid), "2026-02", "2026-02-11"),
+      lateFeeSuggestion(
+        ledger([], [], prepaid),
+        "2026-02",
+        "2026-02-11",
+        "2026-02-11",
+      ),
     ).toMatchObject({ month: "2026-02" });
   });
 

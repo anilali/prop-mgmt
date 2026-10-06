@@ -210,7 +210,7 @@ describe("home.comingUp", () => {
     expect(notified.rentChanges[0]?.tenantNotifiedAt).toBeInstanceOf(Date);
   });
 
-  it("lists Behind accounts, every account with a late fee to decide, and counts transactions to sort, writing nothing", async () => {
+  it("lists every account with a late fee to decide and counts transactions to sort, writing nothing", async () => {
     useToday("2026-10-12");
     const app = createTestApp();
     const caller = await app.callerFor();
@@ -270,29 +270,6 @@ describe("home.comingUp", () => {
     expect(result.toSortCount).toBe(2);
     expect(result.timeZone).toBe("America/Chicago");
     expect(
-      result.behind.map((row) => [
-        row.unit.label,
-        row.status,
-        row.balanceCents,
-        row.suggestions,
-      ]),
-    ).toEqual([
-      ["B", "behind", 200_000, []],
-      [
-        "A",
-        "behind",
-        50_000,
-        [
-          {
-            accountId: short.id,
-            month: "2026-10",
-            amountCents: 5_000,
-            feeDate: "2026-10-10",
-          },
-        ],
-      ],
-    ]);
-    expect(
       result.lateFees.map((item) => [
         item.unit.label,
         item.tenant.businessName,
@@ -301,6 +278,84 @@ describe("home.comingUp", () => {
     ).toEqual([
       ["A", "Tenant A", [[short.id, "2026-10", 5_000]]],
       ["D", "Tenant D", [[caughtUp.id, "2026-10", 5_000]]],
+    ]);
+  });
+
+  it("leaves out late fees until bank data reaches the fee day", async () => {
+    useToday("2026-10-12");
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const unpaid = await openAccount(
+      caller,
+      "A",
+      lease("2026-01-01", "2027-12-31"),
+    );
+    for (const month of ["01", "02", "03", "04", "05", "06", "07", "08"]) {
+      addTransaction(app, `2026-${month}-01`, 200_000, unpaid.id);
+    }
+    addTransaction(app, "2026-09-01", 200_000, unpaid.id);
+    addTransaction(app, "2026-10-09", -4_500, null);
+
+    const waiting = await caller.home.comingUp();
+    expect(waiting.lateFees).toEqual([]);
+
+    addTransaction(app, "2026-10-10", -4_500, null);
+    const ready = await caller.home.comingUp();
+    expect(
+      ready.lateFees.map((item) =>
+        item.suggestions.map((s) => [s.accountId, s.month]),
+      ),
+    ).toEqual([[[unpaid.id, "2026-10"]]]);
+  });
+
+  it("sums rent by month over every account, including closed ones, and flags months without bank data", async () => {
+    useToday("2026-10-12");
+    const app = createTestApp();
+    const caller = await app.callerFor();
+    const staying = await openAccount(
+      caller,
+      "A",
+      lease("2026-01-01", "2027-12-31"),
+    );
+    const movedOut = await openAccount(
+      caller,
+      "B",
+      lease("2026-01-01", "2026-12-31", {
+        steps: [["2026-01-01", 100_000]],
+        moveOutDate: "2026-03-31",
+      }),
+    );
+    for (const month of ["01", "02", "03"]) {
+      addTransaction(app, `2026-${month}-01`, 100_000, movedOut.id);
+    }
+    for (const month of ["01", "02", "03", "04", "05", "06", "07", "08"]) {
+      addTransaction(app, `2026-${month}-01`, 200_000, staying.id);
+    }
+    addTransaction(app, "2026-09-03", 150_000, staying.id);
+
+    const result = await caller.home.comingUp();
+
+    expect(result.accountCount).toBe(2);
+    expect(
+      result.rentMonths.map((m) => [
+        m.month,
+        m.expectedCents,
+        m.paidCents,
+        m.nodata,
+      ]),
+    ).toEqual([
+      [1, 300_000, 300_000, false],
+      [2, 300_000, 300_000, false],
+      [3, 300_000, 300_000, false],
+      [4, 200_000, 200_000, false],
+      [5, 200_000, 200_000, false],
+      [6, 200_000, 200_000, false],
+      [7, 200_000, 200_000, false],
+      [8, 200_000, 200_000, false],
+      [9, 200_000, 150_000, false],
+      [10, 200_000, 0, true],
+      [11, 200_000, 0, false],
+      [12, 200_000, 0, false],
     ]);
   });
 });

@@ -14,9 +14,7 @@ export default async function PlatformPropertyPage({
 
   return (
     <HydrateClient>
-      <div className="flex flex-col gap-6 p-6">
-        <PlatformPropertyPageContent propertyId={propertyId} />
-      </div>
+      <PlatformPropertyPageContent propertyId={propertyId} />
     </HydrateClient>
   );
 }

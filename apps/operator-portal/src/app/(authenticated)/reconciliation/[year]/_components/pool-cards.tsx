@@ -1,228 +1,170 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect } from "react";
 
-import { formatHundredthsOfCent, formatSqft } from "@moonship/billing";
-import { formatCents } from "@moonship/shared";
-import { Badge } from "@moonship/ui/badge";
+import { formatSqft } from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@moonship/ui/table";
+import { Money } from "@moonship/ui/money";
 
-import type { PoolView } from "../../_lib/reconciliation";
-import { formatDate } from "../../../leases/_lib/format";
-import { BillAmountDialog } from "./bill-amount-dialog";
+import type { PoolView, Workspace } from "../../_lib/reconciliation";
+import { plural, riseStyle } from "../../_lib/reconciliation";
+import { formatMonthDay } from "../../../_lib/format";
+
+const SHOWN_LINES = 5;
 
 export function PoolCards({
-  year,
-  pools,
-  readOnly = false,
+  workspace,
+  onEditBill,
 }: {
-  year: number;
-  pools: PoolView[];
-  readOnly?: boolean;
+  workspace: Workspace;
+  onEditBill: (poolId: string) => void;
 }) {
-  const [editing, setEditing] = useState<PoolView | null>(null);
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (id.startsWith("pool-")) {
+      document.getElementById(id)?.scrollIntoView({ block: "start" });
+    }
+  }, []);
+
+  if (workspace.pools.length === 0) {
+    return (
+      <p className="border-line-2 text-fg-2 rounded-[10px] border border-dashed py-12 text-center text-[12.5px]">
+        No pools yet. Add them in Setup.
+      </p>
+    );
+  }
 
   return (
-    <section className="space-y-3">
-      <div className="space-y-1">
-        <h2 className="text-lg font-medium">Pools</h2>
-        <p className="text-muted-foreground text-sm">
-          {readOnly ? (
-            <>Each pool&apos;s {year} cost and the transactions behind it.</>
-          ) : (
-            <>
-              Each pool&apos;s {year} cost comes from the transactions sorted to
-              its category, unless you enter the bill amount.
-            </>
-          )}
-        </p>
-      </div>
-      {pools.length === 0 ? (
-        <p className="text-muted-foreground rounded-lg border border-dashed py-12 text-center text-sm">
-          No pools yet. Add them in Setup.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {pools.map((pool) => (
-            <PoolCard
-              key={pool.poolId}
-              pool={pool}
-              onEditBill={readOnly ? null : () => setEditing(pool)}
-            />
-          ))}
-        </div>
-      )}
-      {readOnly ? null : (
-        <BillAmountDialog
-          year={year}
-          pool={editing}
-          onClose={() => setEditing(null)}
+    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+      {workspace.pools.map((pool, index) => (
+        <PoolCard
+          key={pool.poolId}
+          year={workspace.year}
+          pool={pool}
+          index={index}
+          onEditBill={() => onEditBill(pool.poolId)}
         />
-      )}
-    </section>
+      ))}
+    </div>
   );
 }
 
 function PoolCard({
+  year,
   pool,
+  index,
   onEditBill,
 }: {
+  year: number;
   pool: PoolView;
-  onEditBill: (() => void) | null;
+  index: number;
+  onEditBill: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const hasUnits = pool.poolSqft > 0;
+  const lines = [...pool.lines].sort((a, b) =>
+    b.postedOn.localeCompare(a.postedOn),
+  );
+  const hidden = lines.length - SHOWN_LINES;
+  const units =
+    pool.poolSqft > 0
+      ? `${plural(pool.unitIds.length, "unit", "units")} · ${formatSqft(pool.poolSqft)} sqft`
+      : "No units";
 
   return (
-    <div
+    <article
       id={`pool-${pool.poolId}`}
-      className="scroll-mt-6 space-y-4 rounded-lg border p-4"
+      className="border-line hover:border-line-2 animate-rise flex scroll-mt-16 flex-col rounded-lg border transition-colors"
+      style={riseStyle(index)}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h3 className="flex items-center gap-2 font-medium">
-            {pool.name}
-            {pool.billOverride ? (
-              <Badge variant="outline">Bill amount</Badge>
-            ) : null}
-            {pool.actualCents < 0 ? (
-              <Badge variant="destructive">Negative</Badge>
-            ) : null}
-          </h3>
-          <p className="text-muted-foreground text-sm">
-            {hasUnits ? `${formatSqft(pool.poolSqft)} sq ft` : "No units"}
-          </p>
+      <div className="border-line flex flex-col gap-1.5 border-b p-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[14px] font-semibold">{pool.name}</h3>
+          <span className="text-fg-3 text-[11.5px]">{units}</span>
         </div>
-        {onEditBill ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onEditBill}
-          >
-            {pool.billOverride ? "Edit bill amount" : "Enter bill amount"}
-          </Button>
-        ) : null}
-      </div>
-
-      <dl className="grid gap-4 text-sm sm:grid-cols-3">
-        <div className="space-y-1">
-          <dt className="text-muted-foreground">Actual cost</dt>
-          <dd className="text-base font-medium tabular-nums">
-            {formatCents(pool.actualCents)}
-          </dd>
-        </div>
-        <div className="space-y-1">
-          <dt className="text-muted-foreground">Per sq ft per year</dt>
-          <dd className="font-medium tabular-nums">
-            {pool.costPerSqftYearCents === null
-              ? "No units"
-              : formatCents(pool.costPerSqftYearCents)}
-          </dd>
-        </div>
-        <div className="space-y-1">
-          <dt className="text-muted-foreground">Per sq ft per month</dt>
-          <dd className="font-medium tabular-nums">
-            {pool.costPerSqftMonthHundredths === null
-              ? "No units"
-              : formatHundredthsOfCent(pool.costPerSqftMonthHundredths)}
-          </dd>
-        </div>
-      </dl>
-
-      {pool.billOverride ? (
-        <div className="bg-muted/40 space-y-2 rounded-md border p-3 text-sm">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <p className="text-muted-foreground">Bill amount (used)</p>
-              <p className="font-medium tabular-nums">
-                {formatCents(pool.billOverride.amountCents)}
-              </p>
+        {pool.billOverride ? (
+          <div className="border-line mt-1 grid grid-cols-2 overflow-hidden rounded-md border">
+            <div className="bg-accent-soft min-w-0 px-2.5 py-2">
+              <div className="label-caps">Bill amount used</div>
+              <Money
+                cents={pool.billOverride.amountCents}
+                className="block text-[16px]"
+              />
+              <div
+                className="text-fg-3 truncate text-[11.5px]"
+                title={pool.billOverride.note}
+              >
+                {pool.billOverride.note}
+              </div>
             </div>
-            <div className="space-y-1">
-              <p className="text-muted-foreground">Payments sorted here</p>
-              <p className="font-medium tabular-nums">
-                {formatCents(pool.categoryTotalCents)}
-              </p>
+            <div className="border-line min-w-0 border-l px-2.5 py-2">
+              <div className="label-caps">Paid in {year}</div>
+              <Money
+                cents={pool.categoryTotalCents}
+                tone="faint"
+                className="block text-[16px]"
+              />
+              <div className="text-fg-3 text-[11.5px]">
+                {plural(lines.length, "payment", "payments")}, not used
+              </div>
             </div>
           </div>
-          <p className="text-muted-foreground whitespace-pre-wrap">
-            Note: {pool.billOverride.note}
-          </p>
-        </div>
-      ) : null}
-
-      <div className="space-y-2">
-        <button
-          type="button"
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? (
-            <ChevronDown className="size-4" />
-          ) : (
-            <ChevronRight className="size-4" />
-          )}
-          {pool.lines.length}{" "}
-          {pool.lines.length === 1 ? "transaction" : "transactions"},{" "}
-          {formatCents(pool.categoryTotalCents)}
-        </button>
-        {open ? (
-          pool.lines.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              {onEditBill === null
-                ? "No transactions."
-                : pool.categoryId === null
-                  ? "This pool has no category, so no transactions count toward it."
-                  : "No transactions sorted to this pool's category in this year."}
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pool.lines.map((line, index) => (
-                  <TableRow key={`${line.transactionId}-${index}`}>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDate(line.postedOn)}
-                    </TableCell>
-                    <TableCell
-                      className="max-w-72 truncate"
-                      title={line.description}
-                    >
-                      {line.description}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {line.source === "cash" ? "Cash" : "Bank"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCents(-line.amountCents)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )
+        ) : (
+          <>
+            <Money
+              cents={pool.actualCents}
+              tone={pool.actualCents < 0 ? "red" : "default"}
+              className="block text-[22px] font-medium tracking-[-0.03em]"
+            />
+            <div className="text-fg-3 text-[11.5px]">
+              Actual cost from{" "}
+              {plural(lines.length, "transaction", "transactions")}
+            </div>
+          </>
+        )}
+      </div>
+      <div className="flex flex-col py-1.5">
+        {lines.slice(0, SHOWN_LINES).map((line, lineIndex) => {
+          const cost = -line.amountCents;
+          return (
+            <div
+              key={`${line.transactionId}-${lineIndex}`}
+              className="grid grid-cols-[52px_minmax(0,1fr)_auto] gap-2.5 px-3.5 py-[5px] text-[12.5px]"
+            >
+              <span className="text-fg-3 font-mono text-[11.5px]">
+                {formatMonthDay(line.postedOn)}
+              </span>
+              <span className="text-fg-2 truncate" title={line.description}>
+                {line.description}
+              </span>
+              <Money
+                cents={cost}
+                tone={cost < 0 ? "green" : "default"}
+                className="text-right text-[12.5px]"
+              />
+            </div>
+          );
+        })}
+        {hidden > 0 ? (
+          <div className="text-fg-3 grid grid-cols-[52px_minmax(0,1fr)] gap-2.5 px-3.5 py-[5px] text-[11.5px]">
+            <span />
+            <span>and {hidden} more</span>
+          </div>
+        ) : null}
+        {lines.length === 0 ? (
+          <div className="text-fg-3 grid grid-cols-[52px_minmax(0,1fr)] gap-2.5 px-3.5 py-[5px] text-[11.5px]">
+            <span />
+            <span>
+              {pool.categoryId === null
+                ? "No category is linked to this pool"
+                : "No transactions yet"}
+            </span>
+          </div>
         ) : null}
       </div>
-    </div>
+      <div className="border-line mt-auto flex justify-end border-t px-3.5 py-2.5">
+        <Button type="button" variant="outline" size="sm" onClick={onEditBill}>
+          {pool.billOverride ? "Edit bill" : "Enter bill amount"}
+        </Button>
+      </div>
+    </article>
   );
 }

@@ -24,7 +24,14 @@
     "./checkbox": "./src/checkbox.tsx",
     "./switch": "./src/switch.tsx",
     "./tabs": "./src/tabs.tsx",
-    "./sheet": "./src/sheet.tsx"
+    "./sheet": "./src/sheet.tsx",
+    "./status-pill": "./src/status-pill.tsx",
+    "./chip": "./src/chip.tsx",
+    "./kbd": "./src/kbd.tsx",
+    "./segmented": "./src/segmented.tsx",
+    "./month-strip": "./src/month-strip.tsx",
+    "./list": "./src/list.tsx",
+    "./money": "./src/money.tsx"
   },
   "license": "MIT",
   "scripts": {

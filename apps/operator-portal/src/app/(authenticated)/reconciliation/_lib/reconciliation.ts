@@ -1,4 +1,7 @@
+import type { CSSProperties } from "react";
+
 import type { RouterOutputs } from "@moonship/api-operator";
+import type { StatusPillVariant } from "@moonship/ui/status-pill";
 import { firstReconciliationYear } from "@moonship/billing";
 
 export type YearList = RouterOutputs["reconciliation"]["listYears"];
@@ -11,14 +14,44 @@ export type ChecklistItem = Workspace["checklist"][number];
 export type FinalizedView = NonNullable<Workspace["finalized"]>;
 
 export const YEAR_STATUS_LABELS: Record<YearStatus, string> = {
-  draft: "Draft",
+  draft: "Open",
   finalized: "Finalized",
 };
 
 export const YEAR_STATUS_VARIANTS = {
-  draft: "outline",
-  finalized: "secondary",
-} as const satisfies Record<YearStatus, string>;
+  draft: "due",
+  finalized: "paid",
+} as const satisfies Record<YearStatus, StatusPillVariant>;
+
+export const YEAR_TABS = ["checklist", "pools", "letters"] as const;
+export type YearTab = (typeof YEAR_TABS)[number];
+
+export function parseYearTab(value: string | null): YearTab {
+  return YEAR_TABS.find((tab) => tab === value) ?? "checklist";
+}
+
+export function riseStyle(index: number): CSSProperties {
+  return { "--i": index } as CSSProperties;
+}
+
+export function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+export function blockerCount(workspace: Workspace): number {
+  return workspace.checklist.filter((item) => item.severity === "blocker")
+    .length;
+}
+
+export function missingAddressTenantIds(workspace: Workspace): Set<string> {
+  return new Set(
+    workspace.checklist.flatMap((item) =>
+      item.code === "missing_mailing_address" && item.tenantId
+        ? [item.tenantId]
+        : [],
+    ),
+  );
+}
 
 export function yearsUnavailableMessage(list: YearList): string | null {
   if (list.trackingStart === null) {
@@ -27,14 +60,6 @@ export function yearsUnavailableMessage(list: YearList): string | null {
   if (list.years.length > 0) return null;
   const firstYear = firstReconciliationYear(list.trackingStart);
   return `The first reconciliation is ${firstYear}, the first full year after the tracking start date.`;
-}
-
-export function timestampFormat(timeZone: string): Intl.DateTimeFormat {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone,
-  });
 }
 
 function base64ToPdfUrl(base64: string): string {

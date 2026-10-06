@@ -16,13 +16,15 @@ export async function requireOperatorContext() {
 
 export async function requirePropertyContext() {
   const result = await requireOperatorContext();
-  if (result.context.mode !== "property") {
+  const { context } = result;
+  if (context.mode !== "property") {
     redirect("/platform/properties");
   }
 
   return {
     ...result,
-    propertyId: result.context.propertyId,
+    context,
+    propertyId: context.propertyId,
   };
 }
 

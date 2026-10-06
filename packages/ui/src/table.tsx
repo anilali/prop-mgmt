@@ -2,12 +2,22 @@ import type * as React from "react";
 
 import { cn } from "@moonship/ui";
 
-export function Table({ className, ...props }: React.ComponentProps<"table">) {
+export function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & { containerClassName?: string }) {
   return (
-    <div className="relative w-full overflow-x-auto">
+    <div
+      data-slot="table-container"
+      className={cn(
+        "border-line relative w-full overflow-x-auto rounded-lg border",
+        containerClassName,
+      )}
+    >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn("w-full caption-bottom border-collapse", className)}
         {...props}
       />
     </div>
@@ -21,7 +31,7 @@ export function TableHeader({
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn("bg-sunk [&_tr]:border-line [&_tr]:border-b", className)}
       {...props}
     />
   );
@@ -40,12 +50,35 @@ export function TableBody({
   );
 }
 
-export function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+export function TableFooter({
+  className,
+  ...props
+}: React.ComponentProps<"tfoot">) {
+  return (
+    <tfoot
+      data-slot="table-footer"
+      className={cn(
+        "bg-sunk border-line-2 border-t font-semibold [&>tr]:border-b-0",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function TableRow({
+  className,
+  interactive,
+  ...props
+}: React.ComponentProps<"tr"> & { interactive?: boolean }) {
+  const clickable = interactive ?? props.onClick !== undefined;
   return (
     <tr
       data-slot="table-row"
+      data-interactive={clickable ? "" : undefined}
       className={cn(
-        "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+        "border-line data-[state=selected]:bg-press border-b transition-colors duration-100",
+        clickable && "hover:bg-hover cursor-pointer",
         className,
       )}
       {...props}
@@ -58,7 +91,7 @@ export function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap",
+        "text-fg-3 h-8 px-3 text-left align-middle text-[11.5px] font-medium whitespace-nowrap",
         className,
       )}
       {...props}
@@ -70,7 +103,20 @@ export function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   return (
     <td
       data-slot="table-cell"
-      className={cn("p-2 align-middle whitespace-nowrap", className)}
+      className={cn("px-3 py-[9px] align-middle whitespace-nowrap", className)}
+      {...props}
+    />
+  );
+}
+
+export function TableCaption({
+  className,
+  ...props
+}: React.ComponentProps<"caption">) {
+  return (
+    <caption
+      data-slot="table-caption"
+      className={cn("text-fg-3 mt-3 text-[11.5px]", className)}
       {...props}
     />
   );

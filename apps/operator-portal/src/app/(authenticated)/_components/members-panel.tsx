@@ -1,46 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   useMutation,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { Users } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge } from "@moonship/ui/badge";
+import type { RouterOutputs } from "@moonship/api-operator";
+import { cn } from "@moonship/ui";
 import { Button } from "@moonship/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@moonship/ui/dialog";
-import { EmptyState } from "@moonship/ui/empty-state";
 import { Input } from "@moonship/ui/input";
-import { Label } from "@moonship/ui/label";
-import { PageHeader } from "@moonship/ui/page-header";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@moonship/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@moonship/ui/table";
+import { List, ListRow } from "@moonship/ui/list";
+import { NativeSelect } from "@moonship/ui/select";
+import { StatusPill } from "@moonship/ui/status-pill";
 
 import { useTRPC } from "~/trpc/react";
 
 type MemberRole = "admin" | "staff";
+type Member = RouterOutputs["access"]["list"][number];
+
+const ROLE_LABELS: Record<MemberRole, string> = {
+  admin: "Admin",
+  staff: "Staff",
+};
+
+const HOVER_ACTION =
+  "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100";
 
 function errorCode(err: unknown): string | null {
   if (typeof err !== "object" || err === null) return null;
@@ -52,21 +40,37 @@ function errorCode(err: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
+function memberState(member: Member): {
+  label: string;
+  variant: "paid" | "due" | "plain";
+} {
+  if (member.status !== "active") return { label: "Removed", variant: "plain" };
+  if (!member.authUserId) return { label: "Invited", variant: "due" };
+  return { label: "Active", variant: "paid" };
+}
+
+function byStatusThenEmail(a: Member, b: Member): number {
+  const status = Number(a.status !== "active") - Number(b.status !== "active");
+  return status !== 0 ? status : a.email.localeCompare(b.email);
+}
+
 export function MembersPanel({ propertyId }: { propertyId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: members } = useSuspenseQuery(
     trpc.access.list.queryOptions({ propertyId }),
   );
-  const [grantOpen, setGrantOpen] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MemberRole>("staff");
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [grantError, setGrantError] = useState<string | null>(null);
 
   const hasActiveAdmin = members.some(
     (member) => member.status === "active" && member.role === "admin",
   );
+  const sorted = [...members].sort(byStatusThenEmail);
 
   const invalidate = async () => {
     await queryClient.invalidateQueries(
@@ -85,10 +89,10 @@ export function MembersPanel({ propertyId }: { propertyId: string }) {
     if (code === "CONFLICT") {
       const serverMessage = err instanceof Error ? err.message : "";
       if (/already exists/i.test(serverMessage)) {
-        return { message: serverMessage, clash: false };
+        return { message: "This person already has access.", clash: false };
       }
       return {
-        message: "Someone else changed access. The list has been refreshed.",
+        message: "Someone else changed access. The list is up to date now.",
         clash: true,
       };
     }
@@ -102,10 +106,9 @@ export function MembersPanel({ propertyId }: { propertyId: string }) {
     trpc.access.grant.mutationOptions({
       onSuccess: async () => {
         await invalidate();
-        toast.success("Access granted");
+        toast.success("Invited. They get access the next time they sign in.");
         setGrantError(null);
         setActionError(null);
-        setGrantOpen(false);
         setEmail("");
         setRole("staff");
       },
@@ -136,191 +139,182 @@ export function MembersPanel({ propertyId }: { propertyId: string }) {
     trpc.access.revoke.mutationOptions({
       onSuccess: async () => {
         await invalidate();
+        setRemovingId(null);
         setActionError(null);
-        toast.success("Access revoked");
+        toast.success("Access removed");
       },
       onError: async (err) => {
         const { message, clash } = describeError(err);
         if (clash) await invalidate();
+        setRemovingId(null);
         setActionError(message);
       },
     }),
   );
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Members"
-        description="Manage who can operate this property."
-        action={
-          <Button
-            type="button"
-            onClick={() => {
-              setGrantError(null);
-              setGrantOpen(true);
-            }}
-          >
-            Grant access
-          </Button>
-        }
-      />
+    <div className="flex max-w-[640px] flex-col gap-3">
       {actionError ? (
-        <p className="text-destructive text-sm">{actionError}</p>
+        <p className="text-red text-[12.5px]">{actionError}</p>
       ) : null}
-      {members.length === 0 ? (
-        <EmptyState
-          icon={<Users className="size-5" />}
-          headline="No members"
-          description="Grant access to the first member to get started."
-          className="rounded-lg border border-dashed py-16"
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Claimed</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.map((member) => (
-              <TableRow key={member.id}>
-                <TableCell className="font-medium">{member.email}</TableCell>
-                <TableCell>{member.role}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      member.status === "active" ? "secondary" : "outline"
+      <List className="animate-rise">
+        {sorted.length === 0 ? (
+          <div className="text-fg-3 px-3.5 py-3 text-[12.5px]">
+            No one has access yet.
+          </div>
+        ) : null}
+        {sorted.map((member) => {
+          const state = memberState(member);
+          const active = member.status === "active";
+          const otherRole: MemberRole =
+            member.role === "admin" ? "staff" : "admin";
+          return (
+            <ListRow
+              key={member.id}
+              columns="22px minmax(0,1fr) auto"
+              className="group"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "bg-accent-soft text-primary border-accent-line grid size-[22px] place-items-center rounded-full border text-[11px] font-semibold",
+                  !active && "opacity-50",
+                )}
+              >
+                {member.email.charAt(0).toUpperCase()}
+              </span>
+              <span
+                className={cn("truncate font-medium", !active && "text-fg-3")}
+              >
+                {member.email}
+              </span>
+              {removingId === member.id ? (
+                <span className="flex items-center justify-end gap-1.5">
+                  <span className="text-fg-3 text-[11.5px]">
+                    Remove access?
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRemovingId(null)}
+                  >
+                    Keep
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    disabled={revoke.isPending}
+                    onClick={() =>
+                      revoke.mutate({ propertyId, membershipId: member.id })
                     }
                   >
-                    {member.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {member.authUserId ? "Claimed" : "Not yet signed in"}
-                </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  {member.status === "active" ? (
-                    <>
+                    Remove
+                  </Button>
+                </span>
+              ) : (
+                <span className="flex flex-wrap items-center justify-end gap-1.5">
+                  {active ? (
+                    <span className={cn("flex gap-0.5", HOVER_ACTION)}>
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
+                        disabled={changeRole.isPending}
                         onClick={() =>
                           changeRole.mutate({
                             propertyId,
                             membershipId: member.id,
-                            role: member.role === "admin" ? "staff" : "admin",
+                            role: otherRole,
                           })
                         }
                       >
-                        Make {member.role === "admin" ? "staff" : "admin"}
+                        Make {otherRole}
                       </Button>
                       <Button
                         type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          revoke.mutate({
-                            propertyId,
-                            membershipId: member.id,
-                          })
-                        }
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Remove access for ${member.email}`}
+                        title="Remove access"
+                        className="hover:text-red"
+                        onClick={() => setRemovingId(member.id)}
                       >
-                        Revoke
+                        <Trash2 />
                       </Button>
-                    </>
+                    </span>
                   ) : (
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
+                      className={HOVER_ACTION}
                       onClick={() => {
                         setEmail(member.email);
                         setGrantError(null);
-                        setGrantOpen(true);
+                        emailRef.current?.focus();
                       }}
                     >
-                      Grant again
+                      Invite again
                     </Button>
                   )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+                  <StatusPill variant="plain">
+                    {ROLE_LABELS[member.role]}
+                  </StatusPill>
+                  <StatusPill variant={state.variant}>{state.label}</StatusPill>
+                </span>
+              )}
+            </ListRow>
+          );
+        })}
+      </List>
 
-      <Dialog open={grantOpen} onOpenChange={setGrantOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Grant access</DialogTitle>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              grant.mutate({
-                propertyId,
-                email,
-                role: hasActiveAdmin ? role : "admin",
-              });
-            }}
-          >
-            <div className="space-y-1">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            {hasActiveAdmin ? (
-              <div className="space-y-1">
-                <Label>Role</Label>
-                <Select
-                  value={role}
-                  onValueChange={(value) =>
-                    setRole(value === "admin" ? "admin" : "staff")
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="staff">Staff</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <Label>Role</Label>
-                <Input value="Admin" disabled />
-                <p className="text-muted-foreground text-sm">
-                  The first member must be an admin.
-                </p>
-              </div>
-            )}
-            {grantError ? (
-              <p className="text-destructive text-sm">{grantError}</p>
-            ) : null}
-            <DialogFooter>
-              <Button type="submit" disabled={grant.isPending}>
-                Grant
-              </Button>
-            </DialogFooter>
-          </form>
-          <p className="text-muted-foreground text-sm">
-            They get access the next time they sign in. If they are signed in
-            now, they need to sign out and sign in again.
-          </p>
-        </DialogContent>
-      </Dialog>
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          grant.mutate({
+            propertyId,
+            email: email.trim(),
+            role: hasActiveAdmin ? role : "admin",
+          });
+        }}
+      >
+        <Input
+          ref={emailRef}
+          type="email"
+          placeholder="name@example.com"
+          aria-label="Email to invite"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="min-w-[200px] flex-1"
+          required
+        />
+        <NativeSelect
+          aria-label="Role"
+          value={hasActiveAdmin ? role : "admin"}
+          disabled={!hasActiveAdmin}
+          onChange={(e) =>
+            setRole(e.target.value === "admin" ? "admin" : "staff")
+          }
+          className="w-[120px]"
+        >
+          <option value="staff">Staff</option>
+          <option value="admin">Admin</option>
+        </NativeSelect>
+        <Button type="submit" variant="primary" disabled={grant.isPending}>
+          Invite
+        </Button>
+      </form>
+      {grantError ? (
+        <p className="text-red text-[12.5px]">{grantError}</p>
+      ) : null}
+      <p className="text-fg-3 text-[11.5px]">
+        {hasActiveAdmin
+          ? "Only admins can add and remove people."
+          : "The first person must be an admin."}
+      </p>
     </div>
   );
 }

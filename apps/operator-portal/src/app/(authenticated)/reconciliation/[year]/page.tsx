@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { getQueryClient, HydrateClient, prefetch, trpc } from "~/trpc/server";
+import { PageTopBar } from "../../_components/page-top-bar";
 import { requirePropertyContext } from "../../_lib/require-operator-context";
 import { YearPageContent } from "./_components/year-page-content";
 
@@ -19,13 +20,16 @@ export default async function ReconciliationYearPage({
   if (years.some((row) => row.year === year)) {
     prefetch(trpc.reconciliation.workspace.queryOptions({ year }));
   }
-  prefetch(trpc.property.get.queryOptions());
 
   return (
     <HydrateClient>
-      <div className="flex flex-col gap-6 p-6">
-        <YearPageContent year={year} />
-      </div>
+      <PageTopBar
+        crumbs={[
+          { label: "Reconciliation", href: "/reconciliation" },
+          { label: String(year) },
+        ]}
+      />
+      <YearPageContent year={year} />
     </HydrateClient>
   );
 }

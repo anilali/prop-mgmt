@@ -562,8 +562,10 @@ Rows run through today.
 
 ### 5.4 Rent status
 
+`newestBank` is the newest `posted_on` of a bank transaction, or null when there is none. Cash expenses don't count. "Bank data reaches d" means `newestBank` is not null and `newestBank >= d`.
+
 ```text
-status(A, today):
+status(A, today, newestBank):
   B = balance(A, today)
   if B < 0: return Credit
   if B = 0: return Paid
@@ -574,13 +576,37 @@ status(A, today):
     graceDate = dateInMonth(m, 5)
   thisMonth = (counted(A, m) and due(A, m) <= today ? monthlyExpected(A, m) : 0)
             + Σ positive ledger entries on A dated in m and <= today
-  if today <= graceDate and B <= thisMonth: return Due
+  if B > thisMonth: return Behind
+  if bank data does not reach firstDay(m): return Waiting
+  if today <= graceDate: return Due
   return Behind
+
+pastDue(A, today) = max(0, balance(A, today) - thisMonth)
 ```
 
-`Due` means only this month's charges are unpaid and the grace date has not passed. The grace date is never before the month's due date, so a tenant who moves in on February 15 is Due, not Behind, on move-in day. Anything left over from an earlier month makes the account `Behind` right away, whatever the day. The rent status table lists accounts open or in holdover today, plus any other account (closed or upcoming) with a non-zero balance or a pending late-fee suggestion. An upcoming account can carry a balance when a tenant moving units has it moved to the new account. It sorts Behind first, then Due, then the rest, and by balance from largest within each group.
+`Waiting` ("Waiting on bank") means only this month's charges are unpaid and the bank data stops before the 1st, so the app can't see this month's payments yet. It stays Waiting after the grace date until newer bank data is imported.
 
-Each row shows tenant, unit, expected so far, received so far, balance, last payment date, and status, all from 5.3 with `asOf = today`.
+`pastDue` is the balance minus the part of it that is this month's unpaid charges. Payments go to the oldest charges first, so `pastDue` is 0 exactly when the balance is from this month alone. It is 0 for a credit.
+
+`Due` means only this month's charges are unpaid and the grace date has not passed. The grace date is never before the month's due date, so a tenant who moves in on February 15 is Due, not Behind, on move-in day. Anything left over from an earlier month makes the account `Behind` right away, whatever the day. The rent status table lists accounts open or in holdover today, plus any other account (closed or upcoming) with a non-zero balance or a pending late-fee suggestion. An upcoming account can carry a balance when a tenant moving units has it moved to the new account. It sorts Behind first, then Due and Waiting, then the rest, and by balance from largest within each group.
+
+Each row shows tenant, unit, expected so far, received so far, balance, past due, last payment date, status, and the month strip, all from 5.3 with `asOf = today`.
+
+**Month strip.** `monthCells` in `billing/src/month-cells.ts` returns one cell per month of today's year: `{ month: 1..12, state, expectedCents, paidCents }`. `expectedCents` is `monthlyExpected(A, m)` for a counted month and 0 otherwise. `paidCents` is the sum of `A`'s payment lines posted in `m`, from `T` through today. A payment counts in the month it posted. The strip shows when money came in and is not an allocation. The first rule that matches sets the state:
+
+```text
+off      not counted(A, m)
+future   m is after monthOf(today)
+paid     paidCents >= expectedCents
+pending  an unsorted deposit posted in m has accountSuggestion(t) = A (5.6)
+nodata   bank data does not reach firstDay(m)
+open     m = monthOf(today), paidCents = 0, and today <= graceDate
+         or bank data does not reach graceDate
+short    paidCents > 0
+unpaid   otherwise
+```
+
+`pending` uses only a single account suggestion, not a list of choices. `suggestedPaymentMonths` computes it once for all accounts per request.
 
 ### 5.5 Late-fee suggestions
 
@@ -595,12 +621,13 @@ received(A, d1, d2) =
 rentOnly(A, d) = monthly charges due on or before d
                - received(A, trackingStart - 1 day, d)
 
-lateFeeSuggestion(A, m, today):
+lateFeeSuggestion(A, m, today, newestBank):
   if not counted(A, m): none
   L = lease(A, m)
   if not L.lateFee: none
   feeDate = maxDate(dateInMonth(m, L.lateFee.day), due(A, m))
   if monthOf(today) != m or today <= feeDate: none
+  if bank data does not reach feeDate: none
   if a late_fee or late_fee_dismissed entry exists for (A, m): none
   carried = max(0, -rentOnly(A, addDays(due(A, m), -1)))
   paidForMonth = carried + received(A, due(A, m), feeDate)
@@ -609,6 +636,8 @@ lateFeeSuggestion(A, m, today):
 ```
 
 The test asks one thing: did the money received by the fee date cover this month's base rent plus estimates?
+
+The app answers only once it can see that money. Until the bank data reaches the fee date (5.4), there is no suggestion, so a payment that is in the bank but not imported yet never causes a fee. Approve and Dismiss use the same check.
 
 Only monthly charges and money received count. Positive ledger entries are left out: adjustments, earlier late fees, and true-ups the tenant owes. A positive opening balance is left out too. So an old balance never causes a suggestion.
 
@@ -1040,8 +1069,9 @@ Routers live in `packages/api/operator/src/routers`. Every procedure below is on
 | | `unsort` | id | transaction; deletes its lines |
 | | `createCash`, `updateCash` | date, description, amountCents (positive, stored negative), categoryId | transaction with one line, written in one database transaction |
 | | `removeCash` | id | ok |
-| `rent` | `status` | none | `today`, newest bank date, rows (5.4) with suggestions |
-| | `history` | accountId | account, newest bank date, history rows (ledger entry rows say whether they are locked: a true-up or a locked date, 3.6), suggestions |
+| `rent` | `status` | none | `today`, newest bank date, rows (5.4) with balance, `pastDueCents`, status, `months`, and suggestions |
+| | `history` | accountId | account, newest bank date, the same balance, `pastDueCents`, status, `months`, and suggestions as a status row, and history rows (ledger entry rows say whether they are locked: a true-up or a locked date, 3.6) |
+| | `bankStatus` | none | `{ today, newestBankDate }`, both in the property's time zone; `newestBankDate` is null with no bank data. The portal footer uses it. |
 | | `addAdjustment` | accountId, date, amountCents, note | entry; a locked date becomes today (3.6) |
 | | `updateAdjustment` | id, date, amountCents, note | entry; rejected when the old or new date is locked |
 | | `removeEntry` | id | ok; rejected for `true_up` and for an entry with a locked date |
@@ -1078,18 +1108,18 @@ All routes are under `apps/operator-portal/src/app/(authenticated)` and call `re
 
 | Route | Shows |
 |---|---|
-| `/home` | Coming up (5.12). In property mode, `/`, `/access` (for non-admins), and `requirePlatformContext` redirect here. Until `/home` ships in M6 they redirect to `/setup`. |
-| `/rent` | Rent status table, one row per account. Each row links to its history. |
-| `/rent/[accountId]` | History with running balance, late-fee suggestions with Approve and Dismiss, Add adjustment, edit and delete for owner-entered entries. |
+| `/home` | Coming up (5.12). In property mode, `/` and `requirePlatformContext` redirect here. |
 | `/transactions` | Two tabs. **To sort**: each row has its suggestion pre-selected in the picker, a Confirm button, and a Split action that opens line editing. **All**: filters (year, category, account, text, sorted), totals for the filter, and click to re-sort. Add cash expense button. |
 | `/transactions/import` | Upload a `.csv`, `.qbo`, `.ofx`, or `.qfx` file. CSV: header row (detected, can be changed), mapping form (first time or Edit). QuickBooks: no header row or mapping step; the account's last 4 digits, the file's date range, and any account warning. Both: preview with counts, first rows, not-a-transaction rows, and errors with Skip, Import button, past batches with their format and Remove on batches that have no sorted rows. |
 | `/reconciliation` | Years list with status. |
 | `/reconciliation/[year]` | Loads only for a year in the list. Letter date (starts at January 1 of the next year and only allows dates in that year), checklist, pool cards (actual, transactions, bill amount form, bill next to payments), statements (table starts closed, or open when a row has a problem; Preview PDF), Finalize. When finalized: snapshots, Download PDF, mismatch flags, January table. |
-| `/tenants` | Tenant list and dialog. |
-| `/leases` | Accounts grouped by unit, each with its state and leases. Open account button. |
-| `/leases/[accountId]` | Account page: tenant, unit, opening balance, its leases in order, Add lease (pre-fills the start as the day after the newest lease ends and copies its steps' current amounts). Each lease opens a form: dates, move-out (newest lease only), base rent steps with Add increase (date plus percent or new amount), per-pool Pays checkbox with estimate steps, late fee, insurance date. A Documents section lists name, lease, upload date, and size ("7.8 MB"), with Upload PDF (a lease picker, then a file input that accepts PDFs and shows progress), Download, and Remove with confirmation. When storage is not ready it shows "File storage isn't set up yet" and turns off upload. |
-| `/setup` | Property and letter details, tracking start, time zone; units table and dialog; pools with a share table that updates as units are checked; categories with add, rename, archive. |
-| `/access` | Unchanged. |
+| `/tenants` | One row per account (`rent.status`): unit, tenant, the month strip (5.4), monthly amount, past due, and lease end. Behind first. New tenant opens a dialog that creates the tenant if needed and opens the account with its first lease. Each row links to its account page. |
+| `/tenants/[accountId]` | Account page (`rent.history`): status, past due, balance, received this year, the month strip, and a banner for a late-fee suggestion (Approve, Dismiss) or a lease past its end date. Tabs: **Activity** is the history with running balance, Add adjustment, and edit and delete for owner-entered entries. **Lease** has base rent steps with Tenant notified and Add increase, estimates, fixed charges, lease dates, and the full lease form. **Documents** lists name, upload date, and size ("7.8 MB"), with Upload PDF, Download, and Remove with confirmation. When storage is not ready it shows "File storage isn't set up yet" and turns off upload. A side panel shows the tenant, unit, monthly rent, and lease terms. |
+| `/setup` | Tabs: **Property and letters** (property and letter details, tracking start, time zone), **Units and pools** (units with add and edit, and a matrix of pools with each unit's share), **Categories** (add, rename, archive), and **People** (members and invites, admins only). |
+
+Old routes redirect permanently in `next.config.js`: `/rent` and `/leases` to `/tenants`, `/rent/[accountId]` and `/leases/[accountId]` to `/tenants/[accountId]`, and `/access` to `/setup` (the People tab).
+
+Every page has a footer with "Bank data through <date>" from `rent.bankStatus`.
 
 ### 8.2 Sidebar
 
@@ -1098,14 +1128,11 @@ All routes are under `apps/operator-portal/src/app/(authenticated)` and call `re
 | Label | Route | Icon |
 |---|---|---|
 | Home | `/home` | `House` |
-| Rent | `/rent` | `Wallet` |
-| Transactions | `/transactions` | `ArrowLeftRight` |
+| Transactions, with the to-sort count | `/transactions` | `ArrowLeftRight` |
+| Tenants, with the number behind | `/tenants` | `Users` |
 | Reconciliation | `/reconciliation` | `Calculator` |
-| separator | | |
-| Tenants | `/tenants` | `Users` |
-| Leases | `/leases` | `FileText` |
+| "Property" label | | |
 | Setup | `/setup` | `Settings` |
-| Access (admins only) | `/access` | `KeyRound` |
 
 Remove "Dashboard", "Tasks", "Applicants", "Events", "Outgoing", and the placeholder "Settings". Drop the rule that selects Events when nothing matches. Platform mode is unchanged.
 
@@ -1113,7 +1140,7 @@ Remove "Dashboard", "Tasks", "Applicants", "Events", "Outgoing", and the placeho
 
 Cards in this order: Behind (balances only), Late fees to decide (every account with a pending suggestion, including a tenant who paid late and has caught up, with Approve and Dismiss), To sort (count and a link), Rent changes (with Tenant notified toggles), Insurance, Leases ending and Past end date. A card with nothing in it shows one line, such as "No one is behind." `home.comingUp` returns `lateFees` and the property's `timeZone`.
 
-Below the md breakpoint the sidebar is hidden and opens from a menu button in a left-side sheet. Pages under `(authenticated)` have error (with retry), loading, and not-found states. Unknown account ids on `/leases/[accountId]` and `/rent/[accountId]` show not found. In the portal, negative rent balances and balances on account show as `-$x`; the `($x)` accounting format is used only in the PDF.
+Below the md breakpoint the sidebar is hidden and opens from a menu button in a left-side sheet. Pages under `(authenticated)` have error (with retry), loading, and not-found states. Unknown account ids on `/tenants/[accountId]` show not found. In the portal, negative rent balances and balances on account show as `-$x`; the `($x)` accounting format is used only in the PDF.
 
 ## 9. Statement and letter PDF
 
@@ -1209,8 +1236,9 @@ The statement page is built by `statementDocument` in `statement-document.ts` as
 | `lease-mgmt/src/aggregates/account.test.ts` | rules 1 to 6 in section 4, rent step shifting, an estimate step after the start date accepted, `setEstimateStep` |
 | `billing/src/lease-calendar.test.ts` | account start and end, state, covering lease, counted months and pool months (6.4), due dates, step lookup |
 | `billing/src/balance.test.ts` | the three balances in section 6; identity: balance = opening + months + entries - payments; history running balance |
-| `billing/src/rent-status.test.ts` | Paid, Credit, Due on the grace day, Behind the day after, Behind with a balance from last month, default day 5, Due on a mid-month move-in day |
-| `billing/src/late-fee.test.ts` | `lateFeeMonths` returns only the current month, so nothing shows for March on April 1; the 5.5 examples; no suggestion when paid by the fee date, when decided, when the covering lease has no fee, or for old adjustments, fees, owed opening balances, and true-ups; a suggestion still shows after a late catch-up; carried-in credit from an early autopay and a prepaid opening balance; a credit true-up counts as received; a check bounced after the fee date gives no suggestion, and one bounced before it gives one unless replaced; split payments across two accounts; fee date on a mid-month start; no fee for a move-in on the last day of the month; approval date moves to today when the fee date is in a finalized year |
+| `billing/src/rent-status.test.ts` | Paid, Credit, Due on the grace day, Behind the day after, Behind with a balance from last month, default day 5, Due on a mid-month move-in day; Waiting while bank data ends before the 1st, Due and Behind once it reaches it, Behind not Waiting with an older balance; past due with payments to the oldest charge first, a charge this month, a credit, and a closed account |
+| `billing/src/month-cells.test.ts` | each state; open until the grace date passes and the bank data reaches it; no data before the bank data; pending; a payment counts in the month it posted; a mid-month start; a move-out; months before the tracking start |
+| `billing/src/late-fee.test.ts` | `lateFeeMonths` returns only the current month, so nothing shows for March on April 1; the 5.5 examples; no suggestion when paid by the fee date, when decided, when the covering lease has no fee, or for old adjustments, fees, owed opening balances, and true-ups; a suggestion still shows after a late catch-up; carried-in credit from an early autopay and a prepaid opening balance; a credit true-up counts as received; a check bounced after the fee date gives no suggestion, and one bounced before it gives one unless replaced; split payments across two accounts; fee date on a mid-month start; no fee for a move-in on the last day of the month; approval date moves to today when the fee date is in a finalized year; no suggestion until the bank data reaches the fee date |
 | `billing/src/suggestions.test.ts` | description key; category from the last single-line match; archived category skipped; account from history; one key on two accounts falls back to amount; ties list choices |
 | `billing/src/csv-import.test.ts` | first-time header detection below preamble lines; header search with a mapping; both amount modes, flip sign; dates `1/5/2026` and `01/05/2026` equal, `2/30/2026` and `1/5/26` are errors; bad date with an amount is an error, and commit succeeds once that row is in skipRows; footer with no amount is a not-a-transaction row; dedupe: same file twice, overlapping files, two equal rows in one day, external ids, rows before tracking start |
 | `billing/src/ofx-import.test.ts` | closed and unclosed tags, OFX 2 XML, CRLF, Windows-1252 characters, checks, memo or name, bad rows; dedupe through OFX rows: same file twice, overlapping files, a stored row without an id, rows before tracking start |
@@ -1229,7 +1257,7 @@ The statement page is built by `statementDocument` in `statement-document.ts` as
 - `bankImport`: `removeBatch` rejected when a row is sorted, accepted otherwise.
 - `document` (with a fake `BlobStorage` that signs uploads, answers HEAD from its objects, and can be switched off): `createUpload` rejects a non-PDF, an empty file, a file over 25 MB, an unknown account, and a lease from another account, and saves no row; `createUpload` signs and returns the attachment `Content-Disposition`; `confirmUpload` rejects a missing object and deletes and rejects one with the wrong size, type, or stored file name; a second confirm is CONFLICT; another property's account and document are NOT_FOUND everywhere; `remove` deletes the object and the row; storage that is off gives SERVICE_UNAVAILABLE and `storageReady: false`; `account.remove` is CONFLICT while the account has documents.
 - `transaction`: `listToSort` returns suggestions and leaves every transaction unsorted; `allocate` rejects lines that do not add up, and a line with both or neither target; a split across two accounts is accepted.
-- `rent`: `status` writes nothing; `approveLateFee` with no current suggestion is rejected; approve posts the covering lease's fee amount; an adjustment dated in a finalized year is saved with today's date; every ledger write locks the entry's reconciliation year.
+- `rent`: `status` writes nothing; `status` and `history` return past due, the month strip, and Waiting; `bankStatus` returns the property's today and the newest bank date, leaving out cash; `approveLateFee` with no current suggestion, or before the bank data reaches the fee date, is rejected; approve posts the covering lease's fee amount; an adjustment dated in a finalized year is saved with today's date; every ledger write locks the entry's reconciliation year.
 - `home`: `comingUp` with a fixed today and one item just inside and just outside each window in 5.12.
 - `reconciliation`: finalize rejected while a blocker stands, before January 1, without a letter date, before the previous year is finalized, and the second time; finalize with the section 6 data writes three snapshots, three true-ups, and seven estimate steps at repeatable read, and the renderer gets the stored snapshot data; a January 1 renewal with blank estimates gets every December pool; a typed January 1 step is replaced, not added; a renderer that throws on the second account leaves the stores unchanged; `workspace` for a finalized year returns mismatch values after a payment is re-sorted and after January 1 steps or rent change, and the January table; `setLetterDate` outside `year + 1`, `previewPdf` for a finalized year, and `downloadUrl` for another year or property are rejected; a lease save from before finalize returns CONFLICT.
 

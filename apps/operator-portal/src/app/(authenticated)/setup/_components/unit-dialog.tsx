@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import type { RouterOutputs } from "@moonship/api-operator";
 import type { Address } from "@moonship/shared";
+import { joinNames } from "@moonship/billing";
 import { Button } from "@moonship/ui/button";
 import {
   Dialog,
@@ -15,7 +16,6 @@ import {
   DialogTitle,
 } from "@moonship/ui/dialog";
 import { Input } from "@moonship/ui/input";
-import { Label } from "@moonship/ui/label";
 
 import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
@@ -26,6 +26,7 @@ import {
   toAddress,
   toAddressDraft,
 } from "./address-fields";
+import { FormField } from "./form-field";
 
 export type UnitView = RouterOutputs["unit"]["list"][number];
 
@@ -34,11 +35,13 @@ export function UnitDialog({
   onOpenChange,
   unit,
   buildingAddress,
+  autoPoolNames,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   unit: UnitView | null;
   buildingAddress: Address;
+  autoPoolNames: string[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -50,6 +53,7 @@ export function UnitDialog({
           <UnitForm
             unit={unit}
             buildingAddress={buildingAddress}
+            autoPoolNames={autoPoolNames}
             onDone={() => onOpenChange(false)}
           />
         ) : null}
@@ -61,10 +65,12 @@ export function UnitDialog({
 function UnitForm({
   unit,
   buildingAddress,
+  autoPoolNames,
   onDone,
 }: {
   unit: UnitView | null;
   buildingAddress: Address;
+  autoPoolNames: string[];
   onDone: () => void;
 }) {
   const trpc = useTRPC();
@@ -105,7 +111,7 @@ function UnitForm({
 
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         if (label.trim() === "") {
@@ -135,8 +141,7 @@ function UnitForm({
       }}
     >
       <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label htmlFor="unit-label">Label</Label>
+        <FormField label="Label" htmlFor="unit-label">
           <Input
             id="unit-label"
             value={label}
@@ -144,9 +149,8 @@ function UnitForm({
             maxLength={64}
             required
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="unit-sqft">Sqft</Label>
+        </FormField>
+        <FormField label="Sqft" htmlFor="unit-sqft">
           <Input
             id="unit-sqft"
             type="number"
@@ -155,9 +159,10 @@ function UnitForm({
             step={1}
             value={sqft}
             onChange={(e) => setSqft(e.target.value)}
+            className="font-mono"
             required
           />
-        </div>
+        </FormField>
       </div>
       <AddressFields
         idPrefix="unit"
@@ -165,17 +170,21 @@ function UnitForm({
         onChange={setAddress}
         street2Label="Suite"
       />
-      {unit ? null : (
-        <p className="text-muted-foreground text-xs">
-          New units join every pool that takes new units.
+      {unit || autoPoolNames.length === 0 ? null : (
+        <p className="text-fg-3 text-[11.5px]">
+          Joins {joinNames(autoPoolNames)} automatically.
         </p>
       )}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" disabled={create.isPending || update.isPending}>
-          Save
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={create.isPending || update.isPending}
+        >
+          {unit ? "Save unit" : "Add unit"}
         </Button>
       </DialogFooter>
     </form>

@@ -2,10 +2,8 @@
 
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatCents } from "@moonship/shared";
 import { Button } from "@moonship/ui/button";
 import {
   Dialog,
@@ -15,25 +13,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@moonship/ui/dialog";
-import { Input } from "@moonship/ui/input";
 
-import type {
-  AccountSummary,
-  CategoryView,
-  TxnLine,
-} from "../_lib/transactions";
+import type { DraftLine } from "../_lib/draft";
+import type { AccountSummary, CategoryView } from "../_lib/transactions";
 import { useTRPC } from "~/trpc/react";
-import {
-  amountClass,
-  formatAmount,
-  lineTarget,
-  parseDollars,
-  targetIds,
-  targetOptions,
-} from "../_lib/transactions";
-import { centsToInput, formatDate } from "../../leases/_lib/format";
-import { TargetPicker } from "./target-picker";
+import { allocationLines, draftProblem, newDraftLine } from "../_lib/draft";
+import { targetGroups, targetIds } from "../_lib/transactions";
+import { formatDate } from "../../_lib/format";
+import { Amount } from "./amount";
+import { SplitEditor } from "./split-editor";
 import { useTransactionsChanged } from "./use-transactions-changed";
+
+export type { DraftLine } from "../_lib/draft";
+export { draftLinesFrom, newDraftLine } from "../_lib/draft";
 
 export interface SortTxn {
   id: string;
@@ -42,39 +34,13 @@ export interface SortTxn {
   amountCents: number;
 }
 
-export interface DraftLine {
-  key: string;
-  target: string;
-  amount: string;
-}
-
-let lineCounter = 0;
-
-export function newDraftLine(target: string, directedCents: number | null) {
-  lineCounter += 1;
-  return {
-    key: `line-${lineCounter}`,
-    target,
-    amount: directedCents === null ? "" : centsToInput(directedCents),
-  };
-}
-
-export function draftLinesFrom(
-  amountCents: number,
-  lines: readonly TxnLine[],
-): DraftLine[] {
-  const sign = amountCents < 0 ? -1 : 1;
-  return lines.map((line) =>
-    newDraftLine(lineTarget(line), line.amountCents * sign),
-  );
-}
-
 export function SortDialog({
   txn,
   initialLines,
   accounts,
   categories,
   firstAccountIds,
+  sorted,
   open,
   onOpenChange,
 }: {
@@ -83,20 +49,22 @@ export function SortDialog({
   accounts: readonly AccountSummary[];
   categories: readonly CategoryView[];
   firstAccountIds?: readonly string[];
+  sorted?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const isSorted = sorted ?? initialLines.length > 0;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Sort transaction</DialogTitle>
+          <DialogTitle>
+            {isSorted ? "Change sorting" : "Sort transaction"}
+          </DialogTitle>
           {txn ? (
             <DialogDescription>
-              {formatDate(txn.postedOn)}, {txn.description},{" "}
-              <span className={amountClass(txn.amountCents)}>
-                {formatAmount(txn.amountCents)}
-              </span>
+              {formatDate(txn.postedOn)} · {txn.description} ·{" "}
+              <Amount cents={txn.amountCents} />
             </DialogDescription>
           ) : null}
         </DialogHeader>
@@ -107,6 +75,7 @@ export function SortDialog({
             accounts={accounts}
             categories={categories}
             firstAccountIds={firstAccountIds ?? []}
+            canUnsort={sorted === true}
             onDone={() => onOpenChange(false)}
           />
         ) : null}
@@ -121,6 +90,7 @@ function SortForm({
   accounts,
   categories,
   firstAccountIds,
+  canUnsort,
   onDone,
 }: {
   txn: SortTxn;
@@ -128,6 +98,7 @@ function SortForm({
   accounts: readonly AccountSummary[];
   categories: readonly CategoryView[];
   firstAccountIds: readonly string[];
+  canUnsort: boolean;
   onDone: () => void;
 }) {
   const trpc = useTRPC();
@@ -138,138 +109,82 @@ function SortForm({
       : [newDraftLine("", Math.abs(txn.amountCents))],
   );
 
-  const sign = txn.amountCents < 0 ? -1 : 1;
-  const total = Math.abs(txn.amountCents);
-  const parsed = lines.map((line) => parseDollars(line.amount));
-  const sum = parsed.reduce<number>((acc, cents) => acc + (cents ?? 0), 0);
-  const remainder = total - sum;
   const keepCategoryIds = initialLines.flatMap((line) => {
     const { categoryId } = targetIds(line.target);
     return categoryId ? [categoryId] : [];
   });
-  const options = targetOptions({
+  const groups = targetGroups({
     amountCents: txn.amountCents,
     accounts,
     categories,
     firstAccountIds,
     keepCategoryIds,
   });
-
-  const problem = lines.some((line) => line.target === "")
-    ? "Pick an account or category on every line."
-    : parsed.some((cents) => cents === null || cents === 0)
-      ? "Enter an amount other than 0 on every line."
-      : remainder !== 0
-        ? `The lines must add up to ${formatCents(total)}.`
-        : null;
+  const problem = draftProblem(txn.amountCents, lines, true);
 
   const allocate = useMutation(
     trpc.transaction.allocate.mutationOptions({
       onSuccess: async () => {
         await changed();
-        toast.success("Transaction sorted");
+        toast.success("Sorting saved");
+        onDone();
+      },
+      onError: (err) => toast.error(err.message),
+    }),
+  );
+  const unsort = useMutation(
+    trpc.transaction.unsort.mutationOptions({
+      onSuccess: async () => {
+        await changed();
+        toast.success("Moved back to To sort");
         onDone();
       },
       onError: (err) => toast.error(err.message),
     }),
   );
 
-  const updateLine = (key: string, patch: Partial<DraftLine>) =>
-    setLines((current) =>
-      current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
-    );
-
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3.5"
       onSubmit={(e) => {
         e.preventDefault();
-        if (problem) {
-          toast.error(problem);
-          return;
-        }
+        if (problem) return;
         allocate.mutate({
           id: txn.id,
-          lines: lines.map((line, index) => ({
-            ...targetIds(line.target),
-            amountCents: (parsed[index] ?? 0) * sign,
-          })),
+          lines: allocationLines(txn.amountCents, lines),
         });
       }}
     >
-      <p className="text-muted-foreground text-sm">
-        {txn.amountCents > 0
-          ? "Amounts are money in. Enter a negative amount for a line that goes the other way."
-          : "Amounts are money out. Enter a negative amount for a line that goes the other way."}
-      </p>
-      <div className="space-y-2">
-        {lines.map((line, index) => (
-          <div key={line.key} className="flex items-center gap-2">
-            <TargetPicker
-              className="min-w-0 flex-1"
-              ariaLabel={`Line ${index + 1} account or category`}
-              value={line.target}
-              options={options}
-              onChange={(target) => updateLine(line.key, { target })}
-            />
-            <Input
-              className="w-32 text-right"
-              inputMode="decimal"
-              aria-label={`Line ${index + 1} amount`}
-              value={line.amount}
-              onChange={(e) => updateLine(line.key, { amount: e.target.value })}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={`Remove line ${index + 1}`}
-              disabled={lines.length === 1}
-              onClick={() =>
-                setLines((current) =>
-                  current.filter((other) => other.key !== line.key),
-                )
-              }
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center justify-between gap-4">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            setLines((current) => [
-              ...current,
-              newDraftLine("", remainder > 0 ? remainder : null),
-            ])
-          }
-        >
-          Add line
-        </Button>
-        <p
-          className={
-            remainder === 0
-              ? "text-muted-foreground text-sm tabular-nums"
-              : "text-destructive text-sm tabular-nums"
-          }
-        >
-          Left to sort: {formatCents(remainder)}
-        </p>
-      </div>
-      {problem && remainder === 0 ? (
-        <p className="text-muted-foreground text-sm">{problem}</p>
-      ) : null}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={problem !== null || allocate.isPending}>
-          Save
-        </Button>
+      <SplitEditor
+        amountCents={txn.amountCents}
+        lines={lines}
+        groups={groups}
+        onChange={setLines}
+      />
+      {problem ? <p className="text-fg-3 text-xs">{problem}</p> : null}
+      <DialogFooter className={canUnsort ? "sm:justify-between" : undefined}>
+        {canUnsort ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={unsort.isPending}
+            onClick={() => unsort.mutate({ id: txn.id })}
+          >
+            Move back to To sort
+          </Button>
+        ) : null}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <Button type="button" variant="outline" onClick={onDone}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={problem !== null || allocate.isPending}
+          >
+            Save
+          </Button>
+        </div>
       </DialogFooter>
     </form>
   );

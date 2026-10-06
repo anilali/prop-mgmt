@@ -53,7 +53,7 @@ The target is a dry run in mid-November 2026 on January to October data, then fi
 
 ## Setup
 
-Done once, then updated when something changes.
+Done once, then updated when something changes. The Setup page has four tabs: Property and letters, Units and pools, Categories, and People. People lists the members and invites, and only admins see it.
 
 ### Property
 
@@ -120,6 +120,7 @@ Each account page has a Documents list for signed leases and other PDFs.
 - Rows dated before the tracking start are skipped and counted.
 - A row with an amount but a date that can't be read is shown before importing. The owner fixes the column matching or skips the row. In a QuickBooks file, a row with a bad date, a bad amount, or no transaction id is shown the same way, and the owner skips it. Nothing with an amount is left out without the owner seeing it.
 - An import can be removed as long as none of its transactions have been sorted.
+- Every page shows the date of the newest bank transaction ("Bank data through Oct 4").
 - The owner adds cash expenses by hand with a date, description, amount, and category.
 
 ### Sorting
@@ -132,16 +133,32 @@ New transactions land in a "To sort" list.
 - A deposit can go to a shared-cost category, which lowers that pool's cost, such as an insurance refund. A withdrawal can be matched to an account, such as a bounced check or a refund to a tenant.
 - A sorted transaction can be changed later.
 
-## Rent status
+## Tenants
 
-A table of accounts with expected so far, received so far, balance, last payment date, and a status. Accounts that are behind are listed first.
+The Tenants page lists the accounts with the unit, tenant, a strip of this year's months, the monthly amount, past due, and the lease end date. Accounts that are behind are listed first. Each account has a status:
 
 - **Due.** A month's rent counts as owed from the 1st, or from the move-in day when the tenant moves in mid-month. Until the lease's late-fee day, or the 5th if it has no late fee, a balance from this month alone shows as Due.
 - **Behind.** A balance left after that day, or left over from an earlier month.
+- **Waiting on bank.** The balance is from this month alone, and the bank data doesn't reach the 1st of this month yet. The app can't see whether this month's rent came in, so it waits for the next import instead of showing Due or Behind.
+- **Paid up** at a zero balance, and **Credit** when the tenant paid ahead.
 
-Each account has a history of what makes up its balance: opening balance, each month's expected amount, payments, fees, adjustments, and true-ups.
+**Past due** is the part of the balance from before this month. It is the balance minus this month's charges that are still unpaid, and never less than 0. Payments go to the oldest charges first. A credit shows as a credit, not as past due.
 
-- **Late fees.** When a lease has a late fee, the app suggests it if payments from the 1st through the fee day, plus any credit carried into the month, come to less than that month's expected amount. The suggestion shows only during that month. Older balances and true-ups never trigger a fee on their own. The owner approves it, which adds it to the balance dated the day after the fee day, or dismisses it. A missed fee, or a fee for a check that bounced after the fee day, is added by hand as an adjustment.
+The month strip has one cell per month of this year:
+
+- **Paid.** Payments posted that month add up to at least its expected amount.
+- **Short.** Some was paid that month, but less than expected.
+- **Not paid.** Nothing was paid that month.
+- **Not late yet.** This month, nothing paid yet, and the late-fee day (or the 5th) hasn't passed, or the bank data doesn't reach it.
+- **Deposit to sort.** A deposit in To sort from that month is suggested for this account.
+- **No bank data.** The bank data doesn't reach the 1st of that month.
+- **Later this year**, and **Not active** for months the account doesn't expect rent.
+
+A payment counts in the month it posted. The strip shows when money came in. It doesn't decide which month a payment is for, so rent paid early on the 31st fills that month's cell.
+
+Each account has a page with its status, past due, balance, the month strip, and a history of what makes up its balance: opening balance, each month's expected amount, payments, fees, adjustments, and true-ups.
+
+- **Late fees.** When a lease has a late fee, the app suggests it if payments from the 1st through the fee day, plus any credit carried into the month, come to less than that month's expected amount. The app waits until the bank data reaches the fee day, so a payment that hasn't been imported yet never causes a fee. The suggestion shows only during that month. Older balances and true-ups never trigger a fee on their own. The owner approves it, which adds it to the balance dated the day after the fee day, or dismisses it. A missed fee, or a fee for a check that bounced after the fee day, is added by hand as an adjustment.
 - **Adjustments.** The owner can add a credit or charge to an account with a note, for anything the rules don't cover.
 
 ## Coming up
@@ -251,7 +268,7 @@ A year reconciled before tracking started can be added to the app. It shows on t
 3. Importing the same CSV or QuickBooks file twice, or two overlapping ones, creates no duplicates.
 4. Every bank transaction can be categorized or split, and every deposit can be matched to an account. A cash expense has one category and isn't split. Suggestions never apply without the owner confirming.
 5. An account's balance equals its opening balance plus expected amounts, fees, adjustments, and true-ups, minus payments.
-6. A late fee is only added when the owner approves it.
+6. A late fee is only added when the owner approves it, and is only suggested once the bank data reaches the fee day.
 7. The home page shows accounts behind, transactions to sort, rent changes in 90 days, insurance certificates missing or expiring in 60 days, leases ending in 90 days, and accounts past their end date.
 8. Running 2024 through the app gives the same line amounts as the spreadsheet. Totals can differ by a cent or two, because the app adds rounded lines.
 9. A tenant who moved out in August gets 8/12 of their share and 8 months of estimates.

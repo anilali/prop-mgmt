@@ -68,6 +68,7 @@ export {
   accountSuggestion,
   categorySuggestion,
   descriptionKey,
+  suggestedPaymentMonths,
   suggestionFor,
 } from "./suggestions";
 
@@ -137,11 +138,16 @@ export {
 export type { RentStatus } from "./rent-status";
 export {
   RENT_STATUSES,
+  bankReaches,
   compareRentStatus,
   graceDate,
+  pastDueCents,
   rentStatus,
   thisMonthCharges,
 } from "./rent-status";
+
+export type { MonthCell, MonthCellState } from "./month-cells";
+export { MONTH_CELL_STATES, monthCells } from "./month-cells";
 
 export type { LateFeeSuggestion } from "./late-fee";
 export {

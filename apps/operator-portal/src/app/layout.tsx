@@ -1,8 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Geist_Mono,
+  Instrument_Sans,
+  Instrument_Serif,
+} from "next/font/google";
 
 import { cn } from "@moonship/ui";
-import { ThemeProvider, ThemeToggle } from "@moonship/ui/theme";
+import { ThemeProvider } from "@moonship/ui/theme";
 import { Toaster } from "@moonship/ui/toast";
 
 import { env } from "~/env";
@@ -22,14 +26,19 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "white" },
-    { media: "(prefers-color-scheme: dark)", color: "black" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f3f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0c0f" },
   ],
 };
 
-const geistSans = Geist({
+const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
-  variable: "--font-geist-sans",
+  variable: "--font-instrument-sans",
+});
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-instrument-serif",
 });
 const geistMono = Geist_Mono({
   subsets: ["latin"],
@@ -41,17 +50,15 @@ export default function RootLayout(props: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
-          "bg-background text-foreground min-h-screen font-sans antialiased",
-          geistSans.variable,
+          "bg-ground text-foreground min-h-screen font-sans antialiased",
+          instrumentSans.variable,
+          instrumentSerif.variable,
           geistMono.variable,
         )}
       >
         <ThemeProvider>
           <TRPCReactProvider>{props.children}</TRPCReactProvider>
-          <div className="absolute right-4 bottom-4">
-            <ThemeToggle />
-          </div>
-          <Toaster position="top-right" />
+          <Toaster position="bottom-center" />
         </ThemeProvider>
       </body>
     </html>

@@ -9,35 +9,70 @@ import { Button } from "@moonship/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@moonship/ui/dialog";
 import { Input } from "@moonship/ui/input";
-import { Label } from "@moonship/ui/label";
 import { Textarea } from "@moonship/ui/textarea";
 
+import type { AddressDraft } from "./address-fields";
 import { useTRPC } from "~/trpc/react";
 import { useLedgerChanged } from "../../_lib/use-ledger-changed";
+import { addressDraft, AddressFields, toAddress } from "./address-fields";
+import { FormField } from "./form-field";
 
 export type TenantView = RouterOutputs["tenant"]["list"][number];
 
+function useTenantUpdate(onDone: () => void, message: string) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const ledgerChanged = useLedgerChanged();
+  return useMutation(
+    trpc.tenant.update.mutationOptions({
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries(trpc.tenant.pathFilter()),
+          queryClient.invalidateQueries(trpc.account.pathFilter()),
+          ledgerChanged(),
+        ]);
+        toast.success(message);
+        onDone();
+      },
+      onError: (err) => toast.error(err.message),
+    }),
+  );
+}
+
+function parseAddress(draft: AddressDraft) {
+  try {
+    return { ok: true as const, address: toAddress(draft) };
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Check the address");
+    return { ok: false as const };
+  }
+}
+
 export function TenantDialog({
-  open,
-  onOpenChange,
   tenant,
+  onClose,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   tenant: TenantView | null;
+  onClose: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+    <Dialog
+      open={tenant !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{tenant ? "Edit tenant" : "Add tenant"}</DialogTitle>
+          <DialogTitle>Edit tenant</DialogTitle>
         </DialogHeader>
-        <TenantForm tenant={tenant} onDone={() => onOpenChange(false)} />
+        {tenant ? <TenantForm tenant={tenant} onDone={onClose} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -47,196 +82,146 @@ function TenantForm({
   tenant,
   onDone,
 }: {
-  tenant: TenantView | null;
+  tenant: TenantView;
   onDone: () => void;
 }) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const ledgerChanged = useLedgerChanged();
-  const [businessName, setBusinessName] = useState(tenant?.businessName ?? "");
-  const [contactName, setContactName] = useState(tenant?.contactName ?? "");
-  const [email, setEmail] = useState(tenant?.email ?? "");
-  const [phone, setPhone] = useState(tenant?.phone ?? "");
-  const [notes, setNotes] = useState(tenant?.notes ?? "");
-  const [street1, setStreet1] = useState(tenant?.mailingAddress?.street1 ?? "");
-  const [street2, setStreet2] = useState(tenant?.mailingAddress?.street2 ?? "");
-  const [city, setCity] = useState(tenant?.mailingAddress?.city ?? "");
-  const [state, setState] = useState(tenant?.mailingAddress?.state ?? "");
-  const [postalCode, setPostalCode] = useState(
-    tenant?.mailingAddress?.postalCode ?? "",
+  const update = useTenantUpdate(onDone, "Tenant saved");
+  const [businessName, setBusinessName] = useState(tenant.businessName);
+  const [contactName, setContactName] = useState(tenant.contactName ?? "");
+  const [email, setEmail] = useState(tenant.email ?? "");
+  const [phone, setPhone] = useState(tenant.phone ?? "");
+  const [notes, setNotes] = useState(tenant.notes ?? "");
+  const [address, setAddress] = useState(() =>
+    addressDraft(tenant.mailingAddress),
   );
-  const [country, setCountry] = useState(
-    tenant?.mailingAddress?.country ?? "US",
-  );
-
-  const onSuccess = (message: string) => async () => {
-    await Promise.all([
-      queryClient.invalidateQueries(trpc.tenant.list.queryFilter()),
-      queryClient.invalidateQueries(trpc.account.pathFilter()),
-      ledgerChanged(),
-    ]);
-    toast.success(message);
-    onDone();
-  };
-
-  const create = useMutation(
-    trpc.tenant.create.mutationOptions({
-      onSuccess: onSuccess("Tenant created"),
-      onError: (err) => toast.error(err.message),
-    }),
-  );
-
-  const update = useMutation(
-    trpc.tenant.update.mutationOptions({
-      onSuccess: onSuccess("Tenant updated"),
-      onError: (err) => toast.error(err.message),
-    }),
-  );
-
-  const mailingAddress = () => {
-    const filled = [street1, street2, city, state, postalCode].some(
-      (part) => part.trim() !== "",
-    );
-    if (!filled) return null;
-    if (
-      !street1.trim() ||
-      !city.trim() ||
-      !state.trim() ||
-      !postalCode.trim()
-    ) {
-      throw new Error(
-        "Enter the street, city, state, and postal code for the mailing address",
-      );
-    }
-    if (!country.trim()) {
-      throw new Error("Enter the country for the mailing address");
-    }
-    return {
-      street1: street1.trim(),
-      street2: street2.trim() || undefined,
-      city: city.trim(),
-      state: state.trim(),
-      postalCode: postalCode.trim(),
-      country: country.trim(),
-    };
-  };
 
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         if (businessName.trim() === "") {
           toast.error("Enter the business name");
           return;
         }
-        let address: ReturnType<typeof mailingAddress>;
-        try {
-          address = mailingAddress();
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Check the address");
-          return;
-        }
-        if (tenant) {
-          update.mutate({
-            id: tenant.id,
-            businessName: businessName.trim(),
-            contactName: contactName.trim() || null,
-            mailingAddress: address,
-            email: email.trim() || null,
-            phone: phone.trim() || null,
-            notes: notes.trim() || null,
-          });
-        } else {
-          create.mutate({
-            businessName: businessName.trim(),
-            contactName: contactName.trim() || undefined,
-            mailingAddress: address ?? undefined,
-            email: email.trim() || undefined,
-            phone: phone.trim() || undefined,
-            notes: notes.trim() || undefined,
-          });
-        }
+        const parsed = parseAddress(address);
+        if (!parsed.ok) return;
+        update.mutate({
+          id: tenant.id,
+          businessName: businessName.trim(),
+          contactName: contactName.trim() || null,
+          mailingAddress: parsed.address,
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          notes: notes.trim() || null,
+        });
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label>Business name</Label>
+      <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+        <FormField label="Business name">
           <Input
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             required
           />
-        </div>
-        <div className="space-y-1">
-          <Label>Contact name</Label>
+        </FormField>
+        <FormField label="Contact name">
           <Input
             value={contactName}
             onChange={(e) => setContactName(e.target.value)}
           />
-        </div>
-        <div className="space-y-1">
-          <Label>Email</Label>
+        </FormField>
+        <FormField label="Email">
           <Input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-        </div>
-        <div className="space-y-1">
-          <Label>Phone</Label>
+        </FormField>
+        <FormField label="Phone">
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-        </div>
+        </FormField>
       </div>
-
-      <div className="space-y-2">
-        <Label>Mailing address</Label>
-        <Input
-          placeholder="Street"
-          value={street1}
-          onChange={(e) => setStreet1(e.target.value)}
-        />
-        <Input
-          placeholder="Suite or unit"
-          value={street2}
-          onChange={(e) => setStreet2(e.target.value)}
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <Input
-            placeholder="City"
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-          />
-          <Input
-            placeholder="State"
-            value={state}
-            onChange={(e) => setState(e.target.value)}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Input
-            placeholder="Postal code"
-            value={postalCode}
-            onChange={(e) => setPostalCode(e.target.value)}
-          />
-          <Input
-            placeholder="Country"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-          />
-        </div>
+      <div className="flex flex-col gap-[5px]">
+        <span className="text-fg-2 text-[12px] font-medium">
+          Mailing address
+        </span>
+        <AddressFields value={address} onChange={setAddress} />
       </div>
-
-      <div className="space-y-1">
-        <Label>Notes</Label>
+      <FormField label="Notes">
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </div>
-
+      </FormField>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" disabled={create.isPending || update.isPending}>
+        <Button type="submit" variant="primary" disabled={update.isPending}>
+          Save
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+export function MailingAddressDialog({
+  tenant,
+  onClose,
+}: {
+  tenant: TenantView | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      open={tenant !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Mailing address</DialogTitle>
+          <DialogDescription>
+            {tenant
+              ? `${tenant.businessName}. Printed on each of this tenant's letters.`
+              : null}
+          </DialogDescription>
+        </DialogHeader>
+        {tenant ? (
+          <MailingAddressForm tenant={tenant} onDone={onClose} />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MailingAddressForm({
+  tenant,
+  onDone,
+}: {
+  tenant: TenantView;
+  onDone: () => void;
+}) {
+  const update = useTenantUpdate(onDone, "Mailing address saved");
+  const [address, setAddress] = useState(() =>
+    addressDraft(tenant.mailingAddress),
+  );
+
+  return (
+    <form
+      className="grid gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const parsed = parseAddress(address);
+        if (!parsed.ok) return;
+        update.mutate({ id: tenant.id, mailingAddress: parsed.address });
+      }}
+    >
+      <AddressFields value={address} onChange={setAddress} />
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" disabled={update.isPending}>
           Save
         </Button>
       </DialogFooter>

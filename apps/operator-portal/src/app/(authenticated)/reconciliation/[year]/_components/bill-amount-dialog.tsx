@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { formatCents, parseCents } from "@moonship/shared";
+import { parseCents } from "@moonship/shared";
 import { Button } from "@moonship/ui/button";
 import {
   Dialog,
@@ -16,11 +16,11 @@ import {
 } from "@moonship/ui/dialog";
 import { Input } from "@moonship/ui/input";
 import { Label } from "@moonship/ui/label";
-import { Textarea } from "@moonship/ui/textarea";
+import { Money } from "@moonship/ui/money";
 
 import type { PoolView } from "../../_lib/reconciliation";
 import { useTRPC } from "~/trpc/react";
-import { centsToInput } from "../../../leases/_lib/format";
+import { centsToInput } from "../../../_lib/format";
 
 function parseAmount(text: string): number | null {
   try {
@@ -48,13 +48,10 @@ export function BillAmountDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {pool?.name} bill amount for {year}
-          </DialogTitle>
+          <DialogTitle>{pool?.name} bill amount</DialogTitle>
           <DialogDescription>
-            The bill amount replaces the payments sorted to this pool&apos;s
-            category ({formatCents(pool?.categoryTotalCents ?? 0)}) as the{" "}
-            {year} cost.
+            Use the year&apos;s bill when payments don&apos;t line up with the
+            year, like taxes paid in halves.
           </DialogDescription>
         </DialogHeader>
         {pool ? (
@@ -104,7 +101,7 @@ function BillAmountForm({
     trpc.reconciliation.clearBillOverride.mutationOptions({
       onSuccess: async () => {
         await refresh();
-        toast.success(`${pool.name} bill amount cleared`);
+        toast.success(`${pool.name} uses payments again`);
         onDone();
       },
       onError,
@@ -114,7 +111,7 @@ function BillAmountForm({
 
   return (
     <form
-      className="space-y-4"
+      className="grid gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         const cents = parseAmount(amount);
@@ -135,52 +132,52 @@ function BillAmountForm({
         });
       }}
     >
-      <div className="space-y-1">
-        <Label htmlFor="bill-amount">Amount</Label>
+      <div className="grid gap-1.5">
+        <Label htmlFor="bill-amount">{year} bill amount</Label>
         <Input
           id="bill-amount"
           inputMode="decimal"
           placeholder="0.00"
+          className="font-mono"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required
         />
       </div>
-      <div className="space-y-1">
+      <div className="grid gap-1.5">
         <Label htmlFor="bill-note">Note</Label>
-        <Textarea
+        <Input
           id="bill-note"
           value={note}
           maxLength={500}
-          placeholder="Where the amount comes from, such as the county tax bill"
+          placeholder="County tax bill"
           onChange={(e) => setNote(e.target.value)}
           required
         />
-        <p className="text-muted-foreground text-xs">
-          The statement prints this note under the pool&apos;s cost.
+        <p className="text-fg-3 text-[11.5px]">
+          Payments in {year}:{" "}
+          <Money cents={pool.categoryTotalCents} className="text-[11.5px]" />.
+          They stay listed but are not used.
         </p>
       </div>
-      <DialogFooter className="sm:justify-between">
+      <DialogFooter>
         {pool.billOverride ? (
           <Button
             type="button"
-            variant="outline"
+            variant="destructive"
+            className="sm:mr-auto"
             disabled={pending}
             onClick={() => clear.mutate({ year, poolId: pool.poolId })}
           >
-            Clear bill amount
+            Use payments
           </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={onDone}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={pending}>
-            Save
-          </Button>
-        </div>
+        ) : null}
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" disabled={pending}>
+          Save
+        </Button>
       </DialogFooter>
     </form>
   );

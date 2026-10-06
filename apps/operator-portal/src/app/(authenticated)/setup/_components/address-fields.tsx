@@ -2,7 +2,8 @@
 
 import type { Address } from "@moonship/shared";
 import { Input } from "@moonship/ui/input";
-import { Label } from "@moonship/ui/label";
+
+import { FormField } from "./form-field";
 
 export interface AddressDraft {
   street1: string;
@@ -71,32 +72,30 @@ export function AddressFields({
   return (
     <div className="grid gap-3">
       <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-        <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-street1`}>Street</Label>
+        <FormField label="Street" htmlFor={`${idPrefix}-street1`}>
           <Input {...field("street1")} required />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-street2`}>{street2Label}</Label>
+        </FormField>
+        <FormField label={street2Label} htmlFor={`${idPrefix}-street2`}>
           <Input {...field("street2")} placeholder="Optional" />
-        </div>
+        </FormField>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr]">
-        <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-city`}>City</Label>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr]">
+        <FormField
+          label="City"
+          htmlFor={`${idPrefix}-city`}
+          className="col-span-2 sm:col-span-1"
+        >
           <Input {...field("city")} required />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-state`}>State</Label>
+        </FormField>
+        <FormField label="State" htmlFor={`${idPrefix}-state`}>
           <Input {...field("state")} required />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-postalCode`}>Postal code</Label>
+        </FormField>
+        <FormField label="Postal code" htmlFor={`${idPrefix}-postalCode`}>
           <Input {...field("postalCode")} required />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-country`}>Country</Label>
+        </FormField>
+        <FormField label="Country" htmlFor={`${idPrefix}-country`}>
           <Input {...field("country")} required />
-        </div>
+        </FormField>
       </div>
     </div>
   );

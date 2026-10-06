@@ -1,117 +1,106 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Calculator } from "lucide-react";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { Calculator, ChevronRight } from "lucide-react";
 
-import { Badge } from "@moonship/ui/badge";
 import { Button } from "@moonship/ui/button";
 import { EmptyState } from "@moonship/ui/empty-state";
-import { PageHeader } from "@moonship/ui/page-header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@moonship/ui/table";
+import { List, ListRow } from "@moonship/ui/list";
+import { StatusPill } from "@moonship/ui/status-pill";
 
+import type { Workspace, YearRow } from "../_lib/reconciliation";
 import { useTRPC } from "~/trpc/react";
 import {
-  timestampFormat,
+  blockerCount,
+  plural,
+  riseStyle,
   YEAR_STATUS_LABELS,
   YEAR_STATUS_VARIANTS,
   yearsUnavailableMessage,
 } from "../_lib/reconciliation";
-import { formatDate } from "../../leases/_lib/format";
+import { formatDate } from "../../_lib/format";
+
+const ROW_COLUMNS =
+  "nav:grid-cols-[90px_150px_minmax(0,1fr)_auto] grid-cols-[70px_minmax(0,1fr)_auto]";
 
 export function YearsPageContent() {
   const trpc = useTRPC();
-  const router = useRouter();
   const { data } = useSuspenseQuery(
     trpc.reconciliation.listYears.queryOptions(),
   );
-  const { data: property } = useSuspenseQuery(trpc.property.get.queryOptions());
-  const finalizedFormat = timestampFormat(property.timeZone);
   const unavailable = yearsUnavailableMessage(data);
 
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Reconciliation"
-        description="Each year's shared costs, the statement for each tenant, and the letters."
+  if (unavailable) {
+    return (
+      <EmptyState
+        icon={<Calculator className="size-5" />}
+        headline="No year to reconcile yet"
+        description={unavailable}
+        action={
+          data.trackingStart === null ? (
+            <Button type="button" variant="outline" asChild>
+              <Link href="/setup?tab=property">Open Setup</Link>
+            </Button>
+          ) : null
+        }
       />
-      {unavailable ? (
-        <EmptyState
-          icon={<Calculator className="size-5" />}
-          headline="No year to reconcile yet"
-          description={unavailable}
-          action={
-            data.trackingStart === null ? (
-              <Button type="button" asChild>
-                <Link href="/setup">Go to Setup</Link>
-              </Button>
-            ) : null
-          }
-          className="rounded-lg border border-dashed py-16"
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Year</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Letter date</TableHead>
-              <TableHead>Finalized</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.years.map((row) => {
-              const href = `/reconciliation/${row.year}`;
-              return (
-                <TableRow
-                  key={row.year}
-                  className="cursor-pointer"
-                  onClick={() => router.push(href)}
-                >
-                  <TableCell className="font-medium">
-                    <Link
-                      className="underline-offset-4 hover:underline"
-                      href={href}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {row.year}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={YEAR_STATUS_VARIANTS[row.status]}>
-                      {YEAR_STATUS_LABELS[row.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDate(row.letterDate)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {row.finalizedAt
-                      ? finalizedFormat.format(row.finalizedAt)
-                      : "-"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button type="button" variant="outline" size="sm" asChild>
-                      <Link href={href} onClick={(e) => e.stopPropagation()}>
-                        Open
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
-    </div>
+    );
+  }
+
+  return (
+    <List>
+      {data.years.map((row, index) => (
+        <YearListRow key={row.year} row={row} index={index} />
+      ))}
+    </List>
   );
+}
+
+function YearListRow({ row, index }: { row: YearRow; index: number }) {
+  const trpc = useTRPC();
+  const { data: workspace } = useQuery(
+    trpc.reconciliation.workspace.queryOptions({ year: row.year }),
+  );
+
+  return (
+    <ListRow
+      asChild
+      className={`${ROW_COLUMNS} animate-rise py-3.5`}
+      style={riseStyle(index)}
+    >
+      <Link href={`/reconciliation/${row.year}`}>
+        <span className="font-mono text-[18px] font-medium tracking-[-0.03em]">
+          {row.year}
+        </span>
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusPill variant={YEAR_STATUS_VARIANTS[row.status]}>
+            {YEAR_STATUS_LABELS[row.status]}
+          </StatusPill>
+          {row.status === "draft" && workspace?.isDryRun ? (
+            <StatusPill variant="plain">Dry run</StatusPill>
+          ) : null}
+        </span>
+        <span className="text-fg-3 max-nav:hidden truncate text-[11.5px]">
+          {workspace ? yearSummary(row, workspace) : null}
+        </span>
+        <ChevronRight className="text-fg-3 size-4" />
+      </Link>
+    </ListRow>
+  );
+}
+
+function yearSummary(row: YearRow, workspace: Workspace): string {
+  if (row.status === "finalized") {
+    const saved = plural(
+      workspace.finalized?.snapshots.length ?? 0,
+      "statement",
+      "statements",
+    );
+    return `Letters dated ${formatDate(row.letterDate)} · ${saved} saved`;
+  }
+  const blockers = blockerCount(workspace);
+  return blockers === 0
+    ? "Nothing blocks finalizing"
+    : `${plural(blockers, "item blocks", "items block")} finalizing`;
 }

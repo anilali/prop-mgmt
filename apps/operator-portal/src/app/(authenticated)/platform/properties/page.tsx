@@ -8,9 +8,7 @@ export default async function PlatformPropertiesPage() {
 
   return (
     <HydrateClient>
-      <div className="flex flex-col gap-6 p-6">
-        <PropertiesPageContent />
-      </div>
+      <PropertiesPageContent />
     </HydrateClient>
   );
 }
