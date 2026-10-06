@@ -106,7 +106,7 @@ export function tenantRows(
   return rows.sort(
     (a, b) =>
       STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) ||
-      b.pastDueCents - a.pastDueCents ||
+      b.balanceCents - a.balanceCents ||
       STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) ||
       a.unitLabel.localeCompare(b.unitLabel, undefined, { numeric: true }),
   );

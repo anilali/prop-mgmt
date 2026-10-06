@@ -42,11 +42,6 @@ const KEY: { state: MonthCellState; label: string }[] = [
   { state: "nodata", label: "No bank data" },
 ];
 
-const monthName = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  timeZone: "UTC",
-});
-
 function rise(index: number): CSSProperties {
   return { "--i": index } as CSSProperties;
 }
@@ -77,18 +72,22 @@ function LeaseCell({ row, today }: { row: TenantRow; today: IsoDate }) {
   return <>Ends {formatDate(row.newest?.endDate)}</>;
 }
 
-function PastDueCell({ row }: { row: TenantRow }) {
-  if (row.pastDueCents > 0) {
-    return <Money cents={row.pastDueCents} tone="red" />;
-  }
+function BalanceCell({ row }: { row: TenantRow }) {
   if (row.balanceCents < 0) {
-    return (
-      <span className="text-blue font-mono whitespace-nowrap">
-        <Money cents={-row.balanceCents} tone="blue" /> credit
-      </span>
-    );
+    return <Money cents={row.balanceCents} tone="blue" />;
   }
-  return <span className="text-fg-3 text-[11.5px]">None</span>;
+  return (
+    <Money
+      cents={row.balanceCents}
+      tone={
+        row.status === "behind"
+          ? "red"
+          : row.balanceCents === 0
+            ? "faint"
+            : "default"
+      }
+    />
+  );
 }
 
 export function TenantsPageContent() {
@@ -116,7 +115,6 @@ export function TenantsPageContent() {
   );
   const today = status.today;
   const year = today.slice(0, 4);
-  const month = monthName.format(new Date(`${today.slice(0, 7)}-01T00:00:00Z`));
   const withAccounts = new Set(accountList.accounts.map((a) => a.tenant.id));
   const loose = tenants
     .filter((tenant) => !withAccounts.has(tenant.id))
@@ -173,8 +171,8 @@ export function TenantsPageContent() {
                 <ListHeader className={COLUMNS}>
                   <span>Account</span>
                   <span className="max-[980px]:hidden">Rent paid, {year}</span>
-                  <span className="text-right max-[560px]:hidden">Monthly</span>
-                  <span className="text-right">Past due</span>
+                  <span className="max-[560px]:hidden">Monthly</span>
+                  <span>Balance</span>
                   <span className="max-[560px]:hidden">Lease</span>
                 </ListHeader>
                 {rows.map((row, index) => (
@@ -200,13 +198,13 @@ export function TenantsPageContent() {
                           }))}
                         />
                       </span>
-                      <span className="text-right max-[560px]:hidden">
+                      <span className="max-[560px]:hidden">
                         {row.monthlyCents > 0 ? (
-                          <Money cents={row.monthlyCents} tone="faint" />
+                          <Money cents={row.monthlyCents} />
                         ) : null}
                       </span>
-                      <span className="text-right">
-                        <PastDueCell row={row} />
+                      <span>
+                        <BalanceCell row={row} />
                       </span>
                       <span className="text-fg-3 text-[11.5px] whitespace-nowrap max-[560px]:hidden">
                         <LeaseCell row={row} today={today} />
@@ -216,9 +214,8 @@ export function TenantsPageContent() {
                 ))}
               </List>
               <p className="text-fg-3 mt-3 text-[12px]">
-                Past due is rent owed from before {month}. The full balance is
-                on each account. A tenant with two units has two accounts, each
-                with its own statement and letter.
+                A tenant with two units has two accounts, each with its own
+                statement and letter.
               </p>
             </>
           )}
