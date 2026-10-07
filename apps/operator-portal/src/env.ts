@@ -13,8 +13,8 @@ export const env = createEnv({
   server: {
     POSTGRES_URL: z.string().min(1),
     OPERATOR_AUTH_SECRET: z.string().min(1),
-    OPERATOR_GOOGLE_CLIENT_ID: z.string().min(1),
-    OPERATOR_GOOGLE_CLIENT_SECRET: z.string().min(1),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
     OPERATOR_BETTER_AUTH_URL: z.url(),
     AWS_ENDPOINT_URL_S3: z.string().url(),
     AWS_ACCESS_KEY_ID: z.string().min(1),

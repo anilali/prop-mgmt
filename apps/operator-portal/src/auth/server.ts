@@ -25,8 +25,8 @@ export const auth = betterAuth({
   basePath: "/api/auth",
   socialProviders: {
     google: {
-      clientId: env.OPERATOR_GOOGLE_CLIENT_ID,
-      clientSecret: env.OPERATOR_GOOGLE_CLIENT_SECRET,
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
     },
   },
   databaseHooks: {

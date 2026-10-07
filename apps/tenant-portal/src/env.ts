@@ -13,8 +13,8 @@ export const env = createEnv({
   server: {
     POSTGRES_URL: z.string().min(1),
     TENANT_AUTH_SECRET: z.string().min(1),
-    TENANT_GOOGLE_CLIENT_ID: z.string().min(1),
-    TENANT_GOOGLE_CLIENT_SECRET: z.string().min(1),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
     TENANT_BETTER_AUTH_URL: z.url(),
   },
   client: {},
